@@ -2,11 +2,16 @@
 import type { Game } from '../types/Game';
 
 export default function GameCard({ game }: { game: Game }) {
+  // Use base path for images to work with GitHub Pages
+  // BASE_URL already includes trailing slash, so we don't need to add one
+  const baseUrl = import.meta.env.BASE_URL;
+  const imagePath = `${baseUrl}${game.image}`;
+  
   return (
     <Link to={game.path} className="game-card-wrapper">
       <article className="game-card">
         <div className="game-card__image">
-          <img src={`/${game.image}`} alt={game.title} />
+          <img src={imagePath} alt={game.title} />
         </div>
       </article>
 

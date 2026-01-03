@@ -15,8 +15,10 @@ const base = process.env.NODE_ENV === 'production' ? BASE_PATH : '/';
 export default defineConfig({
   plugins: [react()],
   base,
+  publicDir: 'img', // Serve images from img folder as public assets
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    copyPublicDir: true, // Copy public directory to dist
   },
 })
