@@ -9,8 +9,9 @@ import react from '@vitejs/plugin-react'
 // Then set BASE_PATH to '/Games2.github.io/'
 // If your site is at: yaliby.github.io/ (root), set to '/'
 // If your site is at: yaliby.github.io/repo-name/, set to '/repo-name/'
-const BASE_PATH = '/Games2.github.io/'; // Update this to match your actual GitHub Pages path
-const base = process.env.NODE_ENV === 'production' ? BASE_PATH : '/';
+//const BASE_PATH = '/Games2.github.io/'; // Update this to match your actual GitHub Pages path
+//const base = process.env.NODE_ENV === 'production' ? BASE_PATH : '/';
+const base = '/';
 
 export default defineConfig({
   plugins: [react()],
