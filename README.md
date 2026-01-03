@@ -19,30 +19,39 @@ npm run build
 
 ### Automatic Deployment (Recommended)
 
-1. Push your code to GitHub
-2. Go to your repository Settings → Pages
-3. Under "Source", select "GitHub Actions"
-4. The workflow will automatically deploy on every push to `main` or `master` branch
+1. **Update BASE_PATH in vite.config.ts:**
+   - Open `vite.config.ts`
+   - Set `BASE_PATH` to match your GitHub Pages URL:
+     - If site is at `username.github.io/repo-name/` → set to `'/repo-name/'`
+     - If site is at `username.github.io/` (root) → set to `'/'`
 
-### Manual Deployment
+2. **Enable GitHub Pages:**
+   - Go to your repository on GitHub
+   - Click **Settings** → **Pages**
+   - Under **Source**, select **"GitHub Actions"**
+   - Save
 
-1. Update `REPO_NAME` in `vite.config.ts` to match your repository name
-2. Build the project: `npm run build`
-3. Go to repository Settings → Pages
-4. Under "Source", select "Deploy from a branch"
-5. Select `gh-pages` branch and `/root` folder
-6. Push the `dist` folder to the `gh-pages` branch:
+3. **Push your code:**
+   ```bash
+   git add .
+   git commit -m "Deploy to GitHub Pages"
+   git push origin main
+   ```
 
-```bash
-npm run build
-git add dist
-git commit -m "Deploy to GitHub Pages"
-git subtree push --prefix dist origin gh-pages
-```
+4. **Wait for deployment:**
+   - Go to **Actions** tab in your repository
+   - Watch the workflow run
+   - Once complete, your site will be live
+
+### Troubleshooting
+
+- **404 errors:** Make sure `BASE_PATH` in `vite.config.ts` matches your GitHub Pages URL path
+- **Blank page:** Check browser console for errors, verify assets are loading
+- **Wrong paths:** Rebuild with correct `BASE_PATH` and redeploy
 
 ### Important Notes
 
-- If your repository is named `username.github.io`, set `REPO_NAME = 'username.github.io'` in `vite.config.ts` and it will use base path `/`
-- For any other repository name, it will use base path `/repo-name/`
-- Make sure to update `REPO_NAME` in `vite.config.ts` before building for production
+- The `BASE_PATH` must match your GitHub Pages URL structure exactly
+- After changing `BASE_PATH`, rebuild and push again
+- Clear browser cache if you see old content
 
