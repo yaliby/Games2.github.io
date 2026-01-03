@@ -77,7 +77,6 @@ export default function CheckersGame() {
 
   // Canvas size includes side margins for graveyard
   const GRAVEYARD_WIDTH = TILE * 2.5;        // ✅ צר יותר, מעט יותר מרוחב דיסק
-  const BOARD_OFFSET_X = GRAVEYARD_WIDTH;     // ✅ הלוח מתחיל אחרי המרווח השמאלי
 
   const size = useMemo(
     () => ({
