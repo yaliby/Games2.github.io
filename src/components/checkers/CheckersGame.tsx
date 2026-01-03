@@ -259,7 +259,7 @@ export default function CheckersGame() {
     };
 
     // Account for board offset (graveyard on sides)
-    const GRAVEYARD_WIDTH = TILE * 2.5;
+    const GRAVEYARD_WIDTH = TILE * 1.15;
     const BOARD_OFFSET_X = GRAVEYARD_WIDTH;
     
     const posFromXY = (x: number, y: number): Pos | null => {

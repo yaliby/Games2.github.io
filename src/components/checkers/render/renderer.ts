@@ -326,8 +326,8 @@ export function drawBoard(
   /* ---------- Graveyard (Captured Pieces Stack) ---------- */
   if (state.graveyard && state.graveyard.length > 0) {
     // Smaller disks in graveyard
-    const gyTile = TILE * 0.82;      // visual size of a disk in graveyard
-    const spacing = TILE * 0.62;     // vertical spacing
+    const gyTile = TILE * 0.6;      // visual size of a disk in graveyard
+    const spacing = TILE * 0.5;     // vertical spacing
     const topPad = TILE * 0.8;
     const bottomPad = TILE * 0.8;
 
@@ -339,8 +339,8 @@ export function drawBoard(
     const blackPile = state.graveyard.filter((p) => p.player === 2);
 
     // ✅ Center of each side graveyard area (not on the board!)
-    const leftCenterX = GRAVEYARD_WIDTH * 0.5;
-    const rightCenterX = BOARD_OFFSET_X + BOARD_W + GRAVEYARD_WIDTH * 0.5;
+    const leftCenterX = GRAVEYARD_WIDTH * 0.3;
+    const rightCenterX = BOARD_OFFSET_X + BOARD_W + GRAVEYARD_WIDTH * 0.7;
 
     const drawPile = (pile: typeof redPile, side: 'LEFT' | 'RIGHT') => {
       for (let i = 0; i < pile.length; i++) {
