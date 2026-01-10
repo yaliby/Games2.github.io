@@ -17,9 +17,12 @@ import {
 import { drawBoard } from './render/renderer';
 
 /* ================= CONFIG ================= */
-
-const TILE = 60;
+// scording to screen size
+const TILE = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.08);
 const AI_DELAY = 0.5;
+
+// Click-vs-drag threshold (px)
+const DRAG_THRESHOLD = 6;
 
 type Screen = 'MENU' | 'GAME';
 
@@ -32,8 +35,6 @@ type Anim = {
   startTime: number;
 };
 
-/* ================= COMPONENT ================= */
-
 export default function CheckersGame() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -42,7 +43,7 @@ export default function CheckersGame() {
   /* ---------- UI STATE ---------- */
   const [screen, setScreen] = useState<Screen>('MENU');
   const [vsAI, setVsAI] = useState<boolean>(true);
-  const [aiDepth, setAiDepth] = useState<number>(4);
+  const [aiDepth, setAiDepth] = useState<number>(6);
 
   /* ---------- GAME STATE (REF) ---------- */
   const gameRef = useRef<{
@@ -52,6 +53,10 @@ export default function CheckersGame() {
     selectedPos: Pos | null;
     hoveredPos: Pos | null;
     validMoves: Pos[];
+
+    // ✅ NEW: pieces that MUST capture this turn (green highlight)
+    forcedCaptures: Pos[];
+
     drag: {
       active: boolean;
       from: Pos;
@@ -61,6 +66,16 @@ export default function CheckersGame() {
       grabDx: number;
       grabDy: number;
     } | null;
+
+    // click candidate (click-to-select / click-to-move)
+    clickCandidate: {
+      pos: Pos;
+      x: number;
+      y: number;
+      moved: boolean;
+      isPiece: boolean;
+    } | null;
+
     anim: Anim | null;
     lastMove: MoveSequence | null;
     aiPending: boolean;
@@ -86,29 +101,29 @@ export default function CheckersGame() {
     []
   );
 
-
   /* ================= RESET FUNCTION ================= */
   const resetGame = useCallback(() => {
     if (gameRef.current) {
-      gameRef.current.board = createBoard();
-      gameRef.current.graveyard = [];
-      gameRef.current.turn = RED;
-      gameRef.current.winner = { kind: 'NONE' };
-      gameRef.current.selectedPos = null;
-      gameRef.current.hoveredPos = null;
-      gameRef.current.validMoves = [];
-      gameRef.current.anim = null;
-      gameRef.current.lastMove = null;
-      gameRef.current.aiPending = false;
-      gameRef.current.aiTimer = 0;
-      gameRef.current.msg = 'Hold left-click on a piece, drag, then release on a valid square.';
-      gameRef.current.drag = null;
-      gameRef.current.inChainCapture = false;
-      gameRef.current.chainCaptureFrom = null;
+      const g = gameRef.current;
+      g.board = createBoard();
+      g.graveyard = [];
+      g.turn = RED;
+      g.winner = { kind: 'NONE' };
+      g.selectedPos = null;
+      g.hoveredPos = null;
+      g.validMoves = [];
+      g.anim = null;
+      g.lastMove = null;
+      g.aiPending = false;
+      g.aiTimer = 0;
+      g.msg = 'Hold left-click on a piece, drag, then release on a valid square.';
+      g.drag = null;
+      g.clickCandidate = null;
+      g.inChainCapture = false;
+      g.chainCaptureFrom = null;
+      g.forcedCaptures = [];
     }
   }, []);
-
-  /* ================= GAME LOOP ================= */
 
   useEffect(() => {
     if (screen !== 'GAME') return;
@@ -135,7 +150,11 @@ export default function CheckersGame() {
       selectedPos: null,
       hoveredPos: null,
       validMoves: [],
+      forcedCaptures: [],
+
       drag: null,
+      clickCandidate: null,
+
       anim: null,
       lastMove: null,
       aiPending: false,
@@ -148,16 +167,76 @@ export default function CheckersGame() {
     let lastTs = performance.now();
     const gameStartTime = performance.now();
 
+    const canHumanInteract = (g: NonNullable<typeof gameRef.current>) => {
+      return !vsAI || g.turn === RED;
+    };
+
+    // Account for board offset (graveyard on sides)
+    const GRAVEYARD_WIDTH = TILE * 1.15;
+    const BOARD_OFFSET_X = GRAVEYARD_WIDTH;
+
+    const posFromXY = (x: number, y: number): Pos | null => {
+      const xBoard = x - BOARD_OFFSET_X;
+      if (xBoard < 0 || xBoard >= COLS * TILE) return null;
+
+      const c = Math.floor(xBoard / TILE);
+      const r = Math.floor(y / TILE);
+
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
+      return { r, c };
+    };
+
+    const isDarkSquare = (p: Pos) => (p.r + p.c) % 2 === 1;
+
+    const pieceCenterPx = (p: Pos) => ({
+      x: BOARD_OFFSET_X + p.c * TILE + TILE / 2,
+      y: p.r * TILE + TILE / 2,
+    });
+
+    const isOwnPiece = (g: NonNullable<typeof gameRef.current>, p: Pos) => {
+      const cell = g.board[p.r]?.[p.c] ?? 0;
+      const isRedPiece = cell === 1 || cell === 2;
+      const isBlackPiece = cell === 3 || cell === 4;
+      return (g.turn === RED && isRedPiece) || (g.turn === BLACK && isBlackPiece);
+    };
+
+    // ✅ NEW: compute which pieces must capture (green highlight), and keep until turn ends
+    const recomputeForcedCaptures = (g: NonNullable<typeof gameRef.current>) => {
+      // If vsAI and it's AI turn, don't show green for AI (keeps UI clean)
+      if (vsAI && g.turn === BLACK) {
+        g.forcedCaptures = [];
+        return;
+      }
+
+      // During chain capture, only the chain piece is mandatory
+      if (g.inChainCapture && g.chainCaptureFrom) {
+        g.forcedCaptures = [g.chainCaptureFrom];
+        return;
+      }
+
+      const all = getAllMoves(g.board, g.turn, null);
+      const caps = all.filter((seq) => (seq as any).totalCaptures > 0) as MoveSequence[];
+
+      const uniq: Pos[] = [];
+      for (const seq of caps) {
+        const m0 = seq.moves[0];
+        if (!m0) continue;
+        const f = m0.from;
+        if (!uniq.some((p) => p.r === f.r && p.c === f.c)) uniq.push(f);
+      }
+      g.forcedCaptures = uniq;
+    };
+
+    // initial computation
+    recomputeForcedCaptures(gameRef.current);
+
     const tryMove = (from: Pos, to: Pos) => {
       const g = gameRef.current!;
       if (g.winner.kind !== 'NONE') return;
       if (g.anim?.active) return;
 
-      // In vsAI mode, only allow RED (human) to move manually
-      // In 1v1 mode, allow current player to move
       if (vsAI && g.turn !== RED) return;
 
-      // If in chain capture, must move from chainCaptureFrom
       if (g.inChainCapture && g.chainCaptureFrom) {
         if (from.r !== g.chainCaptureFrom.r || from.c !== g.chainCaptureFrom.c) {
           g.msg = 'You must continue the chain capture from the current position.';
@@ -167,7 +246,6 @@ export default function CheckersGame() {
 
       const allMoves = getAllMoves(g.board, g.turn, g.chainCaptureFrom);
 
-      // Find a move that matches from->to
       let matchingMove: Move | null = null;
       for (const seq of allMoves) {
         if (seq.moves.length > 0) {
@@ -196,28 +274,25 @@ export default function CheckersGame() {
         startTime: performance.now(),
       };
 
+      // Since move is committed, clear global forced markers for this turn (until turn/chain dictates again)
+      g.forcedCaptures = [];
+
       // Add captured pieces to graveyard and remove from board IMMEDIATELY
       if (matchingMove.captures.length > 0) {
         for (const cap of matchingMove.captures) {
           const capturedCell = g.board[cap.r][cap.c];
-          
-          // Determine owner of CAPTURED piece (not current player)
-          // Renderer expects: 1 = RED, 2 = BLACK
           const capturedPlayer = (capturedCell === 1 || capturedCell === 2) ? 1 : 2;
 
-          // Remove from board IMMEDIATELY (before applyMove)
           g.board[cap.r][cap.c] = EMPTY;
 
-          // Add to graveyard with correct player value
           g.graveyard.push({
             player: capturedPlayer,
             cell: capturedCell,
-            index: g.graveyard.length
+            index: g.graveyard.length,
           });
         }
       }
 
-      // Apply move
       const result = applyMove(g.board, matchingMove, g.turn);
 
       if (!result.success) {
@@ -225,11 +300,11 @@ export default function CheckersGame() {
         return;
       }
 
-      // Check if chain capture continues
       if (result.canContinueCapture) {
         g.inChainCapture = true;
         g.chainCaptureFrom = matchingMove.to;
         g.selectedPos = matchingMove.to;
+
         const nextCaptures = getSingleCaptureMoves(
           g.board,
           matchingMove.to,
@@ -239,8 +314,10 @@ export default function CheckersGame() {
         );
         g.validMoves = nextCaptures.map((m) => m.to);
         g.msg = 'Continue chain capture - release on a highlighted square.';
+
+        // ✅ keep green highlight on the mandatory chain piece
+        g.forcedCaptures = [matchingMove.to];
       } else {
-        // Chain capture ended or no capture was made
         g.inChainCapture = false;
         g.chainCaptureFrom = null;
         g.selectedPos = null;
@@ -248,49 +325,9 @@ export default function CheckersGame() {
       }
     };
 
-    /* ===========================
-       Input (Hold-to-move for humans)
-       =========================== */
-
-    const canHumanInteract = (g: NonNullable<typeof gameRef.current>) => {
-      // In vsAI mode, only allow RED (human) to move manually.
-      // In 1v1 mode, allow the current player to move manually.
-      return !vsAI || g.turn === RED;
-    };
-
-    // Account for board offset (graveyard on sides)
-    const GRAVEYARD_WIDTH = TILE * 1.15;
-    const BOARD_OFFSET_X = GRAVEYARD_WIDTH;
-    
-    const posFromXY = (x: number, y: number): Pos | null => {
-      const xBoard = x - BOARD_OFFSET_X;   // ✅ לתרגם לקואורדינטות לוח
-      if (xBoard < 0 || xBoard >= COLS * TILE) return null;
-    
-      const c = Math.floor(xBoard / TILE);
-      const r = Math.floor(y / TILE);
-    
-      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
-      return { r, c };
-    };
-
-    const isDarkSquare = (p: Pos) => (p.r + p.c) % 2 === 1;
-
-    const pieceCenterPx = (p: Pos) => ({
-      x: BOARD_OFFSET_X + p.c * TILE + TILE / 2,   // ✅ כולל אופסט
-      y: p.r * TILE + TILE / 2,
-    });
-
-    const isOwnPiece = (g: NonNullable<typeof gameRef.current>, p: Pos) => {
-      const cell = g.board[p.r]?.[p.c] ?? 0;
-      const isRedPiece = cell === 1 || cell === 2;
-      const isBlackPiece = cell === 3 || cell === 4;
-      return (g.turn === RED && isRedPiece) || (g.turn === BLACK && isBlackPiece);
-    };
-
     const startDragIfPossible = (g: NonNullable<typeof gameRef.current>, p: Pos, x: number, y: number) => {
       if (!isDarkSquare(p)) return;
 
-      // If in chain capture, must drag from the current chain position.
       if (g.inChainCapture && g.chainCaptureFrom) {
         if (p.r !== g.chainCaptureFrom.r || p.c !== g.chainCaptureFrom.c) {
           g.msg = 'You must continue the chain capture from the current position.';
@@ -300,7 +337,6 @@ export default function CheckersGame() {
 
       if (!isOwnPiece(g, p)) return;
 
-      // Compute valid moves for this piece (respecting forced capture rules inside getAllMoves).
       const allMoves = getAllMoves(g.board, g.turn, g.inChainCapture ? g.chainCaptureFrom : null);
       const movesForPiece = allMoves.filter(
         (seq) =>
@@ -314,10 +350,10 @@ export default function CheckersGame() {
       g.selectedPos = p;
       g.validMoves = movesForPiece.map((seq) => seq.moves[0].to);
 
-      const hasCaptures = movesForPiece.some((seq) => seq.totalCaptures > 0);
+      const hasCaptures = movesForPiece.some((seq) => (seq as any).totalCaptures > 0);
       g.msg = hasCaptures
-        ? 'Captures are mandatory! Drag and release on a highlighted square to capture.'
-        : 'Drag and release on a highlighted square to move.';
+        ? 'Captures are mandatory! Drag/release or click a highlighted square to capture.'
+        : 'Drag/release or click a highlighted square to move.';
 
       const center = pieceCenterPx(p);
       const grabDx = x - center.x;
@@ -335,12 +371,14 @@ export default function CheckersGame() {
       };
     };
 
-    const cancelDrag = (g: NonNullable<typeof gameRef.current>, keepSelection: boolean) => {
+    // ✅ indicators should NOT disappear on invalid attempts
+    const cancelDrag = (g: NonNullable<typeof gameRef.current>, _keepSelection: boolean) => {
       g.drag = null;
-      if (!keepSelection && !g.inChainCapture) {
-        g.selectedPos = null;
-        g.validMoves = [];
-        g.msg = g.turn === RED ? 'RED turn - Drag a piece to move' : 'BLACK turn - Drag a piece to move';
+
+      if (g.selectedPos && g.validMoves.length > 0) {
+        g.msg = 'Choose a highlighted square, or select another piece.';
+      } else {
+        g.msg = g.turn === RED ? 'RED turn - Select or drag a piece' : 'BLACK turn - Select or drag a piece';
       }
     };
 
@@ -357,14 +395,13 @@ export default function CheckersGame() {
       const p = posFromXY(x, y);
       if (!p) return;
 
-      // Only start drag if clicking on a piece (and a legal mover).
-      const cell = g.board[p.r]?.[p.c] ?? 0;
-      if (cell === 0) return;
-
-      // Prevent text selection / unwanted dragging behavior
       e.preventDefault();
 
-      startDragIfPossible(g, p, x, y);
+      const cell = g.board[p.r]?.[p.c] ?? EMPTY;
+      const isPiece = cell !== EMPTY;
+
+      // store click candidate even if empty (for click-to-move)
+      g.clickCandidate = { pos: p, x, y, moved: false, isPiece };
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -375,14 +412,28 @@ export default function CheckersGame() {
 
       const p = posFromXY(x, y);
 
-      // Hover highlight (kept as-is)
       if (p && p.r >= 0 && p.r < ROWS && p.c >= 0 && p.c < COLS && isDarkSquare(p)) {
         g.hoveredPos = p;
       } else {
         g.hoveredPos = null;
       }
 
-      // Drag tracking
+      if (g.clickCandidate && !g.drag?.active) {
+        const dx = x - g.clickCandidate.x;
+        const dy = y - g.clickCandidate.y;
+
+        if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+          g.clickCandidate.moved = true;
+
+          // start real drag only if press began on a piece
+          if (g.clickCandidate.isPiece) {
+            startDragIfPossible(g, g.clickCandidate.pos, x, y);
+          }
+
+          g.clickCandidate = null;
+        }
+      }
+
       if (g.drag?.active) {
         g.drag.x = x - g.drag.grabDx;
         g.drag.y = y - g.drag.grabDy;
@@ -391,35 +442,57 @@ export default function CheckersGame() {
 
     const onMouseUp = (e: MouseEvent) => {
       const g = gameRef.current!;
-      if (!g.drag?.active) return;
-
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
       const target = posFromXY(x, y);
-      const from = g.drag.from;
 
-      // Clear drag visual first (so we never show two pieces during the move animation).
-      g.drag = null;
+      // ---- DRAG FLOW ----
+      if (g.drag?.active) {
+        const from = g.drag.from;
+        g.drag = null;
 
-      // Must release on board + dark square.
-      if (!target || !isDarkSquare(target)) {
-        cancelDrag(g, true);
+        if (!target || !isDarkSquare(target)) {
+          cancelDrag(g, true);
+          return;
+        }
+
+        const isAllowedTarget = g.validMoves.some((m) => m.r === target.r && m.c === target.c);
+
+        if (!isAllowedTarget) {
+          cancelDrag(g, true);
+          return;
+        }
+
+        tryMove(from, target);
         return;
       }
 
-      // Must release on highlighted valid target (derived from rules).
-      const isAllowedTarget = g.validMoves.some((m) => m.r === target.r && m.c === target.c);
+      // ---- CLICK FLOW ----
+      if (g.clickCandidate && !g.clickCandidate.moved) {
+        const clickedPos = g.clickCandidate.pos;
 
-      if (!isAllowedTarget) {
-        // If chain capture is active, keep selection & guidance so user can try again.
-        cancelDrag(g, g.inChainCapture);
-        return;
+        // click on your own piece -> select it
+        if (g.clickCandidate.isPiece && isOwnPiece(g, clickedPos)) {
+          startDragIfPossible(g, clickedPos, x, y);
+          g.drag = null; // keep selection, no drag visual
+          g.clickCandidate = null;
+          return;
+        }
+
+        // click on a square while a piece is selected -> move if valid
+        if (g.selectedPos && isDarkSquare(clickedPos)) {
+          const isAllowedTarget = g.validMoves.some(
+            (m) => m.r === clickedPos.r && m.c === clickedPos.c
+          );
+          if (isAllowedTarget) {
+            tryMove(g.selectedPos, clickedPos);
+          }
+        }
+
+        g.clickCandidate = null;
       }
-
-      // Commit the move (this will start the usual animation + chain-capture logic).
-      tryMove(from, target);
     };
 
     const step = (ts: number) => {
@@ -438,6 +511,8 @@ export default function CheckersGame() {
         g.aiPending = true;
         g.aiTimer = 0;
         g.msg = 'AI thinking…';
+        // keep green markers hidden during AI turn (handled by recomputeForcedCaptures)
+        g.forcedCaptures = [];
       }
 
       if (g.aiPending) {
@@ -445,7 +520,7 @@ export default function CheckersGame() {
         if (g.aiTimer >= AI_DELAY && !g.anim?.active) {
           g.aiPending = false;
 
-          // If in chain capture, continue from current position
+          // AI chain capture
           if (g.inChainCapture && g.chainCaptureFrom) {
             const captures = getSingleCaptureMoves(
               g.board,
@@ -455,7 +530,6 @@ export default function CheckersGame() {
               true
             );
             if (captures.length > 0) {
-              // Continue chain - pick first available capture
               const move = captures[0];
               g.anim = {
                 active: true,
@@ -466,19 +540,11 @@ export default function CheckersGame() {
                 startTime: performance.now(),
               };
 
-              // ✅ IMPORTANT: add AI captures to graveyard and remove from board IMMEDIATELY
               if (move.captures.length > 0) {
                 for (const cap of move.captures) {
                   const capturedCell = g.board[cap.r][cap.c];
-                  
-                  // Determine owner of CAPTURED piece (not current player)
-                  // Renderer expects: 1 = RED, 2 = BLACK
                   const capturedPlayer = (capturedCell === 1 || capturedCell === 2) ? 1 : 2;
-
-                  // Remove from board IMMEDIATELY (before applyMove)
                   g.board[cap.r][cap.c] = EMPTY;
-
-                  // Add to graveyard with correct player value
                   g.graveyard.push({
                     player: capturedPlayer,
                     cell: capturedCell,
@@ -495,16 +561,13 @@ export default function CheckersGame() {
                 g.chainCaptureFrom = null;
               }
             } else {
-              // No more captures, end chain
               g.inChainCapture = false;
               g.chainCaptureFrom = null;
             }
           } else {
-            // Normal AI move
             const allMoves = getAllMoves(g.board, BLACK, null);
             if (allMoves.length > 0) {
-              // Prefer captures
-              const captures = allMoves.filter((seq) => seq.totalCaptures > 0);
+              const captures = allMoves.filter((seq) => (seq as any).totalCaptures > 0);
               const movesToUse = captures.length > 0 ? captures : allMoves;
               const chosen = movesToUse[Math.floor(Math.random() * movesToUse.length)];
 
@@ -519,19 +582,11 @@ export default function CheckersGame() {
                   startTime: performance.now(),
                 };
 
-                // ✅ IMPORTANT: add AI captures to graveyard and remove from board IMMEDIATELY
                 if (move.captures.length > 0) {
                   for (const cap of move.captures) {
                     const capturedCell = g.board[cap.r][cap.c];
-                    
-                    // Determine owner of CAPTURED piece (not current player)
-                    // Renderer expects: 1 = RED, 2 = BLACK
                     const capturedPlayer = (capturedCell === 1 || capturedCell === 2) ? 1 : 2;
-
-                    // Remove from board IMMEDIATELY (before applyMove)
                     g.board[cap.r][cap.c] = EMPTY;
-
-                    // Add to graveyard with correct player value
                     g.graveyard.push({
                       player: capturedPlayer,
                       cell: capturedCell,
@@ -541,7 +596,6 @@ export default function CheckersGame() {
                 }
 
                 const result = applyMove(g.board, move, BLACK);
-                // Only continue chain capture if this was a capture move
                 if (result.canContinueCapture && move.captures.length > 0) {
                   g.inChainCapture = true;
                   g.chainCaptureFrom = move.to;
@@ -565,7 +619,6 @@ export default function CheckersGame() {
         if (g.anim.t >= 1) {
           g.anim.active = false;
 
-          // If not in chain capture, check winner and switch turns
           if (!g.inChainCapture) {
             g.winner = getWinner(g.board, g.turn);
             if (g.winner.kind === 'WIN') {
@@ -576,20 +629,25 @@ export default function CheckersGame() {
               g.validMoves = [];
               g.inChainCapture = false;
               g.chainCaptureFrom = null;
+
+              // ✅ NEW: recompute forced capture markers for the NEW turn
+              recomputeForcedCaptures(g);
+
               if (vsAI && g.turn === BLACK) {
                 g.aiPending = true;
                 g.aiTimer = 0;
                 g.msg = 'AI thinking…';
               } else {
-                g.msg = g.turn === RED ? 'RED turn - Drag a piece to move' : 'BLACK turn - Drag a piece to move';
+                g.msg = g.turn === RED ? 'RED turn - Select/drag a piece' : 'BLACK turn - Select/drag a piece';
               }
             }
+          } else {
+            // still in chain capture - keep green on that piece
+            recomputeForcedCaptures(g);
           }
-          // If in chain capture, the message and valid moves are already set in tryMove
         }
       }
 
-      // Calculate animation time (in seconds)
       const animTime = (ts - gameStartTime) / 1000;
 
       drawBoard(
@@ -599,6 +657,10 @@ export default function CheckersGame() {
           hoveredPos: g.hoveredPos,
           selectedPos: g.selectedPos,
           validMoves: g.validMoves,
+
+          // ✅ pass to renderer
+          forcedCapturePieces: g.forcedCaptures,
+
           winner: g.winner,
           graveyard: g.graveyard,
           anim: g.anim
@@ -628,12 +690,8 @@ export default function CheckersGame() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setScreen('MENU');
-      if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) {
-        resetGame();
-      }
-      if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey) {
-        navigate('/');
-      }
+      if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) resetGame();
+      if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey) navigate('/');
     };
 
     canvas.addEventListener('mousedown', onMouseDown);
@@ -658,6 +716,7 @@ export default function CheckersGame() {
     return (
       <div
         style={{
+          direction: 'rtl',
           minHeight: '100%',
           display: 'grid',
           placeItems: 'center',
@@ -667,25 +726,25 @@ export default function CheckersGame() {
       >
         <div
           style={{
-            marginTop: 100,
-            width: 420,
-            padding: '28px 30px 32px',
-            borderRadius: 22,
+            marginTop: 'clamp(4rem, 12vh, 8rem)',
+            width: 'min(92vw, 32rem)',
+            padding: 'clamp(2rem, 4vw, 2.8rem)',
+            borderRadius: '1.8rem',
             background: 'rgba(14,16,22,.92)',
             border: '1px solid rgba(255,255,255,.12)',
-            boxShadow: '0 20px 50px rgba(0,0,0,.55)',
+            boxShadow: '0 2.2rem 4.5rem rgba(0,0,0,.6)',
             display: 'grid',
-            gap: 18,
+            gap: '1.5rem',
           }}
         >
           <div style={{ textAlign: 'center' }}>
             <h1
               style={{
-                margin: 10,
-                marginBottom: 20,
-                fontSize: 34,
+                margin: 0,
+                marginBottom: '1.5rem',
+                fontSize: 'clamp(2.2rem, 4vw, 2.8rem)',
                 fontWeight: 800,
-                letterSpacing: 0.4,
+                letterSpacing: '0.04em',
               }}
             >
               בחר מצב משחק
@@ -712,17 +771,18 @@ export default function CheckersGame() {
 
           <div
             style={{
-              marginTop: 4,
-              padding: '14px 16px',
-              borderRadius: 14,
+              marginTop: '0.5rem',
+              padding: 'clamp(1.2rem, 3vw, 1.6rem)',
+              borderRadius: '1.2rem',
               background: 'rgba(255,255,255,.04)',
               border: '1px solid rgba(255,255,255,.08)',
               display: 'grid',
-              gap: 8,
+              gap: '0.8rem',
             }}
           >
             <div
               style={{
+                direction: 'ltr',
                 display: 'flex',
                 justifyContent: 'space-between',
                 fontSize: 14,
@@ -735,34 +795,18 @@ export default function CheckersGame() {
             <input
               type="range"
               min={2}
-              max={6}
+              max={9}
               value={aiDepth}
               onChange={(e) => setAiDepth(+e.target.value)}
-              style={{
-                accentColor: '#7bb7ff',
-                cursor: 'pointer',
-              }}
+              style={{ accentColor: '#7bb7ff', cursor: 'pointer' }}
             />
 
-            <div
-              style={{
-                fontSize: 12,
-                opacity: 0.6,
-                textAlign: 'center',
-              }}
-            >
-              4–5 recommended
+            <div style={{ fontSize: 12, opacity: 0.6, textAlign: 'center' }}>
+              6–7 recommended
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 4,
-              textAlign: 'center',
-              fontSize: 12,
-              opacity: 0.55,
-            }}
-          >
+          <div style={{ marginTop: '0.5rem', textAlign: 'center', fontSize: '0.85rem', opacity: 0.6 }}>
             ESC to return to menu · R to restart · H to go home
           </div>
         </div>
@@ -781,6 +825,7 @@ export default function CheckersGame() {
           </h2>
         </div>
       </section>
+
       <div
         style={{
           display: 'flex',
@@ -832,26 +877,17 @@ function MenuButton({
       style={{
         all: 'unset',
         cursor: 'pointer',
-        padding: '14px 18px',
-        borderRadius: 16,
-        background:
-          'linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02))',
+        width: '90%',
+        padding: '0.9em 1.2em',
+        borderRadius: '0.9em',
+        background: 'linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02))',
         border: '1px solid rgba(255,255,255,.12)',
-        boxShadow:
-          '0 10px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)',
+        boxShadow: '0 0.8em 1.8em rgba(0,0,0,.45), inset 0 0.08em 0 rgba(255,255,255,.06)',
         display: 'grid',
-        gap: 4,
+        gap: '0.4em',
         transition: 'transform .15s ease, box-shadow .15s ease',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow =
-          '0 18px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow =
-          '0 10px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)';
+        direction: 'rtl',
+        textAlign: 'center',
       }}
     >
       <div style={{ fontSize: 18, fontWeight: 700 }}>{label}</div>
@@ -877,11 +913,9 @@ function GameButton({
         cursor: 'pointer',
         padding: '12px 20px',
         borderRadius: 14,
-        background:
-          'linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02))',
+        background: 'linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02))',
         border: '1px solid rgba(255,255,255,.12)',
-        boxShadow:
-          '0 8px 20px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06)',
+        boxShadow: '0 8px 20px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06)',
         display: 'flex',
         alignItems: 'center',
         gap: 10,

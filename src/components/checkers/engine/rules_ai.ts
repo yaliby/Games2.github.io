@@ -33,29 +33,31 @@ export function createBoard(): Board {
     Array.from({ length: COLS }, () => EMPTY)
   );
 
-  // Israeli Checkers: 10x10 board, 20 pieces per player
-  // Row 0 is top, row 9 is bottom
-  // Black pieces start at top (rows 0-3), Red at bottom (rows 6-9)
-  // Only dark squares are used (checkerboard pattern)
-  
-  for (let r = 0; r < 4; r++) {
+  // 3 rows per player (remove 1 row per side compared to the 4-row setup)
+  // Black at top: rows 0-2
+  // Red at bottom: rows 7-9
+  const START_ROWS = 3;
+  const RED_START = ROWS - START_ROWS;
+
+  for (let r = 0; r < START_ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if ((r + c) % 2 === 1) {
-        board[r][c] = BLACK_MAN; // Black starts at top (moves down toward row 9)
+        board[r][c] = BLACK_MAN;
       }
     }
   }
 
-  for (let r = 6; r < 10; r++) {
+  for (let r = RED_START; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if ((r + c) % 2 === 1) {
-        board[r][c] = RED_MAN; // Red starts at bottom (moves up toward row 0)
+        board[r][c] = RED_MAN;
       }
     }
   }
 
   return board;
 }
+
 
 export function inBounds(r: number, c: number): boolean {
   return r >= 0 && r < ROWS && c >= 0 && c < COLS;

@@ -17,7 +17,7 @@ import { drawBoard } from './render/renderer';
 
 /* ================= CONFIG ================= */
 
-const TILE = 90;
+const TILE = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.087);
 const DROP_TIME = 0.28;
 const POP_TIME = 0.22;
 const AI_DELAY = 0.5;
@@ -265,6 +265,7 @@ export default function ConnectFourGame() {
   return (
     <div
       style={{
+        direction: 'rtl',
         minHeight: '100%',
         display: 'grid',
         placeItems: 'center',
@@ -276,26 +277,26 @@ export default function ConnectFourGame() {
       {/* Menu Card */}
       <div
         style={{
-          marginTop: 100,
-          width: 420,
-          padding: '28px 30px 32px',
-          borderRadius: 22,
-          background: 'rgba(14,16,22,.92)',
-          border: '1px solid rgba(255,255,255,.12)',
-          boxShadow: '0 20px 50px rgba(0,0,0,.55)',
-          display: 'grid',
-          gap: 18,
-        }}
+        marginTop: 'clamp(4rem, 12vh, 8rem)',
+        width: 'min(92vw, 32rem)',          // היה ~26rem
+        padding: 'clamp(2rem, 4vw, 2.8rem)',// היה ~2rem
+        borderRadius: '1.8rem',             // היה 1.4rem
+        background: 'rgba(14,16,22,.92)',
+        border: '1px solid rgba(255,255,255,.12)',
+        boxShadow: '0 2.2rem 4.5rem rgba(0,0,0,.6)',
+        display: 'grid',
+        gap: '1.5rem',                      // היה ~1.1rem
+      }}
       >
         {/* Title */}
         <div style={{ textAlign: 'center' }}>
           <h1
-            style={{
-              margin: 10,
-              marginBottom: 20,
-              fontSize: 34,
+              style={{
+              margin: 0,
+              marginBottom: '1.5rem',
+              fontSize: 'clamp(2.2rem, 4vw, 2.8rem)',
               fontWeight: 800,
-              letterSpacing: 0.4,
+              letterSpacing: '0.04em',
             }}
           >
            בחר מצב משחק
@@ -325,17 +326,18 @@ export default function ConnectFourGame() {
         {/* Difficulty */}
         <div
           style={{
-            marginTop: 4,
-            padding: '14px 16px',
-            borderRadius: 14,
-            background: 'rgba(255,255,255,.04)',
-            border: '1px solid rgba(255,255,255,.08)',
-            display: 'grid',
-            gap: 8,
-          }}
+          marginTop: '0.5rem',
+          padding: 'clamp(1.2rem, 3vw, 1.6rem)',
+          borderRadius: '1.2rem',
+          background: 'rgba(255,255,255,.04)',
+          border: '1px solid rgba(255,255,255,.08)',
+          display: 'grid',
+          gap: '0.8rem',
+        }}
         >
           <div
             style={{
+              direction: 'ltr',
               display: 'flex',
               justifyContent: 'space-between',
               fontSize: 14,
@@ -371,11 +373,11 @@ export default function ConnectFourGame() {
         {/* Hint */}
         <div
           style={{
-            marginTop: 4,
-            textAlign: 'center',
-            fontSize: 12,
-            opacity: 0.55,
-          }}
+          marginTop: '0.5rem',
+          textAlign: 'center',
+          fontSize: '0.85rem',
+          opacity: 0.6,
+        }}
         >
           ESC to return to menu · R to restart · H to go home
         </div>
@@ -459,26 +461,24 @@ function MenuButton({
       style={{
         all: 'unset',
         cursor: 'pointer',
-        padding: '14px 18px',
-        borderRadius: 16,
+
+        width: '90%',              // ⬅️ מתיישר לגודל האבא
+        padding: '0.9em 1.2em',     // ⬅️ סקייל לפי font-size של האבא
+        borderRadius: '0.9em',
+
         background:
           'linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02))',
         border: '1px solid rgba(255,255,255,.12)',
         boxShadow:
-          '0 10px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)',
+          '0 0.8em 1.8em rgba(0,0,0,.45), inset 0 0.08em 0 rgba(255,255,255,.06)',
+
         display: 'grid',
-        gap: 4,
+        gap: '0.4em',
+
         transition: 'transform .15s ease, box-shadow .15s ease',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow =
-          '0 18px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow =
-          '0 10px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06)';
+
+        direction: 'rtl',
+        textAlign: 'center',
       }}
     >
       <div style={{ fontSize: 18, fontWeight: 700 }}>

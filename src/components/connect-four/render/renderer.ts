@@ -1,4 +1,4 @@
-﻿﻿import type { Board, Cell, Winner } from '../engine/types';
+﻿﻿﻿﻿import type { Board, Cell, Winner } from '../engine/types';
 import { ROWS, COLS } from '../engine/types';
 import { EMPTY, RED } from '../engine/rules_ai';
 
@@ -34,6 +34,8 @@ type RenderConfig = {
   animDurationMs?: number;
   /** Optional: simple multiplier over animDurationMs (or default duration). */
   animSlowMo?: number;
+  /** Optional: winner line animation progress (0..1). */
+  winnerLine?: { progress?: number };
 };
 
 /* ---------- Visual constants (premium/arcade) --------- */
@@ -98,7 +100,7 @@ export function drawBoard(
   state: RenderState = {},
   cfg?: RenderConfig
 ) {
-  const TILE = cfg?.tile ?? 90;
+  const TILE = cfg?.tile ?? Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.087);;
   const W = COLS * TILE;
   const H = ROWS * TILE;
 
@@ -290,7 +292,7 @@ export function drawBoard(
 
   /* ---------- Winner connecting lines (drawn above dice) ---------- */
   if (winCells && winCells.length >= 4 && _lastPlacedDisc) {
-    drawWinnerLines(ctx, winCells, TILE, _lastPlacedDisc, lineProgress);
+    drawWinnerLines(ctx, winCells, _lastPlacedDisc, { tile: TILE, winnerLine: { progress: lineProgress } });
   }
 
   /* ---------- Animated falling dice ---------- */
@@ -575,113 +577,97 @@ function drawDiceDisc(
 function drawWinnerLines(
   ctx: CanvasRenderingContext2D,
   cells: Array<[number, number]>,
-  TILE: number,
-  lastPlacedDisc: { r: number; c: number },
-  progress: number
+  _lastPlacedDisc: { r: number; c: number } | null,
+  cfg: RenderConfig
 ) {
-  if (cells.length < 4) return;
+  if (!cells || cells.length === 0) return;
 
-  ctx.save();
-  
-  // Static, elegant connecting line between winning dice
-  const lineWidth = 4.5;
-  const lineOpacity = 0.7;
+  // ✅ Always draw from the left-most winning disc to the right-most.
+  // Primary: column (c) ascending. Secondary: row (r) ascending.
+  const orderedCells = [...cells].sort((a, b) => (a[1] - b[1]) || (a[0] - b[0]));
 
-  // Find the index of the last placed disc in the winning cells
-  let startIndex = -1;
-  for (let i = 0; i < cells.length; i++) {
-    const [r, c] = cells[i];
-    if (r === lastPlacedDisc.r && c === lastPlacedDisc.c) {
-      startIndex = i;
-      break;
-    }
+  const winnerCoords = orderedCells.map(([r, c]) => ({
+    x: c * cfg.tile + cfg.tile / 2,
+    y: r * cfg.tile + cfg.tile / 2,
+  }));
+
+  const lineProgress = cfg.winnerLine?.progress ?? 1;
+  const glowW = cfg.tile * 0.13;
+
+  // Total polyline length (used for progressive drawing)
+  let totalLen = 0;
+  for (let i = 0; i < winnerCoords.length - 1; i++) {
+    totalLen += Math.hypot(
+      winnerCoords[i + 1].x - winnerCoords[i].x,
+      winnerCoords[i + 1].y - winnerCoords[i].y
+    );
   }
-  
-  // If last placed disc not found, use first cell as start
-  if (startIndex === -1) {
-    startIndex = 0;
-  }
-  
-  // The end is always the last cell in the array
-  const endIndex = cells.length - 1;
-  
-  // Calculate total path length for animation
-  let totalPathLength = 0;
-  const segmentLengths: number[] = [];
-  for (let i = startIndex; i < endIndex; i++) {
-    const [r1, c1] = cells[i];
-    const [r2, c2] = cells[i + 1];
-    const dx = (c2 - c1) * TILE;
-    const dy = (r2 - r1) * TILE;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    segmentLengths.push(length);
-    totalPathLength += length;
-  }
-  
-  // Calculate how far along the path we should draw
-  const currentPathLength = progress * totalPathLength;
-  
-  // Draw the animated line through all cells
-  ctx.beginPath();
-  let accumulatedLength = 0;
-  let hasMoved = false;
-  
-  for (let i = startIndex; i <= endIndex; i++) {
-    const [r, c] = cells[i];
-    const x = c * TILE + TILE / 2;
-    const y = r * TILE + TILE / 2;
-    
-    if (!hasMoved) {
-      ctx.moveTo(x, y);
-      hasMoved = true;
-    } else {
-      // Check if we should draw this segment
-      const prevLength = accumulatedLength;
-      const segmentLength = segmentLengths[i - startIndex - 1];
-      accumulatedLength += segmentLength;
-      
-      if (accumulatedLength <= currentPathLength) {
-        // Draw full segment
-        ctx.lineTo(x, y);
-      } else if (prevLength < currentPathLength) {
-        // Draw partial segment
-        const segmentProgress = (currentPathLength - prevLength) / segmentLength;
-        const [rPrev, cPrev] = cells[i - 1];
-        const xPrev = cPrev * TILE + TILE / 2;
-        const yPrev = rPrev * TILE + TILE / 2;
-        const xCurrent = lerp(xPrev, x, segmentProgress);
-        const yCurrent = lerp(yPrev, y, segmentProgress);
-        ctx.lineTo(xCurrent, yCurrent);
-        break;
-      } else {
-        break;
-      }
-    }
+  if (totalLen <= 0) return;
+
+  let remaining = totalLen * clamp01(lineProgress);
+
+  let tipX: number | null = null;
+  let tipY: number | null = null;
+
+  for (let i = 0; i < winnerCoords.length - 1; i++) {
+    if (remaining <= 0) break;
+
+    const a = winnerCoords[i];
+    const b = winnerCoords[i + 1];
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+    if (segLen <= 0) continue;
+
+    const drawLen = Math.min(segLen, remaining);
+    const t = drawLen / segLen;
+
+    const endX = a.x + (b.x - a.x) * t;
+    const endY = a.y + (b.y - a.y) * t;
+
+    // Outer glow
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(endX, endY);
+    ctx.lineWidth = glowW;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.shadowBlur = glowW * 2.2;
+    ctx.shadowColor = 'rgba(255,255,255,0.22)';
+    ctx.stroke();
+    ctx.restore();
+
+    // Inner bright line
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(endX, endY);
+    ctx.lineWidth = glowW * 0.45;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+    ctx.shadowBlur = glowW * 1.2;
+    ctx.shadowColor = 'rgba(255,255,255,0.35)';
+    ctx.stroke();
+    ctx.restore();
+
+    tipX = endX;
+    tipY = endY;
+
+    remaining -= drawLen;
   }
 
-  // Static gradient along the line
-  const [rStart, cStart] = cells[startIndex];
-  const [rEnd, cEnd] = cells[endIndex];
-  const xStart = cStart * TILE + TILE / 2;
-  const yStart = rStart * TILE + TILE / 2;
-  const xEnd = cEnd * TILE + TILE / 2;
-  const yEnd = rEnd * TILE + TILE / 2;
-  
-  const gradient = ctx.createLinearGradient(xStart, yStart, xEnd, yEnd);
-  gradient.addColorStop(0, `rgba(255,255,255,${lineOpacity})`);
-  gradient.addColorStop(0.5, `rgba(255,255,255,${lineOpacity * 1.1})`);
-  gradient.addColorStop(1, `rgba(255,255,255,${lineOpacity})`);
-
-  ctx.strokeStyle = gradient;
-  ctx.lineWidth = lineWidth;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.shadowBlur = 8;
-  ctx.shadowColor = 'rgba(255,255,255,0.4)';
-  ctx.stroke();
-
-  ctx.restore();
+  // Tip dot (at the current end of the animated line)
+  if (tipX != null && tipY != null) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, glowW * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.98)';
+    ctx.shadowBlur = glowW * 1.2;
+    ctx.shadowColor = 'rgba(255,255,255,0.45)';
+    ctx.fill();
+    ctx.restore();
+  }
 }
+
 
 function makeWinnerSet(winner?: Winner | null): Set<string> | null {
   if (!winner || winner.kind !== 'WIN') return null;

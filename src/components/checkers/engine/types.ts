@@ -1,5 +1,5 @@
-export const ROWS = 10 as const;
-export const COLS = 10 as const;
+export const ROWS = 8 as const;
+export const COLS = 8 as const;
 
 // Cell values: 0 = empty, 1 = red man, 2 = red king, 3 = black man, 4 = black king
 export type Cell = 0 | 1 | 2 | 3 | 4;

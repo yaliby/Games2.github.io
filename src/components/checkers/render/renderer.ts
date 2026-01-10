@@ -11,14 +11,7 @@ type AnimState = {
   from: Pos;
   to: Pos;
   captures: Pos[];
-  /**
-   * Back-compat: external game loop can drive animation with a normalized progress in [0..1].
-   */
   t01?: number;
-
-  /**
-   * Optional: external loop can pass absolute time and a duration to compute progress.
-   */
   startTime?: number; // seconds
   durationSec?: number;
 };
@@ -34,6 +27,10 @@ export type RenderState = {
   hoveredPos?: Pos | null;
   selectedPos?: Pos | null;
   validMoves?: Pos[];
+
+  // ✅ NEW: pieces that MUST capture this turn (green highlight)
+  forcedCapturePieces?: Pos[];
+
   winner?: Winner | null;
   anim?: AnimState | null;
   time?: number; // Current time for animations (seconds)
@@ -42,29 +39,22 @@ export type RenderState = {
   graveyard?: Array<{
     player: number; // 1=RED, 2=BLACK (owner of captured piece)
     cell: Cell;
-    index: number; // (kept for compatibility; we don't rely on it for layout)
+    index: number;
   }>;
 };
 
 export type RenderConf = {
   tile?: number;
   animDurationMs?: number;
-
-  /**
-   * Width (px) of EACH side graveyard margin.
-   * If not provided, uses a modest default.
-   */
   graveyardWidth?: number;
 };
 
 const COLORS = {
-  // Board
   lightSquare: '#f3f1ff',
   darkSquare: '#2b2b40',
   darkSquareHover: '#3a3a57',
   darkSquareSelected: '#4a3b8f',
 
-  // UI / overlays
   overlay: 'rgba(0,0,0,0.55)',
   text: '#f6f7ff',
   textSub: 'rgba(246,247,255,0.75)',
@@ -96,12 +86,10 @@ function animProgress01(time: number, anim: AnimState, cfg?: RenderConf) {
 }
 
 function buildAnimPath(from: Pos, to: Pos, _captures: Pos[]) {
-  // Keeping logic stable: single segment from->to
   const path: Pos[] = [from, to];
   return path;
 }
 
-// ------- Fancy piece drawing -------
 function drawPiece(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -110,12 +98,6 @@ function drawPiece(
   TILE: number,
   liftY: number
 ) {
-  // cell mapping in your project:
-  // 0 empty
-  // 1 red man
-  // 2 red king
-  // 3 black man
-  // 4 black king
   const isRed = cell === 1 || cell === 2;
   const isKing = cell === 2 || cell === 4;
 
@@ -196,7 +178,6 @@ export function drawBoard(
 ) {
   const TILE = cfg?.tile ?? 90;
 
-  // ✅ Smaller, "slightly wider than disc" graveyard
   const GRAVEYARD_WIDTH = cfg?.graveyardWidth ?? TILE * 1.15;
 
   const BOARD_W = COLS * TILE;
@@ -212,7 +193,6 @@ export function drawBoard(
   const drag = state.drag ?? null;
   const animT01 = anim ? animProgress01(time, anim, cfg) : 0;
 
-  // Background
   ctx.clearRect(0, 0, W, H);
 
   // Subtle vignette
@@ -237,7 +217,6 @@ export function drawBoard(
       const isDark = (r + c) % 2 === 1;
       let color = isDark ? COLORS.darkSquare : COLORS.lightSquare;
 
-      // Hover / selection only on dark squares
       if (
         isDark &&
         state.hoveredPos &&
@@ -258,7 +237,6 @@ export function drawBoard(
       ctx.fillStyle = color;
       ctx.fillRect(BOARD_OFFSET_X + c * TILE, r * TILE, TILE, TILE);
 
-      // Inner bevel for nicer look on dark squares
       if (isDark) {
         ctx.save();
         ctx.globalAlpha = 0.18;
@@ -275,6 +253,34 @@ export function drawBoard(
     }
   }
 
+  /* ---------- Forced Capture Pieces (GREEN halo) ---------- */
+  if (state.forcedCapturePieces && state.forcedCapturePieces.length) {
+    const pulse = 0.5 + 0.5 * Math.sin(time * 5.5);
+
+    for (const p of state.forcedCapturePieces) {
+      const cx = BOARD_OFFSET_X + p.c * TILE + TILE / 2;
+      const cy = p.r * TILE + TILE / 2;
+
+      ctx.save();
+
+      // soft glow
+      ctx.strokeStyle = `rgba(60, 255, 140, ${0.10 + 0.18 * pulse})`;
+      ctx.lineWidth = TILE * (0.14 + 0.02 * pulse);
+      ctx.beginPath();
+      ctx.arc(cx, cy, TILE * 0.44, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // crisp ring
+      ctx.strokeStyle = `rgba(60, 255, 140, ${0.65 + 0.25 * pulse})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, TILE * 0.46, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
   /* ---------- Valid Moves (glowing rings) ---------- */
   if (state.validMoves && state.validMoves.length) {
     const pulse = 0.5 + 0.5 * Math.sin(time * 6);
@@ -285,14 +291,12 @@ export function drawBoard(
 
       ctx.save();
 
-      // Glow
       ctx.strokeStyle = `rgba(46,200,255,${0.12 + 0.18 * pulse})`;
       ctx.lineWidth = TILE * (0.12 + 0.02 * pulse);
       ctx.beginPath();
       ctx.arc(cx, cy, TILE * 0.38, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Ring
       ctx.strokeStyle = `rgba(46,200,255,${0.7 + 0.25 * pulse})`;
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -309,8 +313,6 @@ export function drawBoard(
       const cell = board[r]?.[c] ?? EMPTY;
       if (cell === EMPTY) continue;
 
-      // Skip drawing the origin/destination piece if it's animating (we draw it on top later).
-      // Also skip the piece being dragged (we draw it on top last).
       if (anim) {
         const isFrom = r === anim.from.r && c === anim.from.c;
         const isTo = r === anim.to.r && c === anim.to.c;
@@ -323,22 +325,19 @@ export function drawBoard(
     }
   }
 
-  /* ---------- Graveyard (Captured Pieces Stack) ---------- */
+  /* ---------- Graveyard ---------- */
   if (state.graveyard && state.graveyard.length > 0) {
-    // Smaller disks in graveyard
-    const gyTile = TILE * 0.6;      // visual size of a disk in graveyard
-    const spacing = TILE * 0.5;     // vertical spacing
+    const gyTile = TILE * 0.6;
+    const spacing = TILE * 0.5;
     const topPad = TILE * 0.8;
     const bottomPad = TILE * 0.8;
 
     const usableH = Math.max(1, H - topPad - bottomPad);
     const piecesPerColumn = Math.max(1, Math.floor(usableH / spacing));
 
-    // Split by OWNER of the captured piece:
     const redPile = state.graveyard.filter((p) => p.player === 1);
     const blackPile = state.graveyard.filter((p) => p.player === 2);
 
-    // ✅ Center of each side graveyard area (not on the board!)
     const leftCenterX = GRAVEYARD_WIDTH * 0.3;
     const rightCenterX = BOARD_OFFSET_X + BOARD_W + GRAVEYARD_WIDTH * 0.7;
 
@@ -354,19 +353,16 @@ export function drawBoard(
             ? leftCenterX + colShift
             : rightCenterX - colShift;
 
-        // ✅ Bottom-up stacking (continues upward)
         const y = H - bottomPad - row * spacing;
-
         drawPiece(ctx, x, y, p.cell, gyTile, 0);
       }
     };
 
-    // Red on the red side (left), Gray/Black on the gray side (right)
     drawPile(redPile, 'LEFT');
     drawPile(blackPile, 'RIGHT');
   }
 
-  /* ---------- Animated Piece (drawn last so it appears on top) ---------- */
+  /* ---------- Animated Piece ---------- */
   if (anim) {
     const path = buildAnimPath(anim.from, anim.to, anim.captures);
     const segs = Math.max(1, path.length - 1);
@@ -400,7 +396,7 @@ export function drawBoard(
     drawPiece(ctx, x, y, piece, TILE, bounce);
   }
 
-  /* ---------- Dragged Piece (human hold-to-move) ---------- */
+  /* ---------- Dragged Piece ---------- */
   if (drag?.active) {
     const cell = board[drag.from.r]?.[drag.from.c] ?? EMPTY;
     if (cell !== EMPTY) {
@@ -409,7 +405,7 @@ export function drawBoard(
     }
   }
 
-  /* ---------- UI / Winner Overlay ---------- */
+  /* ---------- Winner Overlay ---------- */
   if (state.winner && state.winner.kind !== 'NONE') {
     ctx.save();
     ctx.fillStyle = COLORS.overlay;

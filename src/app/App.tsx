@@ -5,6 +5,8 @@ import Home from '../pages/Home';
 import Game from '../pages/Game';
 import CheckersGame from '../components/checkers/CheckersGame';
 import NotFound from '../pages/NotFound';
+import SlitherGame from '../components/slither/SlitherGame';
+
 
 export default function App() {
   // Use the same base as vite.config.ts for consistency
@@ -19,6 +21,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/game/connect-four" element={<Game />} />
           <Route path="/game/checkers" element={<CheckersGame />} />
+          <Route path="/game/slither" element={<SlitherGame />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
 
