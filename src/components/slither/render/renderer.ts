@@ -371,10 +371,25 @@ export function drawWorld(ctx: CanvasRenderingContext2D, world: World, view: Vie
   ctx.drawImage(getBackground(view.w, view.h), 0, 0);
   drawGrid(ctx, view, camX, camY);
 
+  // Smooth zoom out as the player grows (Slither.io feel).
+  // Keep in renderer so it stays compatible with existing `View` type.
+  const player = world.snakes[0];
+  const len = player?.alive ? (player.desiredLen ?? 0) : 0;
+  // 1.0 at small sizes → down to ~0.72 at very large sizes.
+  const zoom = clamp(1 - (Math.max(0, len - 60) / 1400) * 0.35, 0.72, 1.0);
+
   // Visible bounds (cull)
   const margin = 140;
-  const minX = camX - view.w / 2 - margin, maxX = camX + view.w / 2 + margin;
-  const minY = camY - view.h / 2 - margin, maxY = camY + view.h / 2 + margin;
+  const halfViewW = (view.w / 2) / zoom;
+  const halfViewH = (view.h / 2) / zoom;
+  const minX = camX - halfViewW - margin, maxX = camX + halfViewW + margin;
+  const minY = camY - halfViewH - margin, maxY = camY + halfViewH + margin;
+
+  // Draw world layer with zoom around the screen center.
+  ctx.save();
+  ctx.translate(view.w * 0.5, view.h * 0.5);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-view.w * 0.5, -view.h * 0.5);
 
   // Pellets
   const halfW = view.w * 0.5;
@@ -399,6 +414,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, world: World, view: Vie
     const s = world.snakes[i];
     if (s.alive && s.points.length) drawSnakeHead(ctx, view, s, camX, camY, alpha);
   }
+
+  ctx.restore();
 
   drawLeaderboard(ctx, world);
   drawToast(ctx, world, view);

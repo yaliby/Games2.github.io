@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg-main: #0f1117;
   --bg-card: #171923;
   --border-soft: rgba(255, 255, 255, 0.06);
@@ -66,14 +66,18 @@ h2 {
 
 /* layout */
 main {
-  padding: 4vh 5vw;
+  padding: clamp(1rem, 4vh, 3rem) clamp(1rem, 5vw, 4rem);
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 /* games grid */
 .games-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
-  gap: 1.5rem;
+  gap: clamp(1rem, 1.5rem, 2rem);
+  width: 100%;
 }
 
 /* game card */
@@ -230,18 +234,80 @@ main {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 .app-layout main {
   flex: 1;
+  width: 100%;
+}
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(0.75rem, 2vh, 1.5rem) clamp(1rem, 5vw, 4rem);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+header h2 {
+  font-size: clamp(1rem, 4vw, 1.5rem);
+  margin: 0;
+  white-space: nowrap;
+}
+
+header span {
+  font-size: clamp(0.7rem, 2vw, 0.9rem);
+  opacity: 0.7;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Game page container */
+.game-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: clamp(0.5rem, 2vh, 1.5rem);
+  box-sizing: border-box;
+}
+
+/* Responsive game canvas container */
+.game-canvas-container {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: clamp(0.5rem, 2vw, 1rem);
+  box-sizing: border-box;
+}
+
+.game-canvas-container canvas {
+  max-width: 100%;
+  height: auto;
+  display: block;
 }
 
 /* footer */
 footer {
   margin-top: auto;
-  padding: 2vh 5vw;
+  padding: clamp(1rem, 2vh, 2rem) clamp(1rem, 5vw, 4rem);
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: clamp(0.75rem, 0.85rem, 1rem);
+  text-align: center;
+}
+
+footer > div {
+  margin-bottom: 0.5rem;
 }
 
 .game-card__image img {
@@ -262,4 +328,65 @@ footer {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  main {
+    padding: clamp(0.75rem, 3vh, 2rem) clamp(0.75rem, 4vw, 2rem);
+  }
+
+  .games-grid {
+    gap: clamp(0.75rem, 1.5rem, 1.5rem);
+  }
+
+  .game-card {
+    padding: 1rem;
+    min-height: 8rem;
+  }
+
+  header {
+    padding: clamp(0.5rem, 1.5vh, 1rem) clamp(0.75rem, 4vw, 2rem);
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  footer {
+    padding: clamp(0.75rem, 1.5vh, 1.5rem) clamp(0.75rem, 4vw, 2rem);
+    font-size: clamp(0.7rem, 0.85rem, 0.9rem);
+  }
+
+  .home-hero {
+    padding-top: 4vh;
+  }
+
+  .home-hero__title {
+    font-size: clamp(1.8rem, 8vw, 2.5rem);
+  }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+  .games-grid {
+    grid-template-columns: 1fr;
+  }
+
+  header h2 {
+    font-size: clamp(0.9rem, 5vw, 1.2rem);
+  }
+
+  header span {
+    font-size: clamp(0.65rem, 3vw, 0.8rem);
+  }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  .game-card:hover {
+    transform: none;
+  }
+
+  .game-card:active {
+    transform: scale(0.98);
+  }
 }

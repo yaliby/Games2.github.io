@@ -29,21 +29,31 @@ export type Snake = {
   color: string;
   isPlayer: boolean;
 
-  dir: number;      // radians
+  dir: number;      // radians (current heading)
   speed: number;    // base px/sec
   turnRate: number; // rad/sec
   radius: number;   // body thickness
+
+  // Smooth movement with inertia
+  velX: number;     // velocity x component (px/sec)
+  velY: number;     // velocity y component (px/sec)
+  targetSpeed: number; // desired speed (for smooth acceleration)
 
   points: Vec[];      // points[0] = head
   desiredLen: number; // how many points we want (grows with pellets)
 
   alive: boolean;
   respawnTimer: number;
+  /** Short spawn protection to prevent instant kill/respawn flicker. */
+  spawnInvuln: number;
 
   // boost / stamina style (boost costs length slowly, like Slither)
   boosting: boolean;
   boostHeat: number;     // 0..1 (higher means recently boosted)
   boostCooldown: number; // seconds remaining until full boost allowed (soft)
+  energy: number;        // 0..1, energy for boosting (recharges when not boosting)
+  /** Accumulator for turning boost drain into dropped pellets. */
+  boostDropAcc: number;
 
   // bot brain
   ai: SnakeAI;
@@ -86,6 +96,19 @@ export type SpatialGrid = {
   usedKeys: number[];
 };
 
+export type PelletGridBucket = {
+  /** Indices into world.pellets */
+  idx: number[];
+};
+
+export type PelletGrid = {
+  cellSize: number;
+  cols: number;
+  rows: number;
+  buckets: Map<number, PelletGridBucket>;
+  usedKeys: number[];
+};
+
 export type World = {
   W: number;
   H: number;
@@ -98,6 +121,11 @@ export type World = {
 
   // Optional spatial grid cache for collisions
   _grid?: SpatialGrid;
+
+  /** Optional pellet spatial grid for nearby queries. */
+  _pelletGrid?: PelletGrid;
+  /** Internal: mark pellet grid dirty when pellets change. */
+  _pelletGridDirty?: boolean;
 
   /** Optional: cached list of top snakes for HUD (updated periodically). */
   leaderboard?: { id: string; name: string; score: number; color: string }[];

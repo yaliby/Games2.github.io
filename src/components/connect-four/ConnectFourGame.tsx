@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Board, Player, Winner, Pos } from './engine/types';
 import { ROWS, COLS } from './engine/types';
@@ -17,10 +17,25 @@ import { drawBoard } from './render/renderer';
 
 /* ================= CONFIG ================= */
 
-const TILE = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.087);
 const DROP_TIME = 0.28;
 const POP_TIME = 0.22;
 const AI_DELAY = 0.5;
+
+// Calculate responsive tile size
+function calculateTileSize(): number {
+  const maxWidth = window.innerWidth - 40; // Account for padding
+  const maxHeight = window.innerHeight - 200; // Account for header/footer/UI
+  const baseTile = Math.floor(Math.min(maxWidth, maxHeight) * 0.087);
+  const boardWidth = COLS * baseTile;
+  const boardHeight = ROWS * baseTile;
+  
+  // Ensure it fits on screen
+  const scaleX = maxWidth / boardWidth;
+  const scaleY = maxHeight / boardHeight;
+  const scale = Math.min(scaleX, scaleY, 1);
+  
+  return Math.max(40, Math.floor(baseTile * scale));
+}
 
 type Screen = 'MENU' | 'GAME';
 
@@ -46,6 +61,7 @@ export default function ConnectFourGame() {
   const [screen, setScreen] = useState<Screen>('MENU');
   const [vsAI, setVsAI] = useState<boolean>(true);
   const [aiDepth, setAiDepth] = useState<number>(6);
+  const [tileSize, setTileSize] = useState<number>(calculateTileSize());
 
   /* ---------- GAME STATE (REF) ---------- */
   const gameRef = useRef<{
@@ -61,9 +77,19 @@ export default function ConnectFourGame() {
   } | null>(null);
 
   const size = useMemo(
-    () => ({ w: COLS * TILE, h: ROWS * TILE }),
-    []
+    () => ({ w: COLS * tileSize, h: ROWS * tileSize }),
+    [tileSize]
   );
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setTileSize(calculateTileSize());
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   /* ================= RESET FUNCTION ================= */
   const resetGame = useCallback(() => {
@@ -127,7 +153,7 @@ export default function ConnectFourGame() {
       active: true,
       piece: g.turn,
       col,
-      fromY: -TILE * 0.6,
+      fromY: -tileSize * 0.6,
       toR: res.pos.r,
       toC: res.pos.c,
       t: 0,
@@ -214,7 +240,7 @@ export default function ConnectFourGame() {
               pop01: Math.min(1, g.anim.popT / POP_TIME),
             }
           : null,
-      });
+      }, { tile: tileSize });
 
       rafRef.current = requestAnimationFrame(step);
     };
@@ -226,13 +252,13 @@ export default function ConnectFourGame() {
       const y = e.clientY - rect.top;
       g.hoverCol =
         y >= 0 && y <= size.h
-          ? Math.floor(x / TILE)
+          ? Math.floor(x / tileSize)
           : null;
     };
 
     const onClick = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
-      tryDrop(Math.floor((e.clientX - rect.left) / TILE));
+      tryDrop(Math.floor((e.clientX - rect.left) / tileSize));
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -257,7 +283,7 @@ export default function ConnectFourGame() {
       canvas.removeEventListener('mousedown', onClick);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [screen, vsAI, aiDepth, size.h, size.w, resetGame, navigate]);
+  }, [screen, vsAI, aiDepth, size.h, size.w, tileSize, resetGame, navigate]);
 
   /* ================= MENU UI ================= */
 
@@ -277,7 +303,6 @@ export default function ConnectFourGame() {
       {/* Menu Card */}
       <div
         style={{
-        marginTop: 'clamp(4rem, 12vh, 8rem)',
         width: 'min(92vw, 32rem)',          // היה ~26rem
         padding: 'clamp(2rem, 4vw, 2.8rem)',// היה ~2rem
         borderRadius: '1.8rem',             // היה 1.4rem
@@ -426,7 +451,7 @@ export default function ConnectFourGame() {
           gap: 16,
           justifyContent: 'center',
           width: '100%',
-          maxWidth: COLS * TILE,
+          maxWidth: COLS * tileSize,
         }}
       >
         <GameButton

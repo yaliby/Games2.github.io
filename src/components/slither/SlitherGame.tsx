@@ -23,6 +23,16 @@ export default function SlitherGame() {
 
   const [ui, setUi] = useState(() => computeUiSize());
 
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setUi(computeUiSize());
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const worldRef = useRef<World | null>(null);
 
@@ -112,7 +122,7 @@ export default function SlitherGame() {
     window.addEventListener('keyup', onKeyUp);
 
     // Fixed-timestep loop (stable & smooth under frame drops)
-    const FIXED_DT = 1 / 120;
+    const FIXED_DT = 1 / 100;
     const MAX_STEPS = 7;
     let acc = 0;
     let lastTs = performance.now();

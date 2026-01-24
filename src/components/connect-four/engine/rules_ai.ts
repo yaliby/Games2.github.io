@@ -1,4 +1,4 @@
-﻿import type { Board, Cell, Player, Pos, MoveResult, Winner } from './types';
+import type { Board, Cell, Player, Pos, MoveResult, Winner } from './types';
 import { ROWS, COLS } from './types';
 
 export const EMPTY: Cell = 0;

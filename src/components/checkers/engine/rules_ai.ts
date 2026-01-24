@@ -389,7 +389,7 @@ export function isDraw(board: Board): boolean {
 type EvalResult = { value: number; bestSequence: MoveSequence | null };
 
 const WIN_SCORE = 1_000_000;
-const KING_VALUE = 3;
+const KING_VALUE = 5;  // Increased from 3 - kings are very powerful
 const MAN_VALUE = 1;
 const INF = 10_000_000;
 
@@ -407,16 +407,40 @@ function evaluate(board: Board, me: Player): number {
   let score = 0;
   const opp = otherPlayer(me);
 
-  // Material count
+  // Material count (most important)
+  let myPieces = 0;
+  let oppPieces = 0;
+  let myKings = 0;
+  let oppKings = 0;
+  
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const cell = board[r][c];
       if (isPlayerPiece(cell, me)) {
-        score += isKing(cell) ? KING_VALUE : MAN_VALUE;
+        if (isKing(cell)) {
+          myKings++;
+          score += KING_VALUE;
+        } else {
+          myPieces++;
+          score += MAN_VALUE;
+        }
       } else if (isPlayerPiece(cell, opp)) {
-        score -= isKing(cell) ? KING_VALUE : MAN_VALUE;
+        if (isKing(cell)) {
+          oppKings++;
+          score -= KING_VALUE;
+        } else {
+          oppPieces++;
+          score -= MAN_VALUE;
+        }
       }
     }
+  }
+
+  // Endgame: material advantage is more important
+  const totalPieces = myPieces + oppPieces + myKings + oppKings;
+  if (totalPieces <= 8) {
+    // Endgame - material is even more critical
+    score *= 1.2;
   }
 
   // Positional: pieces closer to promotion are better
@@ -426,24 +450,56 @@ function evaluate(board: Board, me: Player): number {
       if (isPlayerPiece(cell, me) && !isKing(cell)) {
         const promotionRow = me === RED ? 0 : ROWS - 1;
         const distance = Math.abs(r - promotionRow);
-        score += (ROWS - distance) * 0.1;
+        score += (ROWS - distance) * 0.15; // Increased from 0.1
       } else if (isPlayerPiece(cell, opp) && !isKing(cell)) {
         const promotionRow = opp === RED ? 0 : ROWS - 1;
         const distance = Math.abs(r - promotionRow);
-        score -= (ROWS - distance) * 0.1;
+        score -= (ROWS - distance) * 0.15;
       }
     }
   }
 
-  // Center control (kings)
+  // Center control (kings) - more valuable
   for (let r = 2; r < ROWS - 2; r++) {
     for (let c = 2; c < COLS - 2; c++) {
       if (isKing(board[r][c])) {
         if (isPlayerPiece(board[r][c], me)) {
-          score += 0.2;
+          score += 0.3; // Increased from 0.2
         } else {
-          score -= 0.2;
+          score -= 0.3;
         }
+      }
+    }
+  }
+
+  // Piece safety: pieces on back row are safer
+  const backRow = me === RED ? ROWS - 1 : 0;
+  const oppBackRow = opp === RED ? ROWS - 1 : 0;
+  for (let c = 0; c < COLS; c++) {
+    if (isDarkSquare(backRow, c) && isPlayerPiece(board[backRow][c], me)) {
+      score += 0.2;
+    }
+    if (isDarkSquare(oppBackRow, c) && isPlayerPiece(board[oppBackRow][c], opp)) {
+      score -= 0.2;
+    }
+  }
+
+  // Mobility: count available moves (approximate)
+  const myMoves = getAllMoves(board, me).length;
+  const oppMoves = getAllMoves(board, opp).length;
+  score += (myMoves - oppMoves) * 0.05;
+
+  // Double corner control (strong defensive position)
+  const corners = [
+    { r: 0, c: 0 }, { r: 0, c: COLS - 1 },
+    { r: ROWS - 1, c: 0 }, { r: ROWS - 1, c: COLS - 1 }
+  ];
+  for (const corner of corners) {
+    if (isDarkSquare(corner.r, corner.c)) {
+      if (isPlayerPiece(board[corner.r][corner.c], me)) {
+        score += 0.15;
+      } else if (isPlayerPiece(board[corner.r][corner.c], opp)) {
+        score -= 0.15;
       }
     }
   }
@@ -472,13 +528,17 @@ function minimax(
   }
 
   // Sort moves by evaluation (best first for alpha-beta pruning)
+  // Prioritize captures, then by evaluation
   const moveEvals = moves.map((m) => {
     const b2 = cloneBoard(board);
     // Apply first move of sequence for evaluation
     if (m.moves.length > 0) {
       applyMove(b2, m.moves[0], toMove);
     }
-    return { move: m, eval: evaluate(b2, me) };
+    const evalScore = evaluate(b2, me);
+    // Prioritize captures heavily
+    const captureBonus = m.totalCaptures > 0 ? 1000 * m.totalCaptures : 0;
+    return { move: m, eval: evalScore + captureBonus };
   });
   moveEvals.sort((a, b) => {
     if (toMove === me) return b.eval - a.eval;
@@ -535,23 +595,40 @@ function minimax(
 
 /**
  * AI best move for player "me".
- * depth: 3-5 is reasonable for checkers
+ * Uses iterative deepening for better performance and time management
+ * depth: 5-8 is good for strong play
  */
 export function aiBestMove(
   board: Board,
   me: Player,
-  depth = 4
+  depth = 6
 ): MoveSequence | null {
   const moves = getAllMoves(board, me);
   if (moves.length === 0) return null;
+  if (moves.length === 1) return moves[0];
 
-  const res = minimax(board, depth, -INF, INF, me, me);
-
-  if (res.bestSequence === null) {
-    // Fallback: return first move (shouldn't happen)
-    return moves[0];
+  // Iterative deepening: start shallow and go deeper
+  // This allows us to get a good move quickly and improve if time permits
+  let bestMove: MoveSequence | null = null;
+  let searchDepth = Math.max(3, depth - 2); // Start 2 levels shallower
+  
+  try {
+    // Quick search first
+    const quickRes = minimax(board, searchDepth, -INF, INF, me, me);
+    bestMove = quickRes.bestSequence || moves[0];
+    
+    // If we have time, search deeper
+    if (depth > searchDepth) {
+      const deepRes = minimax(board, depth, -INF, INF, me, me);
+      if (deepRes.bestSequence) {
+        bestMove = deepRes.bestSequence;
+      }
+    }
+  } catch (e) {
+    // Fallback on error
+    bestMove = moves[0];
   }
 
-  return res.bestSequence;
+  return bestMove || moves[0];
 }
 

@@ -13,13 +13,30 @@ import {
   getSingleCaptureMoves,
   isKing,
   EMPTY,
+  aiBestMove,
 } from './engine/rules_ai';
 import { drawBoard } from './render/renderer';
 
 /* ================= CONFIG ================= */
-// scording to screen size
-const TILE = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.08);
 const AI_DELAY = 0.5;
+
+// Calculate responsive tile size
+function calculateTileSize(): number {
+  const maxWidth = window.innerWidth - 40; // Account for padding
+  const maxHeight = window.innerHeight - 200; // Account for header/footer/UI
+  const baseTile = Math.floor(Math.min(maxWidth, maxHeight) * 0.08);
+  const boardWidth = COLS * baseTile;
+  const boardHeight = ROWS * baseTile;
+  const graveyardWidth = baseTile * 1.15 * 2;
+  const totalWidth = boardWidth + graveyardWidth;
+  
+  // Ensure it fits on screen
+  const scaleX = maxWidth / totalWidth;
+  const scaleY = maxHeight / boardHeight;
+  const scale = Math.min(scaleX, scaleY, 1);
+  
+  return Math.max(30, Math.floor(baseTile * scale));
+}
 
 // Click-vs-drag threshold (px)
 const DRAG_THRESHOLD = 6;
@@ -44,6 +61,7 @@ export default function CheckersGame() {
   const [screen, setScreen] = useState<Screen>('MENU');
   const [vsAI, setVsAI] = useState<boolean>(true);
   const [aiDepth, setAiDepth] = useState<number>(6);
+  const [tileSize, setTileSize] = useState<number>(calculateTileSize());
 
   /* ---------- GAME STATE (REF) ---------- */
   const gameRef = useRef<{
@@ -91,15 +109,25 @@ export default function CheckersGame() {
   } | null>(null);
 
   // Canvas size includes side margins for graveyard
-  const GRAVEYARD_WIDTH = TILE * 1.15; // Matches renderer default
+  const GRAVEYARD_WIDTH = tileSize * 1.15; // Matches renderer default
 
   const size = useMemo(
     () => ({
-      w: COLS * TILE + GRAVEYARD_WIDTH * 2,
-      h: ROWS * TILE,
+      w: COLS * tileSize + GRAVEYARD_WIDTH * 2,
+      h: ROWS * tileSize,
     }),
-    []
+    [tileSize]
   );
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setTileSize(calculateTileSize());
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   /* ================= RESET FUNCTION ================= */
   const resetGame = useCallback(() => {
@@ -172,15 +200,15 @@ export default function CheckersGame() {
     };
 
     // Account for board offset (graveyard on sides)
-    const GRAVEYARD_WIDTH = TILE * 1.15;
+    const GRAVEYARD_WIDTH = tileSize * 1.15;
     const BOARD_OFFSET_X = GRAVEYARD_WIDTH;
 
     const posFromXY = (x: number, y: number): Pos | null => {
       const xBoard = x - BOARD_OFFSET_X;
-      if (xBoard < 0 || xBoard >= COLS * TILE) return null;
+      if (xBoard < 0 || xBoard >= COLS * tileSize) return null;
 
-      const c = Math.floor(xBoard / TILE);
-      const r = Math.floor(y / TILE);
+      const c = Math.floor(xBoard / tileSize);
+      const r = Math.floor(y / tileSize);
 
       if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
       return { r, c };
@@ -189,8 +217,8 @@ export default function CheckersGame() {
     const isDarkSquare = (p: Pos) => (p.r + p.c) % 2 === 1;
 
     const pieceCenterPx = (p: Pos) => ({
-      x: BOARD_OFFSET_X + p.c * TILE + TILE / 2,
-      y: p.r * TILE + TILE / 2,
+      x: BOARD_OFFSET_X + p.c * tileSize + tileSize / 2,
+      y: p.r * tileSize + tileSize / 2,
     });
 
     const isOwnPiece = (g: NonNullable<typeof gameRef.current>, p: Pos) => {
@@ -567,9 +595,9 @@ export default function CheckersGame() {
           } else {
             const allMoves = getAllMoves(g.board, BLACK, null);
             if (allMoves.length > 0) {
-              const captures = allMoves.filter((seq) => (seq as any).totalCaptures > 0);
-              const movesToUse = captures.length > 0 ? captures : allMoves;
-              const chosen = movesToUse[Math.floor(Math.random() * movesToUse.length)];
+              // Use AI to select best move
+              const bestSequence = aiBestMove(g.board, BLACK, aiDepth);
+              const chosen = bestSequence || allMoves[0];
 
               if (chosen && chosen.moves.length > 0) {
                 const move = chosen.moves[0];
@@ -682,7 +710,7 @@ export default function CheckersGame() {
             : null,
           time: animTime,
         },
-        { tile: TILE, graveyardWidth: GRAVEYARD_WIDTH }
+        { tile: tileSize, graveyardWidth: GRAVEYARD_WIDTH }
       );
 
       rafRef.current = requestAnimationFrame(step);
@@ -708,7 +736,7 @@ export default function CheckersGame() {
       canvas.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [screen, vsAI, aiDepth, size.h, size.w, resetGame, navigate]);
+  }, [screen, vsAI, aiDepth, size.h, size.w, tileSize, resetGame, navigate]);
 
   /* ================= MENU UI ================= */
 
@@ -726,7 +754,7 @@ export default function CheckersGame() {
       >
         <div
           style={{
-            marginTop: 'clamp(4rem, 12vh, 8rem)',
+            marginTop: 'clamp(4rem, 12vh, 9rem)',
             width: 'min(92vw, 32rem)',
             padding: 'clamp(2rem, 4vw, 2.8rem)',
             borderRadius: '1.8rem',
@@ -851,7 +879,7 @@ export default function CheckersGame() {
             gap: 16,
             justifyContent: 'center',
             width: '100%',
-            maxWidth: COLS * TILE,
+            maxWidth: COLS * tileSize,
           }}
         >
           <GameButton label="Reset Game" shortcut="R" onClick={resetGame} />

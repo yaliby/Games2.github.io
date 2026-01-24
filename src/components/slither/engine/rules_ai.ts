@@ -1,4 +1,4 @@
-import type { Pellet, Snake, StepInput, Vec, World, WorldConfig, SpatialGrid } from './types';
+import type { Pellet, Snake, StepInput, Vec, World, WorldConfig, SpatialGrid, PelletGrid } from './types';
 
 const TAU = Math.PI * 2;
 
@@ -6,18 +6,26 @@ const TAU = Math.PI * 2;
 
 // Movement / body
 const BASE_SPACING = 10;         // distance between points (like vertebrae)
-const FOLLOW_ITERS = 2;          // constraint iterations (bigger = stiffer body)
+const FOLLOW_ITERS = 3;          // constraint iterations (bigger = stiffer body, more accurate)
 const PLAYER_BASE_SPEED = 215;
 const BOT_BASE_SPEED = 190;
 const BOOST_MULT = 1.38;
 
-// Boost costs length, but never below MIN_LEN.
+// Smooth acceleration/deceleration
+const ACCEL_RATE = 850;          // px/sec² acceleration
+const DECEL_RATE = 950;          // px/sec² deceleration
+const TURN_DAMPING = 0.92;       // velocity damping when turning sharply
+
+// Boost costs length + energy, but never below MIN_LEN.
 const BOOST_LEN_DRAIN_PER_SEC = 4.2;
+const BOOST_ENERGY_DRAIN_PER_SEC = 0.35;  // energy drain rate
+const BOOST_ENERGY_RECHARGE_PER_SEC = 0.25; // energy recharge rate
 const MIN_LEN = 26;
+const MIN_ENERGY_TO_BOOST = 0.15; // minimum energy needed to start boost
 
 // Steering
-const PLAYER_TURN = 4.9; // rad/sec
-const BOT_TURN = 4.2;
+const PLAYER_TURN = 7.5; // rad/sec
+const BOT_TURN = 6.5;
 
 // World
 const WORLD_SIZE = 3800;
@@ -27,13 +35,19 @@ const PELLET_R = 6.2;
 const PELLET_VALUE = 1.0;
 const DEATH_PELLET_R = 7.0;
 const DEATH_PELLET_VALUE = 1.65;
+const PELLET_SPAWN_RATE = 0.8;  // pellets per second to maintain
+const PELLET_MIN_DISTANCE = 80;  // minimum distance from snakes when spawning
+const PELLET_GRID_CELL = 120;
+const PELLET_EAT_PAD = 4;        // extra "magnet" radius for eating like Slither.io
 
 // Combat
 const KILL_SPILL_MIN = 22;
 const KILL_SPILL_MAX = 110;
+const HEAD_COLLISION_RADIUS = 1.15; // head collision multiplier
 
 // Respawn
 const RESPAWN_SECONDS = 1.15;
+const SPAWN_INVULN_SECONDS = 1.1;
 
 // HUD / leaderboard refresh
 const LEADERBOARD_EVERY = 0.15; // seconds
@@ -45,7 +59,6 @@ const MAX_POINTS_LEN = 6000; // safety cap to prevent runaway lengths
 
 function safeLen(v: number): number {
   if (!Number.isFinite(v)) return MIN_POINTS;
-  // keep it sane even if something goes wrong
   const n = Math.floor(v);
   if (n < MIN_POINTS) return MIN_POINTS;
   if (n > MAX_POINTS_LEN) return MAX_POINTS_LEN;
@@ -53,16 +66,18 @@ function safeLen(v: number): number {
 }
 
 function sanitizeSnakeInvariants(world: World, s: Snake) {
-  // Prevent NaN/Infinity from cascading into physics/AI and crashing renderer.
   if (!Number.isFinite(s.dir)) s.dir = 0;
   if (!Number.isFinite(s.radius) || s.radius <= 0) s.radius = s.isPlayer ? 14 : 13;
   if (!Number.isFinite(s.speed) || s.speed <= 0) s.speed = s.isPlayer ? PLAYER_BASE_SPEED : BOT_BASE_SPEED;
+  if (!Number.isFinite(s.targetSpeed) || s.targetSpeed <= 0) s.targetSpeed = s.speed;
+  if (!Number.isFinite(s.velX)) s.velX = 0;
+  if (!Number.isFinite(s.velY)) s.velY = 0;
+  if (!Number.isFinite(s.energy)) s.energy = 1.0;
 
   if (!Number.isFinite(s.desiredLen)) s.desiredLen = MIN_LEN;
   if (s.desiredLen < MIN_LEN) s.desiredLen = MIN_LEN;
   if (s.desiredLen > MAX_POINTS_LEN) s.desiredLen = MAX_POINTS_LEN;
 
-  // Ensure head position is finite; if corrupted, snap to center and rebuild body.
   const head = s.points[0];
   if (!head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) {
     const cx = world.W * 0.5;
@@ -92,7 +107,9 @@ function dist2(a: Vec, b: Vec) {
   return dx * dx + dy * dy;
 }
 
-
+function dist(a: Vec, b: Vec) {
+  return Math.sqrt(dist2(a, b));
+}
 
 function angleTo(a: Vec, b: Vec) {
   return Math.atan2(b.y - a.y, b.x - a.x);
@@ -107,12 +124,11 @@ function wrapAngle(a: number) {
 function rotateToward(current: number, target: number, maxDelta: number) {
   const d = wrapAngle(target - current);
   if (Math.abs(d) <= maxDelta) return target;
-  return current + Math.sign(d) * maxDelta;
+  return current + Math.sign(d) * maxDelta*7;
 }
 
 // -------------------- Render snapshot (for interpolation) --------------------
-// We capture previous-step positions into a typed array on each fixed physics step.
-// This enables smooth render interpolation WITHOUT allocating in the render loop.
+
 function ensurePrevCapacity(s: Snake, pointsCount: number): Float32Array {
   const need = pointsCount * 2;
   let buf = s._prev;
@@ -162,27 +178,33 @@ function makeId(prefix: string) {
 function initBodyAt(s: Snake, pos: Vec) {
   s.points.length = 0;
   const n = safeLen(s.desiredLen);
+  const dir = s.dir;
   for (let i = 0; i < n; i++) {
-    // allocate ONLY on spawn/respawn (ok)
-    s.points.push({ x: pos.x - Math.cos(s.dir) * BASE_SPACING * i, y: pos.y - Math.sin(s.dir) * BASE_SPACING * i });
+    s.points.push({ 
+      x: pos.x - Math.cos(dir) * BASE_SPACING * i, 
+      y: pos.y - Math.sin(dir) * BASE_SPACING * i 
+    });
   }
+  // Initialize velocity
+  s.velX = Math.cos(dir) * s.speed;
+  s.velY = Math.sin(dir) * s.speed;
+  s.targetSpeed = s.speed;
 }
 
 function ensureLength(s: Snake) {
   const desired = safeLen(s.desiredLen);
   if (s.points.length < desired) {
-    // Extend by cloning tail point objects (rare growth)
     const tail = s.points[s.points.length - 1] ?? s.points[0] ?? { x: 0, y: 0 };
     while (s.points.length < desired) {
       s.points.push({ x: tail.x, y: tail.y });
     }
   } else if (s.points.length > desired) {
-    // Shrink safely
     s.points.length = desired;
   }
 }
 
 function follow(points: Vec[], spacing: number) {
+  // Improved follow-the-leader with better physics
   for (let iter = 0; iter < FOLLOW_ITERS; iter++) {
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1];
@@ -195,27 +217,137 @@ function follow(points: Vec[], spacing: number) {
       const err = (d - spacing);
       const nx = dx / d;
       const ny = dy / d;
-      b.x -= nx * err;
-      b.y -= ny * err;
+      // Apply correction with damping for smoother movement
+      const correction = err * 0.5;
+      b.x -= nx * correction;
+      b.y -= ny * correction;
     }
   }
 }
 
 function headRadius(s: Snake) {
-  // slightly larger head for readability
-  return s.radius * 1.06;
+  return s.radius * HEAD_COLLISION_RADIUS;
 }
 
 // -------------------- Pellets --------------------
 
 let _pelletId = 0;
 
-function spawnPos(world: World): Vec {
+function ensurePelletGrid(world: World): PelletGrid {
+  if (world._pelletGrid) return world._pelletGrid;
+  const cellSize = PELLET_GRID_CELL;
+  const cols = Math.ceil(world.W / cellSize);
+  const rows = Math.ceil(world.H / cellSize);
+  world._pelletGrid = {
+    cellSize,
+    cols,
+    rows,
+    buckets: new Map<number, { idx: number[] }>(),
+    usedKeys: [],
+  };
+  world._pelletGridDirty = true;
+  return world._pelletGrid;
+}
+
+function clearPelletGrid(grid: PelletGrid) {
+  for (let i = 0; i < grid.usedKeys.length; i++) {
+    const key = grid.usedKeys[i];
+    const b = grid.buckets.get(key);
+    if (!b) continue;
+    b.idx.length = 0;
+  }
+  grid.usedKeys.length = 0;
+}
+
+function ensurePelletBucket(grid: PelletGrid, key: number) {
+  let bucket = grid.buckets.get(key);
+  if (!bucket) {
+    bucket = { idx: [] };
+    grid.buckets.set(key, bucket);
+  }
+  if (bucket.idx.length === 0) grid.usedKeys.push(key);
+  return bucket;
+}
+
+function rebuildPelletGrid(world: World) {
+  const grid = ensurePelletGrid(world);
+  clearPelletGrid(grid);
+  const cols = grid.cols;
+  for (let i = 0; i < world.pellets.length; i++) {
+    const p = world.pellets[i];
+    const cx = clamp(Math.floor(p.pos.x / grid.cellSize), 0, grid.cols - 1);
+    const cy = clamp(Math.floor(p.pos.y / grid.cellSize), 0, grid.rows - 1);
+    const key = gridKey(cx, cy, cols);
+    ensurePelletBucket(grid, key).idx.push(i);
+  }
+  world._pelletGridDirty = false;
+}
+
+function forNearbyPellets(
+  world: World,
+  x: number,
+  y: number,
+  radius: number,
+  cb: (pelletIndex: number) => void,
+) {
+  const grid = ensurePelletGrid(world);
+  if (world._pelletGridDirty) rebuildPelletGrid(world);
+  const r = Math.max(1, radius);
+  const cx0 = clamp(Math.floor((x - r) / grid.cellSize), 0, grid.cols - 1);
+  const cx1 = clamp(Math.floor((x + r) / grid.cellSize), 0, grid.cols - 1);
+  const cy0 = clamp(Math.floor((y - r) / grid.cellSize), 0, grid.rows - 1);
+  const cy1 = clamp(Math.floor((y + r) / grid.cellSize), 0, grid.rows - 1);
+  const cols = grid.cols;
+
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      const key = gridKey(cx, cy, cols);
+      const b = grid.buckets.get(key);
+      if (!b || b.idx.length === 0) continue;
+      const arr = b.idx;
+      for (let i = 0; i < arr.length; i++) cb(arr[i]);
+    }
+  }
+}
+
+function spawnPos(world: World, avoidSnakes: boolean = true): Vec {
+  let attempts = 0;
+  while (attempts < 50) {
+    const pos = { x: rand(160, world.W - 160), y: rand(160, world.H - 160) };
+    
+    if (!avoidSnakes) return pos;
+    
+    // Check distance from all snake heads and some body points (cheap safe-spawn).
+    let tooClose = false;
+    for (const s of world.snakes) {
+      if (!s.alive || s.points.length === 0) continue;
+      const d = dist(pos, s.points[0]);
+      if (d < PELLET_MIN_DISTANCE) {
+        tooClose = true;
+        break;
+      }
+      const pts = s.points;
+      const step = pts.length > 260 ? 10 : (pts.length > 120 ? 6 : 4);
+      const minD2 = (s.radius + PELLET_R + 6) ** 2;
+      for (let i = 6; i < pts.length; i += step) {
+        const p = pts[i];
+        const dx = pos.x - p.x;
+        const dy = pos.y - p.y;
+        if (dx * dx + dy * dy < minD2) { tooClose = true; break; }
+      }
+      if (tooClose) break;
+    }
+    
+    if (!tooClose) return pos;
+    attempts++;
+  }
+  
+  // Fallback if can't find safe spot
   return { x: rand(160, world.W - 160), y: rand(160, world.H - 160) };
 }
 
-function makePellet(world: World, kind: 'normal' | 'death' = 'normal'): Pellet {
-  const pos = spawnPos(world);
+function makePellet(world: World, kind: 'normal' | 'death' = 'normal', avoidSnakes: boolean = true): Pellet {
+  const pos = spawnPos(world, avoidSnakes && kind === 'normal');
   _pelletId++;
   const isDeath = kind === 'death';
   return {
@@ -229,35 +361,56 @@ function makePellet(world: World, kind: 'normal' | 'death' = 'normal'): Pellet {
 }
 
 function fillPellets(world: World) {
-  while (world.pellets.length < world.maxPellets) {
-    world.pellets.push(makePellet(world, 'normal'));
+  const target = world.maxPellets;
+  const current = world.pellets.length;
+  const dt = world._dtLast ?? 0.008;
+  
+  // Spawn pellets gradually to maintain count
+  if (current < target) {
+    const toSpawn = Math.min(Math.ceil(PELLET_SPAWN_RATE * dt), target - current);
+    for (let i = 0; i < toSpawn; i++) {
+      world.pellets.push(makePellet(world, 'normal', true));
+    }
+    if (toSpawn > 0) world._pelletGridDirty = true;
   }
 }
 
 function checkPelletEat(world: World, s: Snake) {
   const head = s.points[0];
-  const r = headRadius(s) + 4;
+  const r = headRadius(s) + PELLET_EAT_PAD;
   const r2 = r * r;
 
-  // Iterate backwards so we can swap-remove without allocating
-  for (let i = world.pellets.length - 1; i >= 0; i--) {
-    const p = world.pellets[i];
+  // Query only nearby pellets (avoids O(N) scans).
+  const toEat: number[] = [];
+  forNearbyPellets(world, head.x, head.y, r + 18, (pi) => {
+    const p = world.pellets[pi];
+    if (!p) return;
     const dx = p.pos.x - head.x;
     const dy = p.pos.y - head.y;
-    if (dx * dx + dy * dy > r2) continue;
+    if (dx * dx + dy * dy <= r2) toEat.push(pi);
+  });
 
-    // Eat
+  if (toEat.length === 0) return;
+
+  // Eat highest indices first to keep swap-remove safe.
+  toEat.sort((a, b) => b - a);
+  for (let k = 0; k < toEat.length; k++) {
+    const i = toEat[k];
+    const p = world.pellets[i];
+    if (!p) continue;
+
+    // Eat (gradual growth: pellets are small, but many over time)
     s.desiredLen += p.value;
     s.score += p.value;
 
-    // swap-remove
     const last = world.pellets[world.pellets.length - 1];
     world.pellets[i] = last;
     world.pellets.pop();
   }
+  world._pelletGridDirty = true;
 }
 
-// -------------------- Bot AI --------------------
+// -------------------- Bot AI (Human-like) --------------------
 
 function threatAt(world: World, pos: Vec, radius = 260) {
   let threat = 0;
@@ -273,10 +426,9 @@ function threatAt(world: World, pos: Vec, radius = 260) {
     if (d2 > r2) continue;
 
     const d = Math.sqrt(d2) || 1;
-    // closer and bigger snakes are more threatening
     threat += (1 / d) * (1 + s.desiredLen / 200);
 
-    // also consider predicted head position (no object alloc)
+    // Predicted position
     const px = h.x + Math.cos(s.dir) * s.speed * 0.3;
     const py = h.y + Math.sin(s.dir) * s.speed * 0.3;
     const pdx = pos.x - px;
@@ -292,48 +444,49 @@ function threatAt(world: World, pos: Vec, radius = 260) {
 }
 
 function botPickTarget(world: World, bot: Snake) {
-  // Weighted pellet target: prefer close, prefer ahead, avoid threats.
   const head = bot.points[0];
   const difficulty = world.difficulty ?? 1;
 
-  let best: Pellet | null = null;
+  let bestIdx = -1;
   let bestScore = -1;
 
-  // Scan some pellets (not all) for perf
-  const step = world.pellets.length > 700 ? 3 : 2;
-
-  for (let i = 0; i < world.pellets.length; i += step) {
+  // Nearby pellet search via grid (fast + more "human" because it doesn't see everything).
+  const scanR = 900;
+  forNearbyPellets(world, head.x, head.y, scanR, (i) => {
     const p = world.pellets[i];
+    if (!p) return;
 
     const dx = p.pos.x - head.x;
     const dy = p.pos.y - head.y;
     const d2 = dx * dx + dy * dy;
 
-    // prefer within a working distance
-    if (d2 > 900 * 900) continue;
+    if (d2 > scanR * scanR) return;
 
     const d = Math.sqrt(d2) || 1;
 
-    // prefer pellets that are roughly ahead of our current heading (avoid sharp turns)
+    // Prefer pellets ahead
     const toPel = Math.atan2(p.pos.y - head.y, p.pos.x - head.x);
     const ang = Math.abs(wrapAngle(toPel - bot.dir));
     const aheadBonus = 1.0 - clamp(ang / Math.PI, 0, 1) * 0.65;
 
-    // avoid dangerous pellets
+    // Avoid dangerous pellets (human-like risk assessment)
     const t = threatAt(world, p.pos, 260);
     const safeMul = 1.05 - clamp(t, 0, 1) * (0.72 + 0.15 * difficulty);
 
-    // bigger value matters
+    // Value preference
     const vMul = 1 + (p.value - 1) * 0.5;
 
-    const score = (1 / (d + 1)) * 1600 * aheadBonus * safeMul * vMul;
+    // Add some randomness for human-like imperfection
+    const randomness = 0.85 + rand(0, 0.3);
+    const score = (1 / (d + 1)) * 1600 * aheadBonus * safeMul * vMul * randomness;
 
     if (score > bestScore) {
       bestScore = score;
-      best = p;
+      bestIdx = i;
     }
-  }
+  });
 
+  const best = bestIdx >= 0 ? (world.pellets[bestIdx] ?? null) : null;
   bot.ai.targetPelletId = best ? best.id : null;
   return best;
 }
@@ -353,13 +506,14 @@ function botPickVictim(world: World, bot: Snake) {
 
     const d = Math.sqrt(d2) || 1;
 
-    // prefer smaller (easier kill), prefer player
     let score = (1 / (d + 1)) * 2000;
     score *= 1.2 - Math.min(0.9, s.desiredLen / 500);
     if (s.isPlayer) score *= 1.35;
 
-    // difficulty increases aggression range
     score *= 0.8 + 0.4 * difficulty;
+
+    // Human-like: sometimes ignore good targets (hesitation)
+    if (rand() < 0.15) score *= 0.3;
 
     if (score > bestScore) {
       bestScore = score;
@@ -372,8 +526,6 @@ function botPickVictim(world: World, bot: Snake) {
 }
 
 function botComputeThreat(world: World, bot: Snake) {
-  // Compute a simple "avoid" vector away from nearby snake points.
-  // If a big snake is close, that increases threat.
   const head = bot.points[0];
 
   let ax = 0;
@@ -383,7 +535,6 @@ function botComputeThreat(world: World, bot: Snake) {
   for (const s of world.snakes) {
     if (!s.alive || s.id === bot.id) continue;
 
-    // only sample some points for perf
     const pts = s.points;
     const step = pts.length > 140 ? 3 : 2;
 
@@ -395,8 +546,6 @@ function botComputeThreat(world: World, bot: Snake) {
       if (d2 > 320 * 320) continue;
 
       const d = Math.sqrt(d2) || 1;
-
-      // weight by proximity and size
       const w = (1 / d) * (1 + (s.desiredLen / 90) * 0.18);
 
       ax += (dx / d) * w;
@@ -405,9 +554,9 @@ function botComputeThreat(world: World, bot: Snake) {
       threat = Math.max(threat, w);
     }
 
-    // Lookahead: consider where the other snake head will be shortly and increase threat if headed towards us
+    // Lookahead
     const otherHead = pts[0];
-    const lookSecs = 0.35; // small lookahead
+    const lookSecs = 0.35;
     const px = otherHead.x + Math.cos(s.dir) * s.speed * lookSecs;
     const py = otherHead.y + Math.sin(s.dir) * s.speed * lookSecs;
 
@@ -430,30 +579,31 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   const head = bot.points[0];
   const difficulty = world.difficulty ?? 1;
 
-  // Wander timer
+  // Wander timer (human-like exploration)
   bot.ai.wanderTimer -= world._dtLast ?? 0;
   if (bot.ai.wanderTimer <= 0) {
     bot.ai.wanderTimer = rand(0.6, 1.6);
     bot.ai.wanderAngle = rand(-Math.PI, Math.PI);
   }
 
-  const targetPellet = botPickTarget(world, bot);
+  const targetPellet: Pellet | null = botPickTarget(world, bot);
   const threat = botComputeThreat(world, bot);
 
-  // Occasionally attempt intercept
+  // Occasionally attempt intercept (with human-like hesitation)
   let victim: Snake | null = null;
   if (rand() < 0.23 * difficulty) {
     victim = botPickVictim(world, bot);
+    // Sometimes change mind (human-like)
+    if (victim && rand() < 0.12) victim = null;
   }
 
-  // Combine steering vectors (no allocations)
+  // Combine steering vectors
   let dx = 0;
   let dy = 0;
 
   // Pellet attraction
   if (targetPellet) {
     const a = angleTo(head, targetPellet.pos);
-    // compute pellet safety and prefer ahead
     const pelletThreat = threatAt(world, targetPellet.pos, 260);
     const pelletWeight = pelletThreat > 0.7 ? 0.3 : 1.0;
 
@@ -462,11 +612,10 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   }
 
   if (victim && victim.alive) {
-    // Aim ahead of victim head with improved lead based on distance and speeds
+    // Aim ahead with improved lead
     const vHead = victim.points[0];
     const d2 = dist2(head, vHead);
     const d = Math.sqrt(d2) || 1;
-    // dynamic lead: more lead if close and faster
     const baseLead = clamp(0.25 + (difficulty - 1) * 0.18, 0.2, 0.55);
     const speedFactor = Math.min(1.5, (bot.speed + 40) / (victim.speed + 20));
     const lead = clamp(baseLead * speedFactor * (1 + Math.max(0, 600 - d) / 900), 0.2, 0.9);
@@ -479,11 +628,11 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
     dy += Math.sin(a) * 1.25;
   }
 
-  // Avoid threats (repulsion)
+  // Avoid threats
   dx += threat.ax * 1.7;
   dy += threat.ay * 1.7;
 
-  // Evasive memory: if threatened, pick an evade angle and bias steering for a short duration
+  // Evasive memory (human-like panic response)
   const threatLevel = threat.threat;
   if (threatLevel > 0.06) {
     if (bot.ai.evadeAngle === undefined) {
@@ -509,15 +658,19 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
 
   const aim = Math.atan2(dy, dx);
 
-  // Boost logic: use boost when chasing and safe, or when escaping.
+  // Boost logic (human-like: sometimes boost when shouldn't, sometimes don't when should)
   const safe = threat.threat < 0.035 * (2 - clamp(difficulty, 0.6, 1.8));
   const chasing = !!victim && dist2(head, victim.points[0]) < (420 * 420);
   const escaping = threat.threat > 0.06;
 
   let boost = false;
-  if (escaping) boost = true;
-  else if (chasing && safe && rand() < 0.75) boost = true;
-  else if (safe && rand() < 0.03 * difficulty) boost = true;
+  if (escaping) {
+    boost = rand() < 0.85; // Sometimes panic and forget to boost
+  } else if (chasing && safe) {
+    boost = rand() < (0.75 + 0.1 * difficulty); // More likely to boost on higher difficulty
+  } else if (safe) {
+    boost = rand() < (0.03 * difficulty); // Occasional random boost
+  }
 
   return { aim, boost };
 }
@@ -525,32 +678,37 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
 // -------------------- Death / scoring --------------------
 
 function spillDeathPellets(world: World, s: Snake) {
-  // Convert some body segments into pellets.
-  // Keep it bounded for perf.
+  // Convert body segments into pellets (like Slither.io)
   const pts = s.points;
-  const count = clamp(Math.floor(pts.length * 0.6), KILL_SPILL_MIN, KILL_SPILL_MAX);
+  const count = clamp(Math.floor(pts.length * 0.95), KILL_SPILL_MIN, Math.max(KILL_SPILL_MAX, Math.floor(pts.length * 0.35)));
 
   for (let i = 0; i < count; i++) {
-    const p = pts[Math.floor((i / count) * pts.length)];
+    const idx = Math.floor((i / count) * pts.length);
+    const p = pts[idx];
     if (!p) continue;
 
+    // Add slight randomness for natural spread
     world.pellets.push({
       id: `d-${_pelletId++}`,
-      pos: { x: p.x + rand(-10, 10), y: p.y + rand(-10, 10) },
+      pos: { x: p.x + rand(-12, 12), y: p.y + rand(-12, 12) },
       r: DEATH_PELLET_R,
       value: DEATH_PELLET_VALUE,
       kind: 'death',
       color: 'rgba(255,255,255,0.92)',
     });
   }
+  world._pelletGridDirty = true;
 }
 
 function killSnake(world: World, victim: Snake, killer: Snake | null) {
   if (!victim.alive) return;
+  // Already protected (fresh spawn) → ignore kills.
+  if ((victim.spawnInvuln ?? 0) > 0) return;
 
   victim.alive = false;
   victim.deaths++;
   victim.respawnTimer = RESPAWN_SECONDS;
+  victim.spawnInvuln = 0;
 
   // Spawn death pellets
   spillDeathPellets(world, victim);
@@ -593,7 +751,6 @@ function ensureGrid(world: World): SpatialGrid {
 }
 
 function clearGrid(grid: SpatialGrid) {
-  // Clear only buckets used last frame (no Map re-allocation)
   for (let i = 0; i < grid.usedKeys.length; i++) {
     const key = grid.usedKeys[i];
     const b = grid.buckets.get(key);
@@ -613,15 +770,12 @@ function ensureBucket(grid: SpatialGrid, key: number) {
     grid.buckets.set(key, bucket);
   }
   if (bucket.a.length === 0) {
-    // First use this frame
     grid.usedKeys.push(key);
   }
   return bucket;
 }
 
 function addSegmentToGrid(grid: SpatialGrid, a: Vec, b: Vec, snakeIdx: number, radius: number) {
-  // Insert the segment into every cell overlapped by its AABB expanded by radius.
-  // Segments are short (BASE_SPACING), so this is typically 1–4 cells.
   const r = Number.isFinite(radius) ? radius : 0;
   const minX = Math.min(a.x, b.x) - r;
   const maxX = Math.max(a.x, b.x) + r;
@@ -646,7 +800,6 @@ function addSegmentToGrid(grid: SpatialGrid, a: Vec, b: Vec, snakeIdx: number, r
 }
 
 function dist2PointSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
-  // Squared distance from point P to segment AB.
   const abx = bx - ax;
   const aby = by - ay;
   const apx = px - ax;
@@ -671,13 +824,13 @@ function rebuildCollisionGrid(world: World) {
   const grid = ensureGrid(world);
   clearGrid(grid);
 
-  // Store BODY as segments (capsules), not just points, so collisions don't miss gaps between samples.
   for (let si = 0; si < world.snakes.length; si++) {
     const s = world.snakes[si];
     if (!s.alive) continue;
+    // Spawn shield: while protected, don't make this snake lethal to others yet.
+    if ((s.spawnInvuln ?? 0) > 0) continue;
 
     const pts = s.points;
-    // Skip head + a few early segments to avoid instant 'head-head' accidental kills.
     const start = Math.min(6, pts.length - 1);
 
     for (let i = start; i < pts.length; i++) {
@@ -691,9 +844,46 @@ function rebuildCollisionGrid(world: World) {
 function checkSnakeCollisions(world: World) {
   const grid = ensureGrid(world);
 
+  // First check head-to-head collisions
+  for (let i = 0; i < world.snakes.length; i++) {
+    const s1 = world.snakes[i];
+    if (!s1.alive || s1.points.length === 0) continue;
+    if ((s1.spawnInvuln ?? 0) > 0) continue;
+
+    const h1 = s1.points[0];
+    const r1 = headRadius(s1);
+
+    for (let j = i + 1; j < world.snakes.length; j++) {
+      const s2 = world.snakes[j];
+      if (!s2.alive || s2.points.length === 0) continue;
+      if ((s2.spawnInvuln ?? 0) > 0) continue;
+
+      const h2 = s2.points[0];
+      const r2 = headRadius(s2);
+      const d2 = dist2(h1, h2);
+      const rSum = r1 + r2;
+
+      if (d2 <= rSum * rSum) {
+        // Head-to-head collision: make it less "random mass extinction".
+        // Only kill if there's a meaningful size advantage; otherwise treat as a bump (no death).
+        const a = s1.desiredLen;
+        const b = s2.desiredLen;
+        const bigger = Math.max(a, b);
+        const smaller = Math.min(a, b);
+        const ratio = smaller > 0 ? bigger / smaller : 9;
+        if (ratio >= 1.12) {
+          if (a > b) killSnake(world, s2, s1);
+          else killSnake(world, s1, s2);
+        }
+      }
+    }
+  }
+
+  // Then check head-to-body collisions
   for (let si = 0; si < world.snakes.length; si++) {
     const s = world.snakes[si];
     if (!s.alive) continue;
+    if ((s.spawnInvuln ?? 0) > 0) continue;
 
     const head = s.points[0];
     if (!head) continue;
@@ -706,7 +896,6 @@ function checkSnakeCollisions(world: World) {
 
     let died = false;
 
-    // Check neighbors (3x3)
     for (let oy = -1; oy <= 1 && !died; oy++) {
       const ny = cy + oy;
       if (ny < 0 || ny >= grid.rows) continue;
@@ -726,7 +915,7 @@ function checkSnakeCollisions(world: World) {
 
         for (let k = 0; k < A.length; k++) {
           const otherIdx = owner[k];
-          if (otherIdx === si) continue; // ignore own body (prevents glitchy self-kills)
+          if (otherIdx === si) continue;
 
           const a = A[k];
           const b = B[k];
@@ -765,15 +954,22 @@ function makeSnake(index: number, isPlayer: boolean): Snake {
     turnRate: isPlayer ? PLAYER_TURN : BOT_TURN,
     radius: isPlayer ? 14 : randInt(12, 14),
 
+    velX: 0,
+    velY: 0,
+    targetSpeed: baseSpeed,
+
     points: [],
     desiredLen: randInt(36, 46),
 
     alive: true,
     respawnTimer: 0,
+    spawnInvuln: SPAWN_INVULN_SECONDS,
 
     boosting: false,
     boostHeat: 0,
     boostCooldown: 0,
+    energy: 1.0,
+    boostDropAcc: 0,
 
     ai: {
       targetPelletId: null,
@@ -803,24 +999,21 @@ export function createWorld(cfg: WorldConfig): World {
     difficulty: clamp(cfg.difficulty ?? 1, 0.55, 2.0),
   };
 
-  // Player first
   const player = makeSnake(0, true);
-  initBodyAt(player, spawnPos(world));
+  initBodyAt(player, spawnPos(world, false));
   world.snakes.push(player);
 
-  // Bots
   const bots = clamp(cfg.botCount | 0, 0, 28);
   for (let i = 0; i < bots; i++) {
     const b = makeSnake(i + 1, false);
-    // speed + aggression scaling
     b.speed *= 0.9 + 0.16 * (world.difficulty ?? 1);
-    initBodyAt(b, spawnPos(world));
+    b.targetSpeed = b.speed;
+    initBodyAt(b, spawnPos(world, false));
     world.snakes.push(b);
   }
 
   fillPellets(world);
 
-  // initial snapshot so first render doesn't smear
   for (const s of world.snakes) snapshotSnake(s);
 
   return world;
@@ -830,35 +1023,33 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
   world.tick += dt;
   world._dtLast = dt;
 
-  // Keep pellet count stable (including death pellets)
   fillPellets(world);
-  // Hard cap to avoid infinite growth from many deaths
   if (world.pellets.length > world.maxPellets * 1.6) {
     world.pellets.length = Math.floor(world.maxPellets * 1.6);
+    world._pelletGridDirty = true;
   }
 
   for (const s of world.snakes) {
     if (!s.alive) {
       s.respawnTimer -= dt;
       if (s.respawnTimer <= 0) {
-        // Respawn
         s.alive = true;
         s.boostHeat = 0;
         s.boostCooldown = 0;
+        s.energy = 1.0;
+        s.spawnInvuln = SPAWN_INVULN_SECONDS;
         s.desiredLen = randInt(36, 46);
-        const pos = spawnPos(world);
+        // Safer respawn to avoid instant collisions.
+        const pos = spawnPos(world, true);
         initBodyAt(s, pos);
-        // Avoid a huge interpolation line from the death location → new spawn.
         snapshotSnake(s);
       }
       continue;
     }
 
-    // Validate invariants once per tick (prevents NaN cascades)
     sanitizeSnakeInvariants(world, s);
-
-    // Snapshot previous positions for render interpolation
     snapshotSnake(s);
+    if ((s.spawnInvuln ?? 0) > 0) s.spawnInvuln = Math.max(0, s.spawnInvuln - dt);
 
     // Decide aim + boost
     let desiredDir: number | null = null;
@@ -875,66 +1066,119 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
       wantBoost = d.boost;
     }
 
+    // Smooth turning
     if (desiredDir != null) {
-      // Smooth turning (clamped per dt)
       s.dir = rotateToward(s.dir, desiredDir, s.turnRate * dt);
     }
 
-    // Speed depends on size (big snakes slightly slower)
+    // Speed depends on size
     const sizeSlow = 1 / (1 + s.desiredLen / 520);
     const base = s.speed * (0.88 + 0.55 * sizeSlow);
 
-    // Boost rules
-    const canBoost = s.desiredLen > MIN_LEN + 2 && s.boostCooldown <= 0;
+    // Boost rules with energy system
+    const canBoost = s.desiredLen > MIN_LEN + 2 && s.boostCooldown <= 0 && s.energy >= MIN_ENERGY_TO_BOOST;
     s.boosting = wantBoost && canBoost;
 
     if (s.boosting) {
-      // drain length slowly
-      s.desiredLen -= BOOST_LEN_DRAIN_PER_SEC * dt;
+      const drain = BOOST_LEN_DRAIN_PER_SEC * dt;
+      s.desiredLen -= drain;
       if (s.desiredLen < MIN_LEN) s.desiredLen = MIN_LEN;
+      s.energy = clamp(s.energy - BOOST_ENERGY_DRAIN_PER_SEC * dt, 0, 1);
       s.boostHeat = clamp(s.boostHeat + dt * 0.9, 0, 1);
+
+      // Slither-style mass shedding: drop small pellets behind while boosting.
+      s.boostDropAcc = (s.boostDropAcc ?? 0) + drain;
+      const tail = s.points[s.points.length - 1] ?? s.points[0];
+      while (s.boostDropAcc >= 1.0 && s.desiredLen > MIN_LEN + 1) {
+        s.boostDropAcc -= 1.0;
+        if (tail) {
+          world.pellets.push({
+            id: `b-${_pelletId++}`,
+            pos: { x: tail.x + rand(-8, 8), y: tail.y + rand(-8, 8) },
+            r: 5.6,
+            value: 0.9,
+            kind: 'normal',
+            color: 'rgba(255,255,255,0.70)',
+          });
+          world._pelletGridDirty = true;
+        }
+      }
     } else {
+      s.energy = clamp(s.energy + BOOST_ENERGY_RECHARGE_PER_SEC * dt, 0, 1);
       s.boostHeat = clamp(s.boostHeat - dt * 0.8, 0, 1);
     }
 
-    // if overheated, add small cooldown
     if (s.boostHeat >= 1 && wantBoost) {
       s.boostCooldown = clamp(s.boostCooldown + dt * 0.7, 0, 0.6);
     } else {
       s.boostCooldown = Math.max(0, s.boostCooldown - dt * 0.9);
     }
 
-    const speed = base * (s.boosting ? BOOST_MULT : 1);
+    // Target speed
+    const targetSpeed = base * (s.boosting ? BOOST_MULT : 1);
+    s.targetSpeed = targetSpeed;
 
-    // Move head
+    // Smooth acceleration/deceleration
+    const currentSpeed = Math.sqrt(s.velX * s.velX + s.velY * s.velY);
+    const speedDiff = targetSpeed - currentSpeed;
+    
+    if (Math.abs(speedDiff) > 0.1) {
+      const accel = speedDiff > 0 ? ACCEL_RATE : DECEL_RATE;
+      const speedChange = Math.sign(speedDiff) * Math.min(Math.abs(speedDiff), accel * dt);
+      const newSpeed = currentSpeed + speedChange;
+      
+      if (currentSpeed > 0.1) {
+        s.velX = (s.velX / currentSpeed) * newSpeed;
+        s.velY = (s.velY / currentSpeed) * newSpeed;
+      } else {
+        s.velX = Math.cos(s.dir) * newSpeed;
+        s.velY = Math.sin(s.dir) * newSpeed;
+      }
+    }
+
+    // Apply velocity damping when turning sharply (more realistic)
+    const velDir = Math.atan2(s.velY, s.velX);
+    const turnAngle = Math.abs(wrapAngle(s.dir - velDir));
+    if (turnAngle > 0.3) {
+      const damping = 1 - (turnAngle / Math.PI) * TURN_DAMPING;
+      s.velX *= damping;
+      s.velY *= damping;
+    }
+
+    // Rotate velocity toward desired direction
+    const targetVelX = Math.cos(s.dir) * s.targetSpeed;
+    const targetVelY = Math.sin(s.dir) * s.targetSpeed;
+    
+    const velLerp = 0.15; // Smooth velocity rotation
+    s.velX += (targetVelX - s.velX) * velLerp;
+    s.velY += (targetVelY - s.velY) * velLerp;
+
+    // Move head with velocity
     const head = s.points[0];
-    head.x += Math.cos(s.dir) * speed * dt;
-    head.y += Math.sin(s.dir) * speed * dt;
+    head.x += s.velX * dt;
+    head.y += s.velY * dt;
 
-    // Keep inside world bounds (soft clamp)
+    // Keep inside world bounds
     head.x = clamp(head.x, 20, world.W - 20);
     head.y = clamp(head.y, 20, world.H - 20);
 
-    // Keep body length in sync (boost drain / growth)
+    // Update direction to match velocity for smoothness
+    if (Math.abs(s.velX) > 0.1 || Math.abs(s.velY) > 0.1) {
+      s.dir = Math.atan2(s.velY, s.velX);
+    }
+
     ensureLength(s);
-
-    // Follow body constraints
     follow(s.points, BASE_SPACING);
-
-    // Eat pellets
     checkPelletEat(world, s);
   }
 
-  // Collisions between snakes (after everyone moved)
   rebuildCollisionGrid(world);
   checkSnakeCollisions(world);
 
-  // Leaderboard cache (for renderer) - not every frame
   world._leaderboardAcc = (world._leaderboardAcc ?? 0) + dt;
   if (world._leaderboardAcc >= LEADERBOARD_EVERY) {
     world._leaderboardAcc = 0;
 
-    // Build a small top-N list without sorting whole arrays (keeps cost stable)
     const N = 6;
     const top: { id: string; name: string; score: number; color: string }[] = [];
     for (let i = 0; i < world.snakes.length; i++) {
@@ -942,7 +1186,6 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
       if (!s.alive) continue;
       const item = { id: s.id, name: s.name, score: s.score, color: s.color };
 
-      // insert into top (descending)
       let j = top.length;
       if (j < N) {
         top.push(item);
@@ -952,7 +1195,6 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
         top[j - 1] = item;
       }
 
-      // bubble item up (N is tiny, this is cheap)
       while (j > 0) {
         const a = top[j - 1];
         const b = top[j];
