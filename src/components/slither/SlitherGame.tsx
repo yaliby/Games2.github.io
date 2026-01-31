@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createWorld, stepWorld } from './engine/rules_ai';
-import type { Vec, World, StepInput } from './engine/types';
+import type { World } from './engine/types';
 import { drawWorld } from './render/renderer';
 
 // --- Configuration ---

@@ -26,7 +26,6 @@ const MIN_ENERGY_TO_BOOST = 0.15; // minimum energy needed to start boost
 // Steering
 const PLAYER_TURN = 3.5; // rad/sec
 const BOT_TURN = 3.5;
-const BASE_TURN_RATE = 7.5; // rad/sec
 
 // World
 const WORLD_SIZE = 3800;
@@ -82,14 +81,32 @@ function sanitizeSnakeInvariants(world: World, s: Snake) {
   if (s.desiredLen < MIN_LEN) s.desiredLen = MIN_LEN;
   if (s.desiredLen > MAX_POINTS_LEN) s.desiredLen = MAX_POINTS_LEN;
 
+  // Sanitize additional properties
+  if (!Number.isFinite(s.boostHeat)) s.boostHeat = 0;
+  if (!Number.isFinite(s.boostCooldown)) s.boostCooldown = 0;
+  if (!Number.isFinite(s.spawnInvuln)) s.spawnInvuln = 0;
+  if (!Number.isFinite(s.respawnTimer)) s.respawnTimer = 0;
+  if (!Number.isFinite(s.boostDropAcc)) s.boostDropAcc = 0;
+
   const head = s.points[0];
-  if (!head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) {
-    const cx = 0;
-    const cy = 0;
-    if (s.points.length === 0) s.points.push({ x: cx, y: cy });
-    s.points[0].x = cx;
-    s.points[0].y = cy;
+  if (!head) {
+    s.points.push({ x: 0, y: 0 });
     initBodyAt(s, s.points[0]);
+  } else {
+    if (!Number.isFinite(head.x)) head.x = 0;
+    if (!Number.isFinite(head.y)) head.y = 0;
+
+    // Clamp head position to world bounds
+    const dist = Math.sqrt(head.x * head.x + head.y * head.y);
+    if (dist > world.radius - 50) {
+      const factor = (world.radius - 50) / dist;
+      head.x *= factor;
+      head.y *= factor;
+    }
+
+    if (s.points.length === 0) {
+      initBodyAt(s, head);
+    }
   }
 }
 
