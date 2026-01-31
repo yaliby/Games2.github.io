@@ -1,15 +1,172 @@
 // components/BlockBlast/render/renderer.ts
 import type { Board, BlockShape, Pos } from '../engine/types';
 import { ROWS, COLS } from '../engine/types';
+import type { ComboFxPayload } from "../engine/types";
+
+type FxEvent =
+  | { kind: "flash"; t0: number; dur: number; strength: number }
+  | { kind: "shake"; t0: number; dur: number; amp: number }
+  | { kind: "shockwave"; t0: number; dur: number; x: number; y: number; strength: number }
+  | { kind: "particles"; t0: number; dur: number; parts: Array<{ x:number;y:number;vx:number;vy:number;life:number }> }
+  | { kind: "glitch"; t0: number; dur: number; strength: number };
+
+const fxQueue: FxEvent[] = [];
+
+// helper: ms clock
+const nowMs = () => performance.now();
+
+function clamp(n: number, a: number, b: number) { return Math.max(a, Math.min(b, n)); }
+
+
+export function playComboFx(fx: ComboFxPayload, cellToPx: (r:number,c:number)=>{x:number;y:number}) {
+  const t0 = nowMs();
+
+  // בסיס: flash + shake
+  fxQueue.push({ kind: "flash", t0, dur: 140 + fx.level*40, strength: 0.10 + fx.level*0.06 });
+  fxQueue.push({ kind: "shake", t0, dur: 90 + fx.level*35, amp: 1.8 + fx.level*2.2 });
+
+  // origin
+  const o = fx.origin ?? (fx.clearedCells[0] ?? { r: 0, c: 0 });
+  const p = cellToPx(o.r, o.c);
+
+  // shockwave מרמה 2
+  if (fx.level >= 2) {
+    fxQueue.push({ kind: "shockwave", t0, dur: 260 + fx.level*60, x: p.x, y: p.y, strength: 0.55 + fx.level*0.25 });
+  }
+
+  // particles מרמה 2, מסלים עם כמות הניקוי
+  if (fx.level >= 2 && fx.clearedCells.length > 0) {
+    const parts: Array<{x:number;y:number;vx:number;vy:number;life:number}> = [];
+    const count = clamp(30 + fx.level*35 + fx.clearedCount*18, 40, 260);
+
+    for (let i=0;i<count;i++){
+      const cell = fx.clearedCells[(Math.random()*fx.clearedCells.length)|0];
+      const pt = cellToPx(cell.r, cell.c);
+      const a = Math.random()*Math.PI*2;
+      const sp = 0.35 + Math.random()*(0.65 + fx.level*0.22);
+      parts.push({ x: pt.x, y: pt.y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, life: 180 + Math.random()*(260 + fx.level*120) });
+    }
+    fxQueue.push({ kind:"particles", t0, dur: 520 + fx.level*160, parts });
+  }
+
+  // glitch pulse מרמה 4+
+  if (fx.level >= 4) {
+    fxQueue.push({ kind: "glitch", t0, dur: 220 + fx.level*70, strength: 0.35 + fx.level*0.18 });
+  }
+}
+
+
+
+
+export function drawFxLayer(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const t = nowMs();
+
+  // נקה expired
+  for (let i = fxQueue.length - 1; i >= 0; i--) {
+    const e = fxQueue[i];
+    if (t > e.t0 + e.dur) fxQueue.splice(i, 1);
+  }
+
+  // shake: מחושב כ-offset, תיישם אותו מחוץ לפונקציה אם יש לך כבר shake system.
+  // כאן אנחנו עושים "cheap shake": translate ואז restore.
+  let sx = 0, sy = 0;
+  for (const e of fxQueue) {
+    if (e.kind !== "shake") continue;
+    const k = 1 - clamp((t - e.t0) / e.dur, 0, 1);
+    sx += (Math.random()*2 - 1) * e.amp * k;
+    sy += (Math.random()*2 - 1) * e.amp * k;
+  }
+  if (sx || sy) ctx.translate(sx, sy);
+
+  // flash overlay
+  for (const e of fxQueue) {
+    if (e.kind !== "flash") continue;
+    const k = 1 - clamp((t - e.t0) / e.dur, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = e.strength * k;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  // shockwave ring
+  for (const e of fxQueue) {
+    if (e.kind !== "shockwave") continue;
+    const u = clamp((t - e.t0) / e.dur, 0, 1);
+    const r = (Math.min(w, h) * 0.08) + u * (Math.min(w, h) * 0.55);
+    const a = (1 - u) * 0.55 * e.strength;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.lineWidth = 6 * (1 - u) + 1.5;
+    ctx.strokeStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // particles
+  for (const e of fxQueue) {
+    if (e.kind !== "particles") continue;
+    const dt = (t - e.t0);
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#ffffff";
+    for (const p of e.parts) {
+      const lifeLeft = clamp(1 - dt / p.life, 0, 1);
+      const x = p.x + p.vx * dt;
+      const y = p.y + p.vy * dt;
+      const s = 3.2 * lifeLeft + 0.6;
+      ctx.globalAlpha = 0.9 * lifeLeft;
+      ctx.fillRect(x - s/2, y - s/2, s, s);
+    }
+    ctx.restore();
+  }
+
+  // glitch (cheap): כמה פסי noise לבנים
+  for (const e of fxQueue) {
+    if (e.kind !== "glitch") continue;
+    const u = clamp((t - e.t0) / e.dur, 0, 1);
+    const k = (1 - u) * e.strength;
+    ctx.save();
+    ctx.globalAlpha = 0.28 * k;
+    ctx.fillStyle = "#ffffff";
+    const bars = 8 + ((18 * k) | 0);
+    for (let i=0;i<bars;i++){
+      const y = (Math.random()*h)|0;
+      const hh = 2 + ((8*Math.random()*k)|0);
+      ctx.fillRect(0, y, w, hh);
+    }
+    ctx.restore();
+  }
+
+  if (sx || sy) ctx.translate(-sx, -sy);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const PALETTE = [
-  '#ff4df9', // pink-red
-  '#4DFFB5', // mint
-  '#4DA3FF', // blue
-  '#FFD34A', // yellow
-  '#B84DFF', // purple
-  '#FF8A4D', // orange
-  '#4DFFF3', // cyan
+  '#009e378f',
+  '#4DFFB5',
+  '#4DA3FF',
+  '#FFD34A',
+  '#B84DFF',
+  '#FF8A4D',
+  '#4DFFF3',
 ];
 
 type Preview = {
@@ -212,6 +369,7 @@ export function drawBoard(
       ctx.restore();
     }
   }
+  drawFxLayer(ctx, W, H);
 }
 
 function roundRect(

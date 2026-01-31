@@ -291,6 +291,69 @@ export function getAllMoves(
   return allSequences;
 }
 
+// Get all legal full turn sequences (resolving chain captures)
+export function getAllLegalSequences(
+  board: Board,
+  player: Player,
+  chainCaptureFrom: Pos | null = null
+): MoveSequence[] {
+  const initialMoves = getAllMoves(board, player, chainCaptureFrom);
+  const completedSequences: MoveSequence[] = [];
+
+  for (const seq of initialMoves) {
+    // seq.moves[0] is the next step.
+    // We need to simulate this step and see if it continues.
+    const bCopy = cloneBoard(board);
+    const move = seq.moves[0];
+    const result = applyMove(bCopy, move, player);
+
+    if (result.canContinueCapture) {
+      // Recursively find continuations
+      const continuations = getCaptureContinuations(bCopy, move.to, player);
+      for (const continuation of continuations) {
+        completedSequences.push({
+          moves: [move, ...continuation.moves],
+          totalCaptures: seq.totalCaptures + continuation.totalCaptures
+        });
+      }
+    } else {
+      completedSequences.push(seq);
+    }
+  }
+  
+  return completedSequences;
+}
+
+function getCaptureContinuations(board: Board, pos: Pos, player: Player): MoveSequence[] {
+  const cell = board[pos.r][pos.c];
+  const isKingPiece = isKing(cell);
+  const nextCaptures = getSingleCaptureMoves(board, pos, player, isKingPiece, true);
+  
+  if (nextCaptures.length === 0) return [];
+
+  const sequences: MoveSequence[] = [];
+  for (const move of nextCaptures) {
+    const bCopy = cloneBoard(board);
+    const result = applyMove(bCopy, move, player);
+    
+    if (result.canContinueCapture) {
+      const subContinuations = getCaptureContinuations(bCopy, move.to, player);
+      for (const sub of subContinuations) {
+        sequences.push({
+          moves: [move, ...sub.moves],
+          totalCaptures: 1 + sub.totalCaptures
+        });
+      }
+    } else {
+      sequences.push({
+        moves: [move],
+        totalCaptures: 1
+      });
+    }
+  }
+  return sequences;
+}
+
 // Apply a single move to the board (mutates board)
 // Returns true if more captures are possible from the new position
 export function applyMove(
@@ -385,6 +448,38 @@ export function isDraw(board: Board): boolean {
 /* =========================
    AI — Minimax with Alpha-Beta
    ========================= */
+
+interface TTEntry {
+  depth: number;
+  flag: 'EXACT' | 'LOWER' | 'UPPER';
+  value: number;
+  bestSeq: MoveSequence | null;
+}
+
+// Zobrist Hashing Setup
+// We use BigInt for 64-bit hash keys to minimize collisions
+const ZOBRIST_TABLE = Array.from({ length: ROWS }, () =>
+  Array.from({ length: COLS }, () =>
+    Array.from({ length: 5 }, () => BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)))
+  )
+);
+const ZOBRIST_TURN = {
+  [RED]: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+  [BLACK]: BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)),
+};
+
+function computeZobristHash(board: Board, turn: Player): bigint {
+  let h = ZOBRIST_TURN[turn];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = board[r][c];
+      if (cell !== EMPTY) {
+        h ^= ZOBRIST_TABLE[r][c][cell];
+      }
+    }
+  }
+  return h;
+}
 
 type EvalResult = { value: number; bestSequence: MoveSequence | null };
 
@@ -513,8 +608,25 @@ function minimax(
   alpha: number,
   beta: number,
   toMove: Player,
-  me: Player
+  me: Player,
+  tt: Map<bigint, TTEntry>
 ): EvalResult {
+  const key = computeZobristHash(board, toMove);
+  const ttEntry = tt.get(key);
+
+  if (ttEntry && ttEntry.depth >= depth) {
+    if (ttEntry.flag === 'EXACT') {
+      return { value: ttEntry.value, bestSequence: ttEntry.bestSeq };
+    } else if (ttEntry.flag === 'LOWER') {
+      alpha = Math.max(alpha, ttEntry.value);
+    } else if (ttEntry.flag === 'UPPER') {
+      beta = Math.min(beta, ttEntry.value);
+    }
+    if (alpha >= beta) {
+      return { value: ttEntry.value, bestSequence: ttEntry.bestSeq };
+    }
+  }
+
   const evalNow = evaluate(board, me);
   const winner = getWinner(board, toMove);
 
@@ -522,75 +634,101 @@ function minimax(
     return { value: evalNow, bestSequence: null };
   }
 
-  const moves = getAllMoves(board, toMove);
+  // Use getAllLegalSequences to evaluate full turns (including chain captures)
+  const moves = getAllLegalSequences(board, toMove, null);
   if (moves.length === 0) {
     return { value: evalNow, bestSequence: null };
   }
 
-  // Sort moves by evaluation (best first for alpha-beta pruning)
-  // Prioritize captures, then by evaluation
-  const moveEvals = moves.map((m) => {
-    const b2 = cloneBoard(board);
-    // Apply first move of sequence for evaluation
-    if (m.moves.length > 0) {
-      applyMove(b2, m.moves[0], toMove);
+  // Move Ordering: TT Best Move > Captures > Promotes
+  // If we have a best move from TT (PV move), try it first!
+  const ttBestSeq = ttEntry?.bestSeq;
+
+  moves.sort((a, b) => {
+    // Prioritize TT move
+    if (ttBestSeq) {
+      const aIsBest = areSequencesEqual(a, ttBestSeq);
+      const bIsBest = areSequencesEqual(b, ttBestSeq);
+      if (aIsBest && !bIsBest) return -1;
+      if (!aIsBest && bIsBest) return 1;
     }
-    const evalScore = evaluate(b2, me);
-    // Prioritize captures heavily
-    const captureBonus = m.totalCaptures > 0 ? 1000 * m.totalCaptures : 0;
-    return { move: m, eval: evalScore + captureBonus };
-  });
-  moveEvals.sort((a, b) => {
-    if (toMove === me) return b.eval - a.eval;
-    return a.eval - b.eval;
+
+    if (a.totalCaptures !== b.totalCaptures) return b.totalCaptures - a.totalCaptures;
+    const aProm = a.moves[a.moves.length - 1].promotes ? 1 : 0;
+    const bProm = b.moves[b.moves.length - 1].promotes ? 1 : 0;
+    return bProm - aProm;
   });
 
   const maximizing = toMove === me;
   let bestSequence: MoveSequence | null = null;
+  let originalAlpha = alpha;
+  let bestVal = maximizing ? -INF : INF;
 
   if (maximizing) {
-    let value = -INF;
-
-    for (const { move } of moveEvals) {
+    for (const move of moves) {
       const b2 = cloneBoard(board);
-      // Apply first move of sequence
-      if (move.moves.length > 0) {
-        applyMove(b2, move.moves[0], toMove);
+      // Apply ALL moves in the sequence
+      for (const m of move.moves) {
+        applyMove(b2, m, toMove);
       }
 
-      const res = minimax(b2, depth - 1, alpha, beta, otherPlayer(toMove), me);
-      if (res.value > value) {
-        value = res.value;
+      const res = minimax(b2, depth - 1, alpha, beta, otherPlayer(toMove), me, tt);
+      if (res.value > bestVal) {
+        bestVal = res.value;
         bestSequence = move;
       }
 
-      alpha = Math.max(alpha, value);
+      alpha = Math.max(alpha, bestVal);
       if (beta <= alpha) break;
     }
-
-    return { value, bestSequence };
   } else {
-    let value = INF;
-
-    for (const { move } of moveEvals) {
+    for (const move of moves) {
       const b2 = cloneBoard(board);
-      // Apply first move of sequence
-      if (move.moves.length > 0) {
-        applyMove(b2, move.moves[0], toMove);
+      // Apply ALL moves in the sequence
+      for (const m of move.moves) {
+        applyMove(b2, m, toMove);
       }
 
-      const res = minimax(b2, depth - 1, alpha, beta, otherPlayer(toMove), me);
-      if (res.value < value) {
-        value = res.value;
+      const res = minimax(b2, depth - 1, alpha, beta, otherPlayer(toMove), me, tt);
+      if (res.value < bestVal) {
+        bestVal = res.value;
         bestSequence = move;
       }
 
-      beta = Math.min(beta, value);
+      beta = Math.min(beta, bestVal);
       if (beta <= alpha) break;
     }
-
-    return { value, bestSequence };
   }
+
+  let flag: 'EXACT' | 'LOWER' | 'UPPER' = 'EXACT';
+  if (bestVal <= originalAlpha) flag = 'UPPER';
+  else if (bestVal >= beta) flag = 'LOWER';
+
+  tt.set(key, {
+    depth,
+    flag,
+    value: bestVal,
+    bestSeq: bestSequence
+  });
+
+  return { value: bestVal, bestSequence };
+}
+
+function areSequencesEqual(a: MoveSequence, b: MoveSequence): boolean {
+  if (a.moves.length !== b.moves.length) return false;
+  if (a.totalCaptures !== b.totalCaptures) return false;
+  if (a.moves.length === 0) return true;
+  
+  // Compare start and end of the sequence
+  const aFirst = a.moves[0];
+  const bFirst = b.moves[0];
+  if (aFirst.from.r !== bFirst.from.r || aFirst.from.c !== bFirst.from.c) return false;
+  
+  const aLast = a.moves[a.moves.length - 1];
+  const bLast = b.moves[b.moves.length - 1];
+  if (aLast.to.r !== bLast.to.r || aLast.to.c !== bLast.to.c) return false;
+  
+  return true;
 }
 
 /**
@@ -601,11 +739,14 @@ function minimax(
 export function aiBestMove(
   board: Board,
   me: Player,
-  depth = 6
+  depth = 6,
+  chainCaptureFrom: Pos | null = null
 ): MoveSequence | null {
-  const moves = getAllMoves(board, me);
+  const moves = getAllLegalSequences(board, me, chainCaptureFrom);
   if (moves.length === 0) return null;
   if (moves.length === 1) return moves[0];
+
+  const tt = new Map<bigint, TTEntry>();
 
   // Iterative deepening: start shallow and go deeper
   // This allows us to get a good move quickly and improve if time permits
@@ -614,15 +755,14 @@ export function aiBestMove(
   
   try {
     // Quick search first
-    const quickRes = minimax(board, searchDepth, -INF, INF, me, me);
-    bestMove = quickRes.bestSequence || moves[0];
+    // We must manually iterate root moves because minimax assumes start of turn (null chainCaptureFrom)
+    // but we might be in the middle of a chain capture.
+    bestMove = findBestMoveRoot(board, moves, searchDepth, me, tt);
     
     // If we have time, search deeper
     if (depth > searchDepth) {
-      const deepRes = minimax(board, depth, -INF, INF, me, me);
-      if (deepRes.bestSequence) {
-        bestMove = deepRes.bestSequence;
-      }
+      const deepMove = findBestMoveRoot(board, moves, depth, me, tt);
+      if (deepMove) bestMove = deepMove;
     }
   } catch (e) {
     // Fallback on error
@@ -632,3 +772,48 @@ export function aiBestMove(
   return bestMove || moves[0];
 }
 
+function findBestMoveRoot(
+  board: Board,
+  moves: MoveSequence[],
+  depth: number,
+  me: Player,
+  tt: Map<bigint, TTEntry>
+): MoveSequence | null {
+  let bestVal = -INF;
+  let bestSeq: MoveSequence | null = null;
+  const alpha = -INF;
+  const beta = INF;
+
+  // Check if we have a best move from previous iteration in TT
+  const key = computeZobristHash(board, me);
+  const ttEntry = tt.get(key);
+  const ttBestSeq = ttEntry?.bestSeq;
+
+  // Sort moves for better pruning
+  moves.sort((a, b) => {
+    // Prioritize TT move from previous depth
+    if (ttBestSeq) {
+      const aIsBest = areSequencesEqual(a, ttBestSeq);
+      const bIsBest = areSequencesEqual(b, ttBestSeq);
+      if (aIsBest && !bIsBest) return -1;
+      if (!aIsBest && bIsBest) return 1;
+    }
+    return b.totalCaptures - a.totalCaptures;
+  });
+
+  for (const seq of moves) {
+    const b2 = cloneBoard(board);
+    for (const m of seq.moves) {
+      applyMove(b2, m, me);
+    }
+    
+    // After my full turn, it's opponent's turn
+    const res = minimax(b2, depth - 1, alpha, beta, otherPlayer(me), me, tt);
+    
+    if (res.value > bestVal) {
+      bestVal = res.value;
+      bestSeq = seq;
+    }
+  }
+  return bestSeq;
+}

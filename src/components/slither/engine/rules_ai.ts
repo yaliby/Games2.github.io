@@ -6,15 +6,15 @@ const TAU = Math.PI * 2;
 
 // Movement / body
 const BASE_SPACING = 10;         // distance between points (like vertebrae)
-const FOLLOW_ITERS = 3;          // constraint iterations (bigger = stiffer body, more accurate)
-const PLAYER_BASE_SPEED = 215;
-const BOT_BASE_SPEED = 190;
+const FOLLOW_ITERS = 10;         // constraint iterations (bigger = stiffer body, more accurate)
+const PLAYER_BASE_SPEED = 240;
+const BOT_BASE_SPEED = 210;
 const BOOST_MULT = 1.38;
 
 // Smooth acceleration/deceleration
 const ACCEL_RATE = 850;          // px/sec² acceleration
 const DECEL_RATE = 950;          // px/sec² deceleration
-const TURN_DAMPING = 0.92;       // velocity damping when turning sharply
+const TURN_DAMPING = 0.96;       // velocity damping when turning sharply
 
 // Boost costs length + energy, but never below MIN_LEN.
 const BOOST_LEN_DRAIN_PER_SEC = 4.2;
@@ -24,17 +24,21 @@ const MIN_LEN = 26;
 const MIN_ENERGY_TO_BOOST = 0.15; // minimum energy needed to start boost
 
 // Steering
-const PLAYER_TURN = 7.5; // rad/sec
-const BOT_TURN = 6.5;
+const PLAYER_TURN = 3.5; // rad/sec
+const BOT_TURN = 3.5;
+const BASE_TURN_RATE = 7.5; // rad/sec
 
 // World
 const WORLD_SIZE = 3800;
 
 // Pellets
-const PELLET_R = 6.2;
-const PELLET_VALUE = 1.0;
-const DEATH_PELLET_R = 7.0;
-const DEATH_PELLET_VALUE = 1.65;
+const PELLET_TYPES = {
+  small:  { val: 1,  r: 6.2, prob: 0.80 },
+  medium: { val: 5,  r: 9.0, prob: 0.15 },
+  large:  { val: 12, r: 13.0, prob: 0.04 },
+  gold:   { val: 40, r: 18.0, prob: 0.01 },
+  death:  { val: 1.65, r: 7.0 } // Special case
+};
 const PELLET_SPAWN_RATE = 0.8;  // pellets per second to maintain
 const PELLET_MIN_DISTANCE = 80;  // minimum distance from snakes when spawning
 const PELLET_GRID_CELL = 120;
@@ -80,8 +84,8 @@ function sanitizeSnakeInvariants(world: World, s: Snake) {
 
   const head = s.points[0];
   if (!head || !Number.isFinite(head.x) || !Number.isFinite(head.y)) {
-    const cx = world.W * 0.5;
-    const cy = world.H * 0.5;
+    const cx = 0;
+    const cy = 0;
     if (s.points.length === 0) s.points.push({ x: cx, y: cy });
     s.points[0].x = cx;
     s.points[0].y = cy;
@@ -124,7 +128,7 @@ function wrapAngle(a: number) {
 function rotateToward(current: number, target: number, maxDelta: number) {
   const d = wrapAngle(target - current);
   if (Math.abs(d) <= maxDelta) return target;
-  return current + Math.sign(d) * maxDelta*7;
+  return current + Math.sign(d) * maxDelta;
 }
 
 // -------------------- Render snapshot (for interpolation) --------------------
@@ -161,8 +165,8 @@ function snapshotSnake(s: Snake) {
 
 function snakeColor(i: number) {
   const palette = [
-    '#7C5CFF', '#3DD9A4', '#FF6B6B', '#FFC15E', '#4CC9F0',
-    '#A7F432', '#FF4DCC', '#F7B801', '#00D1FF', '#B5179E',
+    '#00FF9F', '#00B8FF', '#001EFF', '#BD00FF', '#FF0055',
+    '#FF9100', '#F7FF00', '#FFFFFF'
   ];
   return palette[i % palette.length];
 }
@@ -193,10 +197,23 @@ function initBodyAt(s: Snake, pos: Vec) {
 
 function ensureLength(s: Snake) {
   const desired = safeLen(s.desiredLen);
+  const spacing = s.radius * 0.4;
+
   if (s.points.length < desired) {
-    const tail = s.points[s.points.length - 1] ?? s.points[0] ?? { x: 0, y: 0 };
-    while (s.points.length < desired) {
-      s.points.push({ x: tail.x, y: tail.y });
+    // Growth: Only add a new segment if the tail has moved far enough from the previous segment.
+    // This prevents "stacking" or "instant extrusion". The snake grows as it moves.
+    const tail = s.points[s.points.length - 1];
+    const prev = s.points[s.points.length - 2];
+    
+    if (!tail || !prev) {
+      // Initialize or edge case
+      s.points.push({ x: tail?.x || 0, y: tail?.y || 0 });
+    } else {
+      const d2 = dist2(tail, prev);
+      if (d2 >= spacing * spacing) {
+        // There is room; duplicate the tail point to fill the gap
+        s.points.push({ x: tail.x, y: tail.y });
+      }
     }
   } else if (s.points.length > desired) {
     s.points.length = desired;
@@ -218,7 +235,7 @@ function follow(points: Vec[], spacing: number) {
       const nx = dx / d;
       const ny = dy / d;
       // Apply correction with damping for smoother movement
-      const correction = err * 0.5;
+      const correction = err * 0.8;
       b.x -= nx * correction;
       b.y -= ny * correction;
     }
@@ -236,8 +253,8 @@ let _pelletId = 0;
 function ensurePelletGrid(world: World): PelletGrid {
   if (world._pelletGrid) return world._pelletGrid;
   const cellSize = PELLET_GRID_CELL;
-  const cols = Math.ceil(world.W / cellSize);
-  const rows = Math.ceil(world.H / cellSize);
+  const cols = Math.ceil((world.radius * 2) / cellSize);
+  const rows = Math.ceil((world.radius * 2) / cellSize);
   world._pelletGrid = {
     cellSize,
     cols,
@@ -275,8 +292,8 @@ function rebuildPelletGrid(world: World) {
   const cols = grid.cols;
   for (let i = 0; i < world.pellets.length; i++) {
     const p = world.pellets[i];
-    const cx = clamp(Math.floor(p.pos.x / grid.cellSize), 0, grid.cols - 1);
-    const cy = clamp(Math.floor(p.pos.y / grid.cellSize), 0, grid.rows - 1);
+    const cx = clamp(Math.floor((p.pos.x + world.radius) / grid.cellSize), 0, grid.cols - 1);
+    const cy = clamp(Math.floor((p.pos.y + world.radius) / grid.cellSize), 0, grid.rows - 1);
     const key = gridKey(cx, cy, cols);
     ensurePelletBucket(grid, key).idx.push(i);
   }
@@ -293,10 +310,10 @@ function forNearbyPellets(
   const grid = ensurePelletGrid(world);
   if (world._pelletGridDirty) rebuildPelletGrid(world);
   const r = Math.max(1, radius);
-  const cx0 = clamp(Math.floor((x - r) / grid.cellSize), 0, grid.cols - 1);
-  const cx1 = clamp(Math.floor((x + r) / grid.cellSize), 0, grid.cols - 1);
-  const cy0 = clamp(Math.floor((y - r) / grid.cellSize), 0, grid.rows - 1);
-  const cy1 = clamp(Math.floor((y + r) / grid.cellSize), 0, grid.rows - 1);
+  const cx0 = clamp(Math.floor((x - r + world.radius) / grid.cellSize), 0, grid.cols - 1);
+  const cx1 = clamp(Math.floor((x + r + world.radius) / grid.cellSize), 0, grid.cols - 1);
+  const cy0 = clamp(Math.floor((y - r + world.radius) / grid.cellSize), 0, grid.rows - 1);
+  const cy1 = clamp(Math.floor((y + r + world.radius) / grid.cellSize), 0, grid.rows - 1);
   const cols = grid.cols;
 
   for (let cy = cy0; cy <= cy1; cy++) {
@@ -313,7 +330,10 @@ function forNearbyPellets(
 function spawnPos(world: World, avoidSnakes: boolean = true): Vec {
   let attempts = 0;
   while (attempts < 50) {
-    const pos = { x: rand(160, world.W - 160), y: rand(160, world.H - 160) };
+    // Random point in circle
+    const r = Math.sqrt(rand()) * (world.radius - 100);
+    const theta = rand(0, TAU);
+    const pos = { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
     
     if (!avoidSnakes) return pos;
     
@@ -328,7 +348,7 @@ function spawnPos(world: World, avoidSnakes: boolean = true): Vec {
       }
       const pts = s.points;
       const step = pts.length > 260 ? 10 : (pts.length > 120 ? 6 : 4);
-      const minD2 = (s.radius + PELLET_R + 6) ** 2;
+      const minD2 = (s.radius + PELLET_TYPES.small.r + 6) ** 2;
       for (let i = 6; i < pts.length; i += step) {
         const p = pts[i];
         const dx = pos.x - p.x;
@@ -343,20 +363,40 @@ function spawnPos(world: World, avoidSnakes: boolean = true): Vec {
   }
   
   // Fallback if can't find safe spot
-  return { x: rand(160, world.W - 160), y: rand(160, world.H - 160) };
+  const r = Math.sqrt(rand()) * (world.radius - 100);
+  const theta = rand(0, TAU);
+  return { x: Math.cos(theta) * r, y: Math.sin(theta) * r };
 }
 
-function makePellet(world: World, kind: 'normal' | 'death' = 'normal', avoidSnakes: boolean = true): Pellet {
-  const pos = spawnPos(world, avoidSnakes && kind === 'normal');
+function makePellet(world: World, kind: 'random' | 'death' = 'random', avoidSnakes: boolean = true): Pellet {
+  const pos = spawnPos(world, avoidSnakes && kind === 'random');
   _pelletId++;
-  const isDeath = kind === 'death';
+  
+  if (kind === 'death') {
+    return {
+      id: `d-${_pelletId}`,
+      pos,
+      r: PELLET_TYPES.death.r,
+      value: PELLET_TYPES.death.val,
+      kind: 'death',
+      color: '#FFD700', // Gold-ish for death pellets
+    };
+  }
+
+  // Random generation based on probability
+  const r = Math.random();
+  let type: keyof typeof PELLET_TYPES = 'small';
+  if (r < PELLET_TYPES.gold.prob) type = 'gold';
+  else if (r < PELLET_TYPES.gold.prob + PELLET_TYPES.large.prob) type = 'large';
+  else if (r < PELLET_TYPES.gold.prob + PELLET_TYPES.large.prob + PELLET_TYPES.medium.prob) type = 'medium';
+
   return {
     id: `pel-${_pelletId}`,
     pos,
-    r: isDeath ? DEATH_PELLET_R : PELLET_R,
-    value: isDeath ? DEATH_PELLET_VALUE : PELLET_VALUE,
-    kind,
-    color: isDeath ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.80)',
+    r: PELLET_TYPES[type].r,
+    value: PELLET_TYPES[type].val,
+    kind: type,
+    color: type === 'gold' ? '#FFD700' : (type === 'large' ? '#00FFFF' : (type === 'medium' ? '#FF00FF' : `hsl(${rand(0,360)}, 80%, 60%)`)),
   };
 }
 
@@ -369,7 +409,7 @@ function fillPellets(world: World) {
   if (current < target) {
     const toSpawn = Math.min(Math.ceil(PELLET_SPAWN_RATE * dt), target - current);
     for (let i = 0; i < toSpawn; i++) {
-      world.pellets.push(makePellet(world, 'normal', true));
+      world.pellets.push(makePellet(world, 'random', true));
     }
     if (toSpawn > 0) world._pelletGridDirty = true;
   }
@@ -527,6 +567,7 @@ function botPickVictim(world: World, bot: Snake) {
 
 function botComputeThreat(world: World, bot: Snake) {
   const head = bot.points[0];
+  const dt = world._dtLast || 0.016;
 
   let ax = 0;
   let ay = 0;
@@ -556,9 +597,23 @@ function botComputeThreat(world: World, bot: Snake) {
 
     // Lookahead
     const otherHead = pts[0];
-    const lookSecs = 0.35;
-    const px = otherHead.x + Math.cos(s.dir) * s.speed * lookSecs;
-    const py = otherHead.y + Math.sin(s.dir) * s.speed * lookSecs;
+    const lookSecs = 0.5;
+    
+    // Predict position considering turn (angular velocity)
+    const turnRate = wrapAngle(s.dir - (s._prevDir ?? s.dir)) / dt;
+    let px, py;
+
+    if (Math.abs(turnRate) < 0.1) {
+      px = otherHead.x + Math.cos(s.dir) * s.speed * lookSecs;
+      py = otherHead.y + Math.sin(s.dir) * s.speed * lookSecs;
+    } else {
+      const r = s.speed / turnRate;
+      const cx = otherHead.x - Math.sin(s.dir) * r;
+      const cy = otherHead.y + Math.cos(s.dir) * r;
+      const nextDir = s.dir + turnRate * lookSecs;
+      px = cx + Math.sin(nextDir) * r;
+      py = cy - Math.cos(nextDir) * r;
+    }
 
     const pdx = head.x - px;
     const pdy = head.y - py;
@@ -579,10 +634,17 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   const head = bot.points[0];
   const difficulty = world.difficulty ?? 1;
 
+  // Reaction delay simulation
+  bot.ai.reactionTimer -= world._dtLast ?? 0;
+  if (bot.ai.reactionTimer > 0) {
+    return { aim: bot.ai.currentAim, boost: bot.boosting };
+  }
+  bot.ai.reactionTimer = rand(0.05, 0.15); // Faster reaction
+
   // Wander timer (human-like exploration)
   bot.ai.wanderTimer -= world._dtLast ?? 0;
   if (bot.ai.wanderTimer <= 0) {
-    bot.ai.wanderTimer = rand(0.6, 1.6);
+    bot.ai.wanderTimer = rand(1.0, 3.0);
     bot.ai.wanderAngle = rand(-Math.PI, Math.PI);
   }
 
@@ -650,11 +712,14 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   }
 
   // Soft wall avoidance
-  const wallPad = 220;
-  if (head.x < wallPad) dx += (wallPad - head.x) / wallPad;
-  if (head.x > world.W - wallPad) dx -= (head.x - (world.W - wallPad)) / wallPad;
-  if (head.y < wallPad) dy += (wallPad - head.y) / wallPad;
-  if (head.y > world.H - wallPad) dy -= (head.y - (world.H - wallPad)) / wallPad;
+  const distFromCenter = Math.sqrt(head.x * head.x + head.y * head.y);
+  const distToWall = world.radius - distFromCenter;
+  if (distToWall < 400) {
+    const angleToCenter = Math.atan2(-head.y, -head.x);
+    const urgency = 1 - (distToWall / 400);
+    dx += Math.cos(angleToCenter) * 4 * urgency;
+    dy += Math.sin(angleToCenter) * 4 * urgency;
+  }
 
   const aim = Math.atan2(dy, dx);
 
@@ -672,6 +737,7 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
     boost = rand() < (0.03 * difficulty); // Occasional random boost
   }
 
+  bot.ai.currentAim = aim;
   return { aim, boost };
 }
 
@@ -691,10 +757,10 @@ function spillDeathPellets(world: World, s: Snake) {
     world.pellets.push({
       id: `d-${_pelletId++}`,
       pos: { x: p.x + rand(-12, 12), y: p.y + rand(-12, 12) },
-      r: DEATH_PELLET_R,
-      value: DEATH_PELLET_VALUE,
+      r: PELLET_TYPES.death.r,
+      value: PELLET_TYPES.death.val,
       kind: 'death',
-      color: 'rgba(255,255,255,0.92)',
+      color: s.color, // Drop body color
     });
   }
   world._pelletGridDirty = true;
@@ -736,8 +802,8 @@ function ensureGrid(world: World): SpatialGrid {
   if (world._grid) return world._grid;
 
   const cellSize = 42;
-  const cols = Math.ceil(world.W / cellSize);
-  const rows = Math.ceil(world.H / cellSize);
+  const cols = Math.ceil((world.radius * 2) / cellSize);
+  const rows = Math.ceil((world.radius * 2) / cellSize);
 
   world._grid = {
     cellSize,
@@ -775,17 +841,17 @@ function ensureBucket(grid: SpatialGrid, key: number) {
   return bucket;
 }
 
-function addSegmentToGrid(grid: SpatialGrid, a: Vec, b: Vec, snakeIdx: number, radius: number) {
+function addSegmentToGrid(grid: SpatialGrid, a: Vec, b: Vec, snakeIdx: number, radius: number, world: World) {
   const r = Number.isFinite(radius) ? radius : 0;
   const minX = Math.min(a.x, b.x) - r;
   const maxX = Math.max(a.x, b.x) + r;
   const minY = Math.min(a.y, b.y) - r;
   const maxY = Math.max(a.y, b.y) + r;
 
-  const cx0 = clamp(Math.floor(minX / grid.cellSize), 0, grid.cols - 1);
-  const cx1 = clamp(Math.floor(maxX / grid.cellSize), 0, grid.cols - 1);
-  const cy0 = clamp(Math.floor(minY / grid.cellSize), 0, grid.rows - 1);
-  const cy1 = clamp(Math.floor(maxY / grid.cellSize), 0, grid.rows - 1);
+  const cx0 = clamp(Math.floor((minX + world.radius) / grid.cellSize), 0, grid.cols - 1);
+  const cx1 = clamp(Math.floor((maxX + world.radius) / grid.cellSize), 0, grid.cols - 1);
+  const cy0 = clamp(Math.floor((minY + world.radius) / grid.cellSize), 0, grid.rows - 1);
+  const cy1 = clamp(Math.floor((maxY + world.radius) / grid.cellSize), 0, grid.rows - 1);
 
   for (let cy = cy0; cy <= cy1; cy++) {
     for (let cx = cx0; cx <= cx1; cx++) {
@@ -836,7 +902,7 @@ function rebuildCollisionGrid(world: World) {
     for (let i = start; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
-      addSegmentToGrid(grid, a, b, si, s.radius);
+      addSegmentToGrid(grid, a, b, si, s.radius, world);
     }
   }
 }
@@ -891,8 +957,8 @@ function checkSnakeCollisions(world: World) {
     const hr = headRadius(s);
     const hr2Base = hr * hr;
 
-    const cx = clamp(Math.floor(head.x / grid.cellSize), 0, grid.cols - 1);
-    const cy = clamp(Math.floor(head.y / grid.cellSize), 0, grid.rows - 1);
+    const cx = clamp(Math.floor((head.x + world.radius) / grid.cellSize), 0, grid.cols - 1);
+    const cy = clamp(Math.floor((head.y + world.radius) / grid.cellSize), 0, grid.rows - 1);
 
     let died = false;
 
@@ -978,6 +1044,8 @@ function makeSnake(index: number, isPlayer: boolean): Snake {
       targetSnakeId: null,
       evadeAngle: undefined,
       steerMemory: 0,
+      reactionTimer: 0,
+      currentAim: 0,
     },
 
     score: 0,
@@ -990,8 +1058,7 @@ function makeSnake(index: number, isPlayer: boolean): Snake {
 
 export function createWorld(cfg: WorldConfig): World {
   const world: World = {
-    W: WORLD_SIZE,
-    H: WORLD_SIZE,
+    radius: WORLD_SIZE,
     tick: 0,
     pellets: [],
     snakes: [],
@@ -1051,6 +1118,25 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
     snapshotSnake(s);
     if ((s.spawnInvuln ?? 0) > 0) s.spawnInvuln = Math.max(0, s.spawnInvuln - dt);
 
+    // Check pellets early so growth happens this frame (instant visual feedback)
+    checkPelletEat(world, s);
+
+    // --- Dynamic Size & Speed ---
+    // Calculate scale based on mass (desiredLen). Grows with food.
+    const mass = s.desiredLen;
+    const scale = 1 + Math.sqrt(Math.max(0, mass - MIN_LEN)) * 0.05;
+
+    // 1. Thicker: Radius grows with scale
+    s.radius = 13 * scale;
+
+    // 2. Slower: Speed decreases with scale
+    const baseSpeed = s.isPlayer ? PLAYER_BASE_SPEED : BOT_BASE_SPEED;
+    const speedScale = 1 / Math.pow(scale, 0.5);
+    s.speed = baseSpeed * speedScale;
+
+    // 3. Tile Spacing: Overlap based on radius
+    const spacing = s.radius * 0.4;
+
     // Decide aim + boost
     let desiredDir: number | null = null;
     let wantBoost = false;
@@ -1068,12 +1154,11 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
 
     // Smooth turning
     if (desiredDir != null) {
+      // Turn rate: Slower when big
+      const baseTurn = s.isPlayer ? PLAYER_TURN : BOT_TURN;
+      s.turnRate = baseTurn / Math.pow(scale, 0.3);
       s.dir = rotateToward(s.dir, desiredDir, s.turnRate * dt);
     }
-
-    // Speed depends on size
-    const sizeSlow = 1 / (1 + s.desiredLen / 520);
-    const base = s.speed * (0.88 + 0.55 * sizeSlow);
 
     // Boost rules with energy system
     const canBoost = s.desiredLen > MIN_LEN + 2 && s.boostCooldown <= 0 && s.energy >= MIN_ENERGY_TO_BOOST;
@@ -1097,8 +1182,8 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
             pos: { x: tail.x + rand(-8, 8), y: tail.y + rand(-8, 8) },
             r: 5.6,
             value: 0.9,
-            kind: 'normal',
-            color: 'rgba(255,255,255,0.70)',
+            kind: 'small',
+            color: s.color, // Trail matches snake color
           });
           world._pelletGridDirty = true;
         }
@@ -1115,7 +1200,7 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
     }
 
     // Target speed
-    const targetSpeed = base * (s.boosting ? BOOST_MULT : 1);
+    const targetSpeed = s.speed * (s.boosting ? BOOST_MULT : 1);
     s.targetSpeed = targetSpeed;
 
     // Smooth acceleration/deceleration
@@ -1158,18 +1243,15 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
     head.x += s.velX * dt;
     head.y += s.velY * dt;
 
-    // Keep inside world bounds
-    head.x = clamp(head.x, 20, world.W - 20);
-    head.y = clamp(head.y, 20, world.H - 20);
-
-    // Update direction to match velocity for smoothness
-    if (Math.abs(s.velX) > 0.1 || Math.abs(s.velY) > 0.1) {
-      s.dir = Math.atan2(s.velY, s.velX);
+    // Circular world bounds check
+    const distFromCenter = Math.sqrt(head.x * head.x + head.y * head.y);
+    if (distFromCenter > world.radius) {
+      // Hit the wall -> die
+      killSnake(world, s, null);
     }
 
     ensureLength(s);
-    follow(s.points, BASE_SPACING);
-    checkPelletEat(world, s);
+    follow(s.points, spacing);
   }
 
   rebuildCollisionGrid(world);

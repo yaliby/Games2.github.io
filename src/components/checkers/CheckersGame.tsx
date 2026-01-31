@@ -13,7 +13,6 @@ import {
   getSingleCaptureMoves,
   isKing,
   EMPTY,
-  aiBestMove,
 } from './engine/rules_ai';
 import { drawBoard } from './render/renderer';
 
@@ -55,6 +54,7 @@ type Anim = {
 export default function CheckersGame() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const workerRef = useRef<Worker | null>(null);
   const navigate = useNavigate();
 
   /* ---------- UI STATE ---------- */
@@ -97,6 +97,8 @@ export default function CheckersGame() {
     anim: Anim | null;
     lastMove: MoveSequence | null;
     aiPending: boolean;
+    aiThinking: boolean; // True when worker is calculating
+    aiResult: MoveSequence | null; // Stores result from worker
     aiTimer: number;
     msg: string;
     inChainCapture: boolean;
@@ -129,6 +131,22 @@ export default function CheckersGame() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  /* ================= WORKER SETUP ================= */
+  useEffect(() => {
+    // Initialize the Web Worker
+    const worker = new Worker(new URL('./engine/ai.worker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = worker;
+
+    worker.onmessage = (e) => {
+      if (gameRef.current && e.data.type === 'SUCCESS') {
+        gameRef.current.aiResult = e.data.move;
+        gameRef.current.aiThinking = false;
+      }
+    };
+
+    return () => worker.terminate();
+  }, []);
+
   /* ================= RESET FUNCTION ================= */
   const resetGame = useCallback(() => {
     if (gameRef.current) {
@@ -143,6 +161,8 @@ export default function CheckersGame() {
       g.anim = null;
       g.lastMove = null;
       g.aiPending = false;
+      g.aiThinking = false;
+      g.aiResult = null;
       g.aiTimer = 0;
       g.msg = 'Hold left-click on a piece, drag, then release on a valid square.';
       g.drag = null;
@@ -186,6 +206,8 @@ export default function CheckersGame() {
       anim: null,
       lastMove: null,
       aiPending: false,
+      aiThinking: false,
+      aiResult: null,
       aiTimer: 0,
       msg: 'Hold left-click on a piece, drag, then release on a valid square.',
       inChainCapture: false,
@@ -534,7 +556,9 @@ export default function CheckersGame() {
         g.turn === BLACK &&
         g.winner.kind === 'NONE' &&
         !g.anim?.active &&
-        !g.aiPending
+        !g.aiPending &&
+        !g.aiThinking &&
+        !g.aiResult
       ) {
         g.aiPending = true;
         g.aiTimer = 0;
@@ -543,96 +567,71 @@ export default function CheckersGame() {
         g.forcedCaptures = [];
       }
 
-      if (g.aiPending) {
+      // Increment timer if AI is busy
+      if (g.aiPending || g.aiThinking) {
         g.aiTimer += dt;
-        if (g.aiTimer >= AI_DELAY && !g.anim?.active) {
+      }
+
+      // Wait for delay, then trigger worker
+      if (g.aiPending && !g.aiThinking) {
+        if (g.aiTimer >= AI_DELAY) {
           g.aiPending = false;
+          g.aiThinking = true;
 
-          // AI chain capture
-          if (g.inChainCapture && g.chainCaptureFrom) {
-            const captures = getSingleCaptureMoves(
-              g.board,
-              g.chainCaptureFrom,
-              BLACK,
-              isKing(g.board[g.chainCaptureFrom.r][g.chainCaptureFrom.c]),
-              true
-            );
-            if (captures.length > 0) {
-              const move = captures[0];
-              g.anim = {
-                active: true,
-                from: move.from,
-                to: move.to,
-                captures: move.captures,
-                t: 0,
-                startTime: performance.now(),
-              };
+          const chainFrom = g.inChainCapture ? g.chainCaptureFrom : null;
+          
+          // Send to worker
+          workerRef.current?.postMessage({
+            board: g.board,
+            player: BLACK,
+            depth: aiDepth,
+            chainCaptureFrom: chainFrom
+          });
+        }
+      }
 
-              if (move.captures.length > 0) {
-                for (const cap of move.captures) {
-                  const capturedCell = g.board[cap.r][cap.c];
-                  const capturedPlayer = (capturedCell === 1 || capturedCell === 2) ? 1 : 2;
-                  g.board[cap.r][cap.c] = EMPTY;
-                  g.graveyard.push({
-                    player: capturedPlayer,
-                    cell: capturedCell,
-                    index: g.graveyard.length,
-                  });
-                }
+      // Handle Worker Result
+      if (g.aiResult) {
+        const bestSequence = g.aiResult;
+        g.aiResult = null; // Consume result
+
+        if (!g.anim?.active) {
+          if (bestSequence && bestSequence.moves.length > 0) {
+            const move = bestSequence.moves[0];
+            g.anim = {
+              active: true,
+              from: move.from,
+              to: move.to,
+              captures: move.captures,
+              t: 0,
+              startTime: performance.now(),
+            };
+
+            if (move.captures.length > 0) {
+              for (const cap of move.captures) {
+                const capturedCell = g.board[cap.r][cap.c];
+                const capturedPlayer = (capturedCell === 1 || capturedCell === 2) ? 1 : 2;
+                g.board[cap.r][cap.c] = EMPTY;
+                g.graveyard.push({
+                  player: capturedPlayer,
+                  cell: capturedCell,
+                  index: g.graveyard.length,
+                });
               }
+            }
 
-              const result = applyMove(g.board, move, BLACK);
-              if (result.canContinueCapture) {
-                g.chainCaptureFrom = move.to;
-              } else {
-                g.inChainCapture = false;
-                g.chainCaptureFrom = null;
-              }
+            const result = applyMove(g.board, move, BLACK);
+            if (result.canContinueCapture && move.captures.length > 0) {
+              g.inChainCapture = true;
+              g.chainCaptureFrom = move.to;
             } else {
               g.inChainCapture = false;
               g.chainCaptureFrom = null;
             }
           } else {
-            const allMoves = getAllMoves(g.board, BLACK, null);
-            if (allMoves.length > 0) {
-              // Use AI to select best move
-              const bestSequence = aiBestMove(g.board, BLACK, aiDepth);
-              const chosen = bestSequence || allMoves[0];
-
-              if (chosen && chosen.moves.length > 0) {
-                const move = chosen.moves[0];
-                g.anim = {
-                  active: true,
-                  from: move.from,
-                  to: move.to,
-                  captures: move.captures,
-                  t: 0,
-                  startTime: performance.now(),
-                };
-
-                if (move.captures.length > 0) {
-                  for (const cap of move.captures) {
-                    const capturedCell = g.board[cap.r][cap.c];
-                    const capturedPlayer = (capturedCell === 1 || capturedCell === 2) ? 1 : 2;
-                    g.board[cap.r][cap.c] = EMPTY;
-                    g.graveyard.push({
-                      player: capturedPlayer,
-                      cell: capturedCell,
-                      index: g.graveyard.length,
-                    });
-                  }
-                }
-
-                const result = applyMove(g.board, move, BLACK);
-                if (result.canContinueCapture && move.captures.length > 0) {
-                  g.inChainCapture = true;
-                  g.chainCaptureFrom = move.to;
-                } else {
-                  g.inChainCapture = false;
-                  g.chainCaptureFrom = null;
-                }
-              }
-            }
+            // No moves available (should be loss, but handle gracefully)
+            g.inChainCapture = false;
+            g.chainCaptureFrom = null;
           }
         }
       }
@@ -712,6 +711,81 @@ export default function CheckersGame() {
         },
         { tile: tileSize, graveyardWidth: GRAVEYARD_WIDTH }
       );
+
+      /* ---------- AI Indicator ---------- */
+      if ((g.aiPending || g.aiThinking) && g.aiTimer > 0.7) {
+        const cx = size.w / 2;
+        const cy = size.h / 2;
+        const w = 180;
+        const h = 54;
+        const r = 27;
+        const x = cx - w / 2;
+        const y = cy - h / 2;
+
+        // Smooth fade-in animation (0.5s)
+        const fadeInTime = Math.min(1, (g.aiTimer - 0.7) / 0.5);
+        const fadeAlpha = fadeInTime;
+
+        ctx.save();
+        ctx.globalAlpha = fadeAlpha;
+
+        // 1. Animated Glow Pulse
+        const pulse = (Math.sin(ts / 200) + 1) / 2; // 0..1
+        const glowSize = 15 + pulse * 10;
+        
+        ctx.shadowColor = 'rgba(100, 180, 255, 0.6)';
+        ctx.shadowBlur = glowSize;
+        ctx.shadowOffsetY = 0;
+
+        // 2. Glassmorphism Background
+        // Dark semi-transparent fill
+        ctx.fillStyle = 'rgba(15, 20, 35, 0.85)';
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, r);
+        ctx.fill();
+
+        // 3. Border Gradient
+        ctx.shadowColor = 'transparent';
+        const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+        grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.05)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // 4. Fancy Spinner (Orbiting dots)
+        const spinX = x + 32;
+        const spinY = cy;
+        const orbitR = 10;
+        const time = ts / 150;
+        
+        for (let i = 0; i < 3; i++) {
+          const angle = time + (i * (Math.PI * 2) / 3);
+          const dotX = spinX + Math.cos(angle) * orbitR;
+          const dotY = spinY + Math.sin(angle) * orbitR;
+          
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(100, 200, 255, ${0.6 + pulse * 0.4})`;
+          ctx.fill();
+        }
+        
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(spinX, spinY, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+
+        // 5. Text with slight shimmer
+        ctx.fillStyle = '#fff';
+        ctx.font = '600 16px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('AI Thinking...', spinX + 24, cy + 1);
+
+        ctx.restore();
+      }
 
       rafRef.current = requestAnimationFrame(step);
     };

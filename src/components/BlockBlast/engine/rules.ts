@@ -1,6 +1,47 @@
 // components/BlockBlast/engine/rules.ts
 import type { Board, BlockShape } from './types';
 import { ROWS, COLS } from './types';
+import type { ClearResult } from "./types";
+
+// לא נוגע ב-clearLines הישן שלך — מוסיף חדש.
+export function clearLinesDetailed(board: Board): ClearResult {
+  const clearedRows: number[] = [];
+  const clearedCols: number[] = [];
+
+  // rows
+  for (let r = 0; r < ROWS; r++) {
+    let full = true;
+    for (let c = 0; c < COLS; c++) {
+      if (!board[r][c]) { full = false; break; }
+    }
+    if (full) clearedRows.push(r);
+  }
+
+  // cols
+  for (let c = 0; c < COLS; c++) {
+    let full = true;
+    for (let r = 0; r < ROWS; r++) {
+      if (!board[r][c]) { full = false; break; }
+    }
+    if (full) clearedCols.push(c);
+  }
+
+  const clearedCells: Array<{ r: number; c: number }> = [];
+  for (const r of clearedRows) for (let c = 0; c < COLS; c++) clearedCells.push({ r, c });
+  for (const c of clearedCols) for (let r = 0; r < ROWS; r++) clearedCells.push({ r, c });
+
+  // apply clear
+  for (const r of clearedRows) for (let c = 0; c < COLS; c++) board[r][c] = 0;
+  for (const c of clearedCols) for (let r = 0; r < ROWS; r++) board[r][c] = 0;
+
+  return {
+    clearedRows,
+    clearedCols,
+    clearedCount: clearedRows.length + clearedCols.length,
+    clearedCells,
+  };
+}
+
 
 export function createBoard(): Board {
   return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));

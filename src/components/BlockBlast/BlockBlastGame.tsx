@@ -16,6 +16,7 @@ import { doc, onSnapshot, collection, query, orderBy, limit } from "firebase/fir
 
 
 
+
 /* ================= CONFIG ================= */
 
 // Calculate responsive tile size
@@ -68,18 +69,196 @@ type FlashState = {
   duration: number;
 } | null;
 
+type ParticleDef = {
+  vx: number;
+  vy: number;
+  color: string;
+  size: number;
+  type: 'circle' | 'rect';
+  life: number;
+};
+
+type ComboAnim = {
+  text: string;
+  tier: number;
+  start: number;
+  duration: number;
+  particles: ParticleDef[];
+};
+
 type GameState = {
   board: Board;
   tray: TrayBlock[];
   score: number;
   drag: DragState;
   flash: FlashState;
+  comboAnim: ComboAnim | null;
   gameOver: boolean;
   scoreSubmitted: boolean;
 };
 
 
 /* ================= COMPONENT ================= */
+
+function easeOutBack(x: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
+function generateComboParticles(tier: number, tileSize: number): ParticleDef[] {
+  // More particles for higher tiers
+  const count = Math.min(80, 15 + tier * 8);
+  const particles: ParticleDef[] = [];
+  // Vibrant palette
+  const colors = ['#FFD34A', '#4DFFB5', '#4DA3FF', '#FF8A4D', '#B84DFF', '#FFFFFF', '#FF4D6D'];
+  
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    // Speed increases with tier
+    const speed = (0.1 + Math.random() * 0.4) * (1 + tier * 0.15) * (tileSize / 20);
+    
+    particles.push({
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: (2 + Math.random() * 4) * (tileSize / 30),
+      type: Math.random() > 0.6 ? 'circle' : 'rect',
+      life: 500 + Math.random() * 600,
+    });
+  }
+  return particles;
+}
+
+function drawCombo(
+  ctx: CanvasRenderingContext2D,
+  anim: ComboAnim,
+  boardW: number,
+  boardH: number,
+  tileSize: number
+) {
+  const { text, tier, start, duration, particles } = anim;
+  const now = performance.now();
+  const elapsed = now - start;
+  const t = Math.min(1, elapsed / duration);
+
+  // Colors based on tier (cycling palette)
+  const colors = ['#FFFFFF', '#4DFFB5', '#4DA3FF', '#FFD34A', '#FF8A4D', '#B84DFF', '#FF4D6D'];
+  const mainColor = colors[Math.min(tier, colors.length - 1)] || colors[colors.length - 1];
+
+  const cx = boardW / 2;
+  const cy = boardH / 2;
+
+  // Animation Phases (2s total)
+  // 0.0 - 0.15: Pop in (scale 0.8 -> 1.08 -> 1.0)
+  // 0.0 - 0.40: Shock ring & Sparks
+  // 0.15 - 0.70: Float up slightly
+  // 0.70 - 1.00: Fade out
+
+  let scale = 1;
+  let alpha = 1;
+  let yOffset = 0;
+
+  // Pop in
+  if (t < 0.12) {
+    const tPop = t / 0.12;
+    scale = 0.8 + (easeOutBack(tPop) * 0.2);
+    // Extra scale punch for high tiers
+    if (tier >= 5) scale *= 1.2;
+  } else if (t > 0.7) {
+    alpha = 1 - (t - 0.7) / 0.3;
+  }
+
+  // Float up
+  yOffset = -tileSize * (t * 0.8);
+
+  ctx.save();
+  ctx.translate(cx, cy + yOffset);
+
+  // --- 0. God Rays (High Tier) ---
+  if (tier >= 5 && alpha > 0.1) {
+    ctx.save();
+    ctx.rotate(elapsed * 0.0015);
+    ctx.globalAlpha = alpha * 0.25;
+    const rayCount = Math.min(14, 6 + tier);
+    for (let i = 0; i < rayCount; i++) {
+      ctx.rotate((Math.PI * 2) / rayCount);
+      ctx.fillStyle = mainColor;
+      // Draw long ray
+      ctx.fillRect(0, -tileSize * 0.1, boardW * 1.5, tileSize * 0.2);
+    }
+    ctx.restore();
+  }
+
+  // --- 1. Particles ---
+  particles.forEach(p => {
+    if (elapsed > p.life) return;
+    const pT = elapsed / p.life;
+    
+    // Physics: velocity + gravity
+    const x = p.vx * elapsed;
+    const y = p.vy * elapsed + (0.0008 * elapsed * elapsed); 
+
+    const pAlpha = (1 - Math.pow(pT, 3)) * alpha;
+    const pScale = 1 - pT;
+
+    ctx.globalAlpha = pAlpha;
+    ctx.fillStyle = p.color;
+    
+    ctx.beginPath();
+    if (p.type === 'circle') {
+      ctx.arc(x, y, p.size * pScale, 0, Math.PI * 2);
+    } else {
+      const s = p.size * pScale;
+      ctx.rect(x - s/2, y - s/2, s, s);
+    }
+    ctx.fill();
+  });
+
+  // --- 2. Shock Rings (Multiple) ---
+  const numRings = tier >= 4 ? 2 : 1;
+  for (let i = 0; i < numRings; i++) {
+    const delay = i * 100;
+    if (elapsed > delay && t < 0.6) {
+      const rT = (elapsed - delay) / (duration * 0.5); // normalized ring time
+      if (rT > 1) continue;
+      
+      const radius = tileSize * (1.5 + rT * (3 + tier * 0.5));
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = mainColor;
+      ctx.lineWidth = tileSize * 0.15 * (1 - rT);
+      ctx.globalAlpha = (1 - rT) * alpha;
+      ctx.stroke();
+    }
+  }
+
+  // 3. Text
+  ctx.globalAlpha = alpha;
+  ctx.scale(scale, scale);
+  // Rotate text slightly for impact
+  if (t < 0.2) ctx.rotate((Math.random() - 0.5) * 0.1);
+
+  const fontSize = tileSize * (3 + Math.min(tier, 10) * 0.15) * 0.7;
+  ctx.font = `900 ${fontSize}px system-ui, -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Glow
+  ctx.shadowColor = mainColor;
+  ctx.shadowBlur = 20 + tier * 8;
+
+  // Stroke
+  ctx.lineWidth = tileSize * 0.1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.strokeText(text, 0, 0);
+
+  // Fill (White core, colored glow)
+  ctx.fillStyle = '#FFF';
+  ctx.fillText(text, 0, 0);
+
+  ctx.restore();
+}
 
 export default function BlockBlastGame() {
   const navigate = useNavigate();
@@ -99,16 +278,26 @@ export default function BlockBlastGame() {
   const [leaderboard, setLeaderboard] = useState<Array<{ name: string; score: number }>>([]);
   const [tileSize, setTileSize] = useState<number>(calculateTileSize());
 
+  // Combo rules (new):
+  const comboTierRef = useRef(1);          // Multiplier (starts at 1)
+  const comboStreakTurnsRef = useRef(0);   // Consecutive turns with at least one clear
+  const trayHadAnyClearRef = useRef(false); // did we clear at least once in the current tray?
+
+  // We only show the combo anim when multiplier increases (prevents spam)
+  const lastToastMultRef = useRef<number>(1);
+
   const gameRef = useRef<GameState>({
   board: createBoard(),
-  tray: pickRandomTray(),
+  tray: pickTrayGuaranteed(createBoard()),
   score: 0,
   drag: null,
   flash: null,
+  comboAnim: null,
   gameOver: false,
   scoreSubmitted: false,
 });
 
+  
 
   const TRAY_HEIGHT = useMemo(() => Math.floor(tileSize * 3.2), [tileSize]);
   const boardPx = useMemo(() => ({ w: COLS * tileSize, h: ROWS * tileSize }), [tileSize]);
@@ -188,33 +377,62 @@ useEffect(() => {
 }, []);
 /* ================= GAME CONTROL ================= */
 
-  const triggerShake = (strength: 'sm' | 'md' = 'sm') => {
+  const triggerShake = (strength: 'sm' | 'md' | 'lg' | 'xl' = 'sm') => {
     const el = boardWrapRef.current;
     if (!el) return;
 
     // restart animation reliably
-    el.classList.remove('bb-shake-sm', 'bb-shake-md');
+    el.classList.remove('bb-shake-sm', 'bb-shake-md', 'bb-shake-lg', 'bb-shake-xl');
     // force reflow
     void el.offsetWidth;
-    el.classList.add(strength === 'md' ? 'bb-shake-md' : 'bb-shake-sm');
+    el.classList.add(
+      strength === 'xl' ? 'bb-shake-xl' : strength === 'lg' ? 'bb-shake-lg' : strength === 'md' ? 'bb-shake-md' : 'bb-shake-sm'
+    );
 
     window.setTimeout(() => {
-      el.classList.remove('bb-shake-sm', 'bb-shake-md');
-    }, 220);
+      el.classList.remove('bb-shake-sm', 'bb-shake-md', 'bb-shake-lg', 'bb-shake-xl');
+    }, strength === 'xl' ? 360 : strength === 'lg' ? 300 : 220);
   };
 
+// Quick board pulse (CSS only) – stronger with higher combo level (no React re-render)
+const pulseBoard = (level: number) => {
+  const el = boardWrapRef.current;
+  if (!el || level <= 0) return;
+
+  for (let i = 1; i <= 5; i++) el.classList.remove(`bb-pulse-lvl${i}`);
+  void el.offsetWidth;
+
+  const cls = `bb-pulse-lvl${Math.min(5, Math.max(1, level))}`;
+  el.classList.add(cls);
+
+  window.setTimeout(() => {
+    el.classList.remove(cls);
+  }, 520);
+};
+
   const resetGame = () => {
+  const fresh = createBoard();
   gameRef.current = {
-    board: createBoard(),
-    tray: pickRandomTray(),
+    board: fresh,
+    tray: pickTrayGuaranteed(fresh),
     score: 0,
     drag: null,
     flash: null,
+    comboAnim: null,
     gameOver: false,
     scoreSubmitted: false,
   };
+
   setScoreUI(0);
+
+  // reset combo refs + hide toast instantly (no React re-render needed)
+  comboTierRef.current = 1;
+  comboStreakTurnsRef.current = 0;
+  trayHadAnyClearRef.current = false;
+  lastToastMultRef.current = 1;
 };
+
+
 
 
   /* ================= DRAW TRAY (FIXED DPR + PROPORTIONS) ================= */
@@ -252,6 +470,9 @@ useEffect(() => {
 
       const block = g.tray[i];
       if (!block) continue;
+
+      // Hide block if it's being dragged (so it looks like we picked it up)
+      if (g.drag && g.drag.index === i) continue;
 
       const shape = block.shape;
       const color = PALETTE[(block.colorId - 1) % PALETTE.length];
@@ -502,10 +723,29 @@ useEffect(() => {
         const oyBoard = oyClient - r.top;
 
         // snap to nearest cell so it feels "magnetic"
-        const cMinCell = Math.round(oxBoard / tileSize);
-        const rMinCell = Math.round(oyBoard / tileSize);
+        // snap to nearest cell (top-left of the shape's bounding box)
+        let cMinCell = Math.round(oxBoard / tileSize);
+        let rMinCell = Math.round(oyBoard / tileSize);
 
-        // anchor for rules placement
+        // clamp so the bounding box can't drift outside the board (prevents jitter at edges)
+        const maxCMin = COLS - shapeW;
+        const maxRMin = ROWS - shapeH;
+
+        // Don't snap if too far from board (allow dragging back to tray)
+        const SNAP_MARGIN = 1.5;
+        if (
+          cMinCell < -SNAP_MARGIN || cMinCell > maxCMin + SNAP_MARGIN ||
+          rMinCell < -SNAP_MARGIN || rMinCell > maxRMin + SNAP_MARGIN
+        ) {
+          g.drag.boardPos = null;
+          g.drag.valid = false;
+          return;
+        }
+
+        cMinCell = Math.max(0, Math.min(maxCMin, cMinCell));
+        rMinCell = Math.max(0, Math.min(maxRMin, rMinCell));
+
+        // anchor for rules placement (shape cells are defined relative to minR/minC)
         const c0 = cMinCell - minC;
         const r0 = rMinCell - minR;
 
@@ -523,44 +763,122 @@ useEffect(() => {
       const drag = g.drag;
 
       if (drag.boardPos && drag.valid) {
-        placeBlock(g.board, drag.block.shape, drag.boardPos.r, drag.boardPos.c, drag.block.colorId);
+placeBlock(g.board, drag.block.shape, drag.boardPos.r, drag.boardPos.c, drag.block.colorId);
 
-        const res = clearLines(g.board);
-        g.board = res.board;
+const res = clearLines(g.board);
+g.board = res.board;
 
-        if (res.cleared > 0) {
-          g.flash = {
-            rows: res.rows,
-            cols: res.cols,
-            cells: res.cells,
-            start: performance.now(),
-            duration: 420,
-          };
+const cleared = res.cleared;
 
-          // subtle screen shake on clear
-          triggerShake(res.cleared >= 2 ? 'md' : 'sm');
-        }
+// --- COMBO LOGIC ---
+if (cleared > 0) {
+  trayHadAnyClearRef.current = true;
+}
 
-        g.score += drag.block.shape.length * 12 + res.cleared * 140;
-        setScoreUI(g.score);
+if (cleared > 0) {
+  const startTier = comboTierRef.current;
+  comboTierRef.current += cleared; // +1 per line cleared
 
-        // ✅ עדכון UI מיידי (לא מחכה למסד)
-        setBestScoreUI(prev => (g.score > prev ? g.score : prev));
+  // Animate increments sequentially ("tata-tata" effect)
+  for (let i = 1; i <= cleared; i++) {
+    setTimeout(() => {
+      const tier = startTier + i;
+      g.comboAnim = { 
+        text: `×${tier}`, 
+        tier, 
+        start: performance.now(), 
+        duration: 2000,
+        particles: generateComboParticles(tier, tileSize)
+      };
+    }, (i - 1) * 600);
+  }
+  lastToastMultRef.current = comboTierRef.current;
+}
 
-        // ✅ ניסיון עדכון למסד (רק אם עקפנו)
-        tryPushBestScore(g.score);
+if (cleared > 0) {
+  g.flash = {
+    rows: res.rows,
+    cols: res.cols,
+    cells: res.cells,
+    start: performance.now(),
+    duration: 520 + comboTierRef.current * 100,
+  };
 
-        // remove used tray block
-        g.tray.splice(drag.index, 1);
+  // shake + pulse scale with combo strength (CSS only) — make low levels still feel good
+  const strength =
+    (cleared >= 4 || comboTierRef.current >= 5) ? 'xl'
+  : (cleared >= 3 || comboTierRef.current >= 4) ? 'xl'
+  : (cleared >= 2 || comboTierRef.current >= 3) ? 'lg'
+  : 'md';
 
-        // refill
-        if (g.tray.length === 0) g.tray = pickRandomTray();
+  triggerShake(strength);
+  pulseBoard(comboTierRef.current);
 
-        g.gameOver = !anyMoveExists(g.board, g.tray.map((b) => b.shape));
+  if (TRAY_CONFIG.debugLogs) {
+    console.log(
+      `[BB][Combo] cleared=${cleared} tier=${comboTierRef.current} streakTurns=${comboStreakTurnsRef.current}`
+    );
+  }
+}
+
+// scoring (keep your feel, but apply multiplier)
+const placedCells = drag.block.shape.length;
+const placementScore = placedCells * 12;
+const clearScore = res.cleared * 140;
+const gained = Math.round(placementScore + (clearScore * comboTierRef.current));
+
+g.score += gained;
+setScoreUI(g.score);
+
+// ✅ עדכון UI מיידי (לא מחכה למסד)
+setBestScoreUI((prev) => (g.score > prev ? g.score : prev));
+
+// ✅ ניסיון עדכון למסד (רק אם עקפנו)
+tryPushBestScore(g.score);
+
+// remove used tray block
+g.tray.splice(drag.index, 1);
+
+// refill (tray boundary)
+if (g.tray.length === 0) {
+  if (trayHadAnyClearRef.current) {
+    // Continue streak
+    comboStreakTurnsRef.current++;
+    // No extra +1 for turn completion, only per-line
+  } else {
+    // Reset
+    comboStreakTurnsRef.current = 0;
+    comboTierRef.current = 1;
+    lastToastMultRef.current = 1;
+  }
+  trayHadAnyClearRef.current = false;
+  g.tray = pickTrayGuaranteed(g.board);
+}
+
+g.gameOver = !anyMoveExists(g.board, g.tray.map((b) => b.shape));
+
       }
 
+      try { trayCanvas.releasePointerCapture(e.pointerId); } catch {}
       g.drag = null;
     };
+
+    const cancelDrag = () => {
+      const g = gameRef.current;
+      if (!g.drag) return;
+      g.drag = null;
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      const g = gameRef.current;
+      if (!g.drag || g.drag.pointerId !== e.pointerId) return;
+      cancelDrag();
+    };
+
+    const onWindowBlur = () => {
+      cancelDrag();
+    };
+
 
     // LOOP
     const loop = () => {
@@ -581,6 +899,15 @@ useEffect(() => {
         g.flash
       );
 
+      // Draw combo animation on top of board
+      if (g.comboAnim) {
+        if (performance.now() - g.comboAnim.start > g.comboAnim.duration) {
+          g.comboAnim = null;
+        } else {
+          drawCombo(bctx, g.comboAnim, boardPx.w, boardPx.h, tileSize);
+        }
+      }
+
       drawTray();
       drawFloatingDrag();
 
@@ -590,6 +917,8 @@ useEffect(() => {
     trayCanvas.addEventListener('pointerdown', onPointerDownTray);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+    window.addEventListener('blur', onWindowBlur);
     window.addEventListener('resize', resizeOverlay);
 
     loop();
@@ -599,6 +928,8 @@ useEffect(() => {
       trayCanvas.removeEventListener('pointerdown', onPointerDownTray);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+      window.removeEventListener('blur', onWindowBlur);
       window.removeEventListener('resize', resizeOverlay);
     };
   }, [screen, boardPx.h, boardPx.w, tileSize]);
@@ -796,7 +1127,69 @@ if (screen === 'MENU') {
           opacity:.55;
           font-size:12px;
         }
-      `}</style>
+      
+/* ---- Stronger shakes (CSS only) ---- */
+@keyframes bbShakeLg {
+  0% { transform: translate3d(0,0,0) rotate(0deg); }
+  10% { transform: translate3d(-4px, -2px, 0) rotate(-0.45deg); }
+  20% { transform: translate3d(4px, 2px, 0) rotate(0.45deg); }
+  35% { transform: translate3d(-3px, 2px, 0) rotate(-0.30deg); }
+  50% { transform: translate3d(3px, -2px, 0) rotate(0.30deg); }
+  70% { transform: translate3d(-2px, 1px, 0) rotate(-0.18deg); }
+  100% { transform: translate3d(0,0,0) rotate(0deg); }
+}
+@keyframes bbShakeXl {
+  0% { transform: translate3d(0,0,0) rotate(0deg); }
+  8% { transform: translate3d(-6px, -3px, 0) rotate(-0.70deg); }
+  16% { transform: translate3d(6px, 3px, 0) rotate(0.70deg); }
+  28% { transform: translate3d(-5px, 3px, 0) rotate(-0.55deg); }
+  42% { transform: translate3d(5px, -3px, 0) rotate(0.55deg); }
+  60% { transform: translate3d(-4px, 2px, 0) rotate(-0.35deg); }
+  78% { transform: translate3d(3px, -2px, 0) rotate(0.25deg); }
+  100% { transform: translate3d(0,0,0) rotate(0deg); }
+}
+.bb-shake-lg { animation: bbShakeLg 260ms ease-out both; }
+.bb-shake-xl { animation: bbShakeXl 340ms ease-out both; }
+
+/* ---- Board pulse ring (CSS only) ---- */
+@keyframes bbPulseRing {
+  0% { opacity: 0; transform: scale(0.985); }
+  18% { opacity: 1; transform: scale(1.01); }
+  45% { opacity: 0.65; transform: scale(1.015); }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+@keyframes bbPulsePop {
+  0% { transform: scale(1); filter: brightness(1) saturate(1); }
+  22% { transform: scale(1.008); filter: brightness(1.18) saturate(1.18); }
+  100% { transform: scale(1); filter: brightness(1) saturate(1); }
+}
+
+.bb-pulse-lvl1 { animation: bbPulsePop 520ms ease-out both; filter: brightness(1.06) saturate(1.06); }
+.bb-pulse-lvl2 { animation: bbPulsePop 520ms ease-out both; filter: brightness(1.05) saturate(1.05); }
+.bb-pulse-lvl3 { animation: bbPulsePop 520ms ease-out both; filter: brightness(1.10) saturate(1.10); }
+.bb-pulse-lvl4 { animation: bbPulsePop 520ms ease-out both; filter: brightness(1.16) saturate(1.16); }
+.bb-pulse-lvl5 { animation: bbPulsePop 520ms ease-out both; filter: brightness(1.22) saturate(1.22); }
+
+.bb-pulse-lvl1::after,
+.bb-pulse-lvl2::after,
+.bb-pulse-lvl3::after,
+.bb-pulse-lvl4::after,
+.bb-pulse-lvl5::after{
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 30px;
+  pointer-events: none;
+  border: 2px solid rgba(200, 220, 255, .50);
+  box-shadow: 0 0 26px rgba(255,255,255,.12);
+  opacity: 0;
+  animation: bbPulseRing 520ms ease-out both;
+}
+.bb-pulse-lvl3::after{ border-color: rgba(255, 211, 74, .40); }
+.bb-pulse-lvl4::after{ border-color: rgba(77, 255, 181, .42); }
+.bb-pulse-lvl5::after{ border-color: rgba(184, 77, 255, .48); }
+
+`}</style>
 
       <div className="bb-card">
         <h1 className="bb-title">
@@ -840,25 +1233,111 @@ if (screen === 'MENU') {
     <>
       <style>{`
         @keyframes bbShakeSm {
+  0%   { transform: translate3d(0,0,0) rotate(0deg); }
+  12%  { transform: translate3d(-2px, -1px, 0) rotate(-0.22deg); }
+  24%  { transform: translate3d(2px,  1px, 0) rotate(0.22deg); }
+  40%  { transform: translate3d(-2px,  1px, 0) rotate(-0.16deg); }
+  56%  { transform: translate3d(2px, -1px, 0) rotate(0.16deg); }
+  74%  { transform: translate3d(-1px, 0px, 0) rotate(-0.10deg); }
+  100% { transform: translate3d(0,0,0) rotate(0deg); }
+}
+
+@keyframes bbShakeMd {
+  0%   { transform: translate3d(0,0,0) rotate(0deg); }
+  10%  { transform: translate3d(-3px, -2px, 0) rotate(-0.32deg); }
+  20%  { transform: translate3d(3px,  2px, 0) rotate(0.32deg); }
+  34%  { transform: translate3d(-3px,  2px, 0) rotate(-0.22deg); }
+  48%  { transform: translate3d(3px, -2px, 0) rotate(0.22deg); }
+  68%  { transform: translate3d(-2px, 1px, 0) rotate(-0.14deg); }
+  100% { transform: translate3d(0,0,0) rotate(0deg); }
+}
+
+@keyframes bbShakeLg {
           0% { transform: translate3d(0,0,0) rotate(0deg); }
-          15% { transform: translate3d(-1px, 0px, 0) rotate(-0.15deg); }
-          30% { transform: translate3d(1px, 0px, 0) rotate(0.15deg); }
-          45% { transform: translate3d(-1px, 0px, 0) rotate(-0.10deg); }
-          60% { transform: translate3d(1px, 0px, 0) rotate(0.10deg); }
-          75% { transform: translate3d(-1px, 0px, 0) rotate(-0.06deg); }
+          8% { transform: translate3d(-3px, -2px, 0) rotate(-0.45deg); }
+          16% { transform: translate3d(3px, 2px, 0) rotate(0.45deg); }
+          28% { transform: translate3d(-3px, 2px, 0) rotate(-0.30deg); }
+          40% { transform: translate3d(3px, -2px, 0) rotate(0.30deg); }
+          58% { transform: translate3d(-2px, 1px, 0) rotate(-0.18deg); }
+          78% { transform: translate3d(2px, -1px, 0) rotate(0.18deg); }
           100% { transform: translate3d(0,0,0) rotate(0deg); }
         }
-        @keyframes bbShakeMd {
+        @keyframes bbShakeXl {
           0% { transform: translate3d(0,0,0) rotate(0deg); }
-          10% { transform: translate3d(-2px, -1px, 0) rotate(-0.25deg); }
-          20% { transform: translate3d(2px, 1px, 0) rotate(0.25deg); }
-          35% { transform: translate3d(-2px, 1px, 0) rotate(-0.18deg); }
-          50% { transform: translate3d(2px, -1px, 0) rotate(0.18deg); }
-          70% { transform: translate3d(-1px, 0px, 0) rotate(-0.10deg); }
+          6% { transform: translate3d(-5px, -3px, 0) rotate(-0.7deg); }
+          12% { transform: translate3d(5px, 3px, 0) rotate(0.7deg); }
+          22% { transform: translate3d(-5px, 3px, 0) rotate(-0.5deg); }
+          34% { transform: translate3d(5px, -3px, 0) rotate(0.5deg); }
+          50% { transform: translate3d(-4px, 2px, 0) rotate(-0.35deg); }
+          70% { transform: translate3d(4px, -2px, 0) rotate(0.35deg); }
           100% { transform: translate3d(0,0,0) rotate(0deg); }
         }
         .bb-shake-sm { animation: bbShakeSm 180ms ease-out both; }
         .bb-shake-md { animation: bbShakeMd 220ms ease-out both; }
+        .bb-shake-lg { animation: bbShakeLg 300ms ease-out both; }
+        .bb-shake-xl { animation: bbShakeXl 360ms cubic-bezier(.12,.85,.23,1) both; }
+
+        /* Combo banner */
+        .bb-combo{
+          position:absolute;
+          left:50%;
+          top:18px;
+          transform: translateX(-50%);
+          z-index: 5;
+          padding: 10px 14px;
+          border-radius: 16px;
+          background: rgba(6,10,20,.68);
+          border: 1px solid rgba(140,170,255,.18);
+          box-shadow: 0 18px 55px rgba(0,0,0,.55);
+          backdrop-filter: blur(8px);
+          text-align:center;
+          pointer-events:none;
+          animation: bbComboPop 420ms cubic-bezier(.16,.85,.23,1) both;
+        }
+        @keyframes bbComboPop{
+          from { opacity:0; transform: translateX(-50%) translateY(-8px) scale(.92); filter: blur(1px); }
+          to   { opacity:1; transform: translateX(-50%) translateY(0) scale(1); filter: blur(0); }
+        }
+        .bb-combo__top{
+          font-weight: 900;
+          letter-spacing: .5px;
+          font-size: 13px;
+          color: rgba(230,240,255,.92);
+          text-shadow: 0 0 18px rgba(140,170,255,.15);
+        }
+        .bb-combo__mid{
+          margin-top: 2px;
+          font-weight: 950;
+          font-size: 18px;
+          color: #FFD34A;
+          text-shadow: 0 0 24px rgba(255,211,74,.28);
+        }
+        .bb-combo--lvl1{ border-color: rgba(140,170,255,.16); }
+        .bb-combo--lvl2{ border-color: rgba(77,255,181,.22); box-shadow: 0 18px 60px rgba(77,255,181,.10), 0 18px 55px rgba(0,0,0,.55); }
+        .bb-combo--lvl3{ border-color: rgba(77,163,255,.28); box-shadow: 0 18px 70px rgba(77,163,255,.14), 0 18px 55px rgba(0,0,0,.55); }
+        .bb-combo--lvl4{ border-color: rgba(184,77,255,.30); box-shadow: 0 18px 80px rgba(184,77,255,.18), 0 18px 55px rgba(0,0,0,.55); }
+        .bb-combo--lvl5{ border-color: rgba(255,77,249,.34); box-shadow: 0 18px 95px rgba(255,77,249,.22), 0 18px 55px rgba(0,0,0,.55); }
+
+        .bb-combo__ring{
+          position:absolute;
+          inset:-10px;
+                  border: 1px solid rgba(255,255,255,.10);
+          box-shadow: 0 0 0 1px rgba(140,170,255,.08) inset;
+          animation: bbRing 900ms ease-out infinite;
+          pointer-events:none;
+        }
+        @keyframes bbRing{
+          0% { opacity:.0; transform: scale(.92); }
+          20% { opacity:.26; }
+          100%{ opacity:0; transform: scale(1.12); }
+        }
+
+        @keyframes bbComboBounce {
+          0% { transform: scale(0.6); opacity: 0.5; }
+          50% { transform: scale(1.4); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+
       `}</style>
 
       <section className="home-hero">
@@ -931,7 +1410,43 @@ if (screen === 'MENU') {
           <button style={btnGhost} onClick={() => navigate('/')}>
             🏠 Home
           </button>
+
+          {/* Fancy Combo Indicator */}
+          <div style={{
+            marginTop: 10,
+            padding: '12px 0',
+            background: 'rgba(0,0,0,0.25)',
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,0.06)',
+            textAlign: 'center',
+            transition: 'all 0.3s ease',
+            opacity: comboTierRef.current > 1 ? 1 : 0.5,
+            transform: comboTierRef.current > 1 ? 'scale(1.02)' : 'scale(1)',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#8CA6DB', letterSpacing: 1.5, marginBottom: 4 }}>
+              COMBO
+            </div>
+            <div
+              key={comboTierRef.current}
+              style={{
+                fontSize: 32,
+                fontWeight: 900,
+                lineHeight: 1,
+                display: 'inline-block',
+                background: comboTierRef.current > 1 ? 'linear-gradient(180deg, #FFF 20%, #FFD34A 100%)' : undefined,
+                WebkitBackgroundClip: comboTierRef.current > 1 ? 'text' : undefined,
+                WebkitTextFillColor: comboTierRef.current > 1 ? 'transparent' : undefined,
+                color: comboTierRef.current > 1 ? undefined : '#5A6B8C',
+                filter: comboTierRef.current > 1 ? 'drop-shadow(0 0 16px rgba(255,211,74,0.6))' : 'none',
+                animation: comboTierRef.current > 1 ? 'bbComboBounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
+              }}
+            >
+              ×{comboTierRef.current}
+            </div>
+          </div>
         </div>
+
+
 
         <div style={{ display: 'flex', flexDirection: 'column', placeItems: 'center', gap: 14, alignItems: 'center' }}>
           <div
@@ -946,6 +1461,7 @@ if (screen === 'MENU') {
               padding: 14,
             }}
           >
+            
             <canvas ref={boardCanvasRef} style={{ borderRadius: 22, display: 'block' }} />
 
 
@@ -1097,15 +1613,257 @@ if (screen === 'MENU') {
 
 /* ================= HELPERS ================= */
 
-function pickRandomTray(): TrayBlock[] {
-  const bag = [...BLOCKS, ...BLOCKS, ...BLOCKS].sort(() => Math.random() - 0.5);
+/* ================= TRAY GENERATION (Block Blast-style) =================
+   Goals:
+   1) Player should never receive a fresh tray of 3 blocks that is immediately impossible.
+   2) Distribution: VERY easy blocks and VERY hard blocks are both rarer than "medium" blocks.
+   3) Easy to tune: tweak TRAY_CONFIG only.
+*/
 
-  // random color per block (Block Blast style)
-  return bag.slice(0, 3).map((shape) => ({
-    shape,
-    colorId: 1 + Math.floor(Math.random() * PALETTE.length),
-  }));
+const TRAY_CONFIG = {
+  // How many candidate trays we are willing to try before falling back.
+  maxTries: 500,
+
+  // If true: require that ALL 3 blocks can be placed (in some order), including line clears in between.
+  // If false: only require that at least ONE of the 3 blocks has a legal placement right now.
+  requireAllThreeSolvable: true,
+
+  // Base weights by cell-count (tune these!)
+  // "Very easy" (1-2) and "very hard" (6,9) are intentionally lower than medium sizes.
+  weightBySize: {
+    1: 0.22,
+    2: 0.45,
+    3: 1.00,
+    4: 1.12,
+    5: 0.78,
+    6: 0.52,
+    9: 0.22,
+  } as Record<number, number>,
+
+  // Extra penalty/bonus multipliers (tune these!)
+  extra: {
+    // long thin lines (often too "swingy" on small boards)
+    thinLinePenalty: 0.88,
+
+    // slightly discourage 1x1 specifically (too easy)
+    singlePenalty: 0.80,
+
+    // slightly discourage the 3x3 block (very hard on 8x8)
+    square3x3Penalty: 0.75,
+  },
+
+  // Debug: log why candidate trays were rejected
+  debugLogs: true,
+  logEveryNFailures: 50,
+};
+
+function shapeMeta(shape: BlockShape) {
+  let maxR = 0, maxC = 0;
+  for (const p of shape) { if (p.r > maxR) maxR = p.r; if (p.c > maxC) maxC = p.c; }
+  const h = maxR + 1;
+  const w = maxC + 1;
+  const cells = shape.length;
+  const area = w * h;
+  const thin = (w === 1 || h === 1);
+  const is3x3 = (w === 3 && h === 3 && cells === 9);
+  return { w, h, cells, area, thin, is3x3 };
 }
+
+function shapeWeight(shape: BlockShape): number {
+  const m = shapeMeta(shape);
+  let w = TRAY_CONFIG.weightBySize[m.cells] ?? 1.0;
+
+  if (m.thin && m.cells >= 4) w *= TRAY_CONFIG.extra.thinLinePenalty;
+  if (m.cells === 1) w *= TRAY_CONFIG.extra.singlePenalty;
+  if (m.is3x3) w *= TRAY_CONFIG.extra.square3x3Penalty;
+
+  // Mild preference for "denser" shapes (less empty area inside bounding box)
+  // Density in [0..1]. Pushes weight by ~ ±10%.
+  const density = m.cells / Math.max(1, m.area);
+  w *= (0.9 + 0.2 * density);
+
+  return Math.max(0.0001, w);
+}
+
+const SHAPE_WEIGHTS = BLOCKS.map((shape, idx) => ({
+  idx,
+  w: shapeWeight(shape),
+}));
+
+const SHAPE_WEIGHT_SUM = SHAPE_WEIGHTS.reduce((s, x) => s + x.w, 0);
+
+function weightedPickShapeIndex(): number {
+  let r = Math.random() * SHAPE_WEIGHT_SUM;
+  for (const x of SHAPE_WEIGHTS) {
+    r -= x.w;
+    if (r <= 0) return x.idx;
+  }
+  return SHAPE_WEIGHTS[SHAPE_WEIGHTS.length - 1].idx;
+}
+
+function pickWeightedTray(): { shapeIdxs: number[]; tray: TrayBlock[] } {
+  const shapeIdxs: number[] = [];
+  const tray: TrayBlock[] = [];
+
+  while (shapeIdxs.length < 3) {
+    const idx = weightedPickShapeIndex();
+    shapeIdxs.push(idx);
+    tray.push({
+      shape: BLOCKS[idx],
+      colorId: 1 + Math.floor(Math.random() * PALETTE.length),
+    });
+  }
+
+  return { shapeIdxs, tray };
+}
+
+function cloneBoardLocal(board: Board): Board {
+  return board.map((row) => row.slice()) as Board;
+}
+
+function boardKey(board: Board): string {
+  // occupancy-only key (colors irrelevant for legality/clears)
+  return board.map((row) => row.map((v) => (v ? '1' : '0')).join('')).join('|');
+}
+
+
+function traySolveAllThree(
+  board: Board,
+  shapeIdxs: number[]
+): { ok: boolean; path: Array<{ shapeIdx: number; r: number; c: number }> } {
+  // DFS with memo: can we place ALL remaining shapes (in some order), allowing clears in between?
+  // Returns a concrete path when solvable (useful for debugging).
+  const memo = new Set<string>();
+
+  function key(b: Board, remaining: number[]): string {
+    const rem = remaining.slice().sort((a, b2) => a - b2).join(',');
+    return boardKey(b) + '::' + rem;
+  }
+
+  function dfs(
+    b: Board,
+    remaining: number[],
+    path: Array<{ shapeIdx: number; r: number; c: number }>
+  ): { ok: boolean; path: Array<{ shapeIdx: number; r: number; c: number }> } {
+    if (remaining.length === 0) return { ok: true, path };
+
+    const k = key(b, remaining);
+    if (memo.has(k)) return { ok: false, path: [] };
+    memo.add(k);
+
+    for (let i = 0; i < remaining.length; i++) {
+      const shapeIdx = remaining[i];
+      const shape = BLOCKS[shapeIdx];
+
+      // Try all placements for this shape
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (!canPlace(b, shape, r, c)) continue;
+
+          const b2 = cloneBoardLocal(b);
+          placeBlock(b2, shape, r, c, 1); // color doesn't matter for legality/clears
+          const cleared = clearLines(b2).board;
+
+          const next = remaining.slice(0, i).concat(remaining.slice(i + 1));
+          const res = dfs(cleared, next, path.concat([{ shapeIdx, r, c }]));
+          if (res.ok) return res;
+        }
+      }
+    }
+
+    return { ok: false, path: [] };
+  }
+
+  // Work on a snapshot board (we never mutate the input, but this avoids accidental shared refs)
+  return dfs(cloneBoardLocal(board), shapeIdxs.slice(), []);
+}
+
+
+
+
+function pickTrayGuaranteed(board: Board): TrayBlock[] {
+  // Try many random weighted candidates. If none pass, fall back to a "rescue" tray.
+  let failNoMove = 0;
+  let failNotSolvable = 0;
+
+  for (let t = 0; t < TRAY_CONFIG.maxTries; t++) {
+    const { shapeIdxs, tray } = pickWeightedTray();
+
+    if (TRAY_CONFIG.requireAllThreeSolvable) {
+      const solved = traySolveAllThree(board, shapeIdxs);
+      if (solved.ok) {
+        if (TRAY_CONFIG.debugLogs && (failNoMove + failNotSolvable) > 0) {
+          console.log(
+            `[BB][TrayGen] accepted after ${t + 1} tries (fails: noMove=${failNoMove}, notSolvable=${failNotSolvable})`,
+            { shapeIdxs, path: solved.path }
+          );
+        }
+        return tray;
+      }
+      failNotSolvable++;
+    } else {
+      if (anyMoveExists(board, tray.map((b) => b.shape))) return tray;
+      failNoMove++;
+    }
+
+    // Periodic progress log (so you can see it working without spamming)
+    if (TRAY_CONFIG.debugLogs && TRAY_CONFIG.logEveryNFailures > 0) {
+      const fails = failNoMove + failNotSolvable;
+      if (fails > 0 && fails % TRAY_CONFIG.logEveryNFailures === 0) {
+        console.log(
+          `[BB][TrayGen] still searching... tries=${t + 1}/${TRAY_CONFIG.maxTries} (noMove=${failNoMove}, notSolvable=${failNotSolvable})`
+        );
+      }
+    }
+  }
+
+  // ---------------- Rescue fallback ----------------
+  // We try a few curated "easy-ish" trays and still require solvability when requireAllThreeSolvable=true.
+  const EASY_CANDIDATES: number[][] = [
+    [0, 1, 11],   // 1x1, 1x2, 2x2
+    [0, 2, 11],   // 1x1, 2-vertical, 2x2
+    [1, 2, 11],   // 1x2 both orientations + 2x2
+    [0, 5, 11],   // 1x1 + small L(3) + 2x2
+    [0, 3, 4],    // 1x1 + 3-line H/V
+    [11, 11, 0],  // two 2x2 + 1x1
+    [0, 0, 11],   // two 1x1 + 2x2
+    [0, 0, 0],    // last resort: all singles
+  ];
+
+  for (const idxs of EASY_CANDIDATES) {
+    const tray = idxs.map((idx) => ({
+      shape: BLOCKS[idx],
+      colorId: 1 + Math.floor(Math.random() * PALETTE.length),
+    }));
+
+    if (TRAY_CONFIG.requireAllThreeSolvable) {
+      if (traySolveAllThree(board, idxs).ok) {
+        if (TRAY_CONFIG.debugLogs) {
+          console.warn("[BB][TrayGen] using RESCUE tray (solvable)", { idxs });
+        }
+        return tray;
+      }
+    } else {
+      if (anyMoveExists(board, tray.map((b) => b.shape))) {
+        if (TRAY_CONFIG.debugLogs) {
+          console.warn("[BB][TrayGen] using RESCUE tray (has at least one move)", { idxs });
+        }
+        return tray;
+      }
+    }
+  }
+
+  // Absolute fallback (should never happen)
+  if (TRAY_CONFIG.debugLogs) {
+    console.error("[BB][TrayGen] RESCUE failed; returning 3 singles");
+  }
+  return [
+    { shape: BLOCKS[0], colorId: 1 + Math.floor(Math.random() * PALETTE.length) },
+    { shape: BLOCKS[0], colorId: 1 + Math.floor(Math.random() * PALETTE.length) },
+    { shape: BLOCKS[0], colorId: 1 + Math.floor(Math.random() * PALETTE.length) },
+  ];
+}
+
 
 const btnPrimary: React.CSSProperties = {
   padding: '12px 16px',
@@ -1143,4 +1901,184 @@ function roundRect(
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ====================== DEBUG DUMP (copy/paste) ======================
+
+type AnyBoard = any; // כדי שלא תיתקע על טיפוסים אם הם שונים אצלך
+type AnyShape = any;
+type AnyTrayItem = any;
+
+// ממפה ערך תא (0/undefined = ריק) לתו נוח
+function cellToChar(v: any): string {
+  if (!v) return ".";
+  // אם זה מספר צבעים 1..N
+  if (typeof v === "number") {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    return alphabet[(v - 1) % alphabet.length] ?? "#";
+  }
+  // אם זה אובייקט (לפעמים שומרים {colorId,...})
+  if (typeof v === "object" && v !== null) {
+    const n = (v.colorId ?? v.color ?? v.id ?? 1) as number;
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    return alphabet[(Number(n) - 1) % alphabet.length] ?? "#";
+  }
+  return "#";
+}
+
+// מצייר לוח (Board) ל-ASCII
+export function boardToAscii(board: AnyBoard, rows = 8, cols = 8): string {
+  const out: string[] = [];
+  for (let r = 0; r < rows; r++) {
+    let line = "";
+    for (let c = 0; c < cols; c++) {
+      const v = board?.[r]?.[c];
+      line += cellToChar(v);
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+// ממיר Shape לרשימת תאים יחסיים
+// תומך בכמה מבנים נפוצים: shape.cells או shape (מערך של {r,c} / {x,y})
+function shapeCells(shape: AnyShape): Array<{ r: number; c: number }> {
+  const cells =
+    shape?.cells ??
+    shape?.pos ??
+    shape?.positions ??
+    shape?.blocks ??
+    shape; // אם shape עצמו הוא array
+
+  if (!Array.isArray(cells)) return [];
+
+  return cells
+    .map((p: any) => {
+      if (p == null) return null;
+      if (typeof p === "object") {
+        const r = p.r ?? p.row ?? p.y;
+        const c = p.c ?? p.col ?? p.x;
+        if (Number.isFinite(r) && Number.isFinite(c)) return { r: Number(r), c: Number(c) };
+      }
+      return null;
+    })
+    .filter(Boolean) as Array<{ r: number; c: number }>;
+}
+
+// מצייר צורה ל-ASCII (מנורמל ל-bounding box שלה)
+export function shapeToAscii(shape: AnyShape): string {
+  const cells = shapeCells(shape);
+  if (cells.length === 0) return "(empty shape)";
+
+  const minR = Math.min(...cells.map((p) => p.r));
+  const minC = Math.min(...cells.map((p) => p.c));
+  const maxR = Math.max(...cells.map((p) => p.r));
+  const maxC = Math.max(...cells.map((p) => p.c));
+
+  const h = maxR - minR + 1;
+  const w = maxC - minC + 1;
+
+  const grid: string[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => "·"));
+  for (const { r, c } of cells) {
+    grid[r - minR][c - minC] = "■";
+  }
+  return grid.map((row) => row.join(" ")).join("\n");
+}
+
+export function trayToAscii(tray: AnyTrayItem[]): string {
+  if (!tray || tray.length === 0) return "(tray empty)";
+  return tray
+    .map((t, i) => {
+      const shape = t?.shape ?? t;
+      const colorId = t?.colorId ?? t?.color ?? t?.id ?? "";
+      const cells = shapeCells(shape);
+      const size = cells.length;
+      return [
+        `#${i + 1} color=${colorId} size=${size}`,
+        shapeToAscii(shape),
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+// דמפ מלא: ASCII + JSON קטן לשחזור
+export function dumpBlockBlastState(args: {
+  board: AnyBoard;
+  tray: AnyTrayItem[];
+  score?: number;
+  rows?: number;
+  cols?: number;
+}): string {
+  const rows = args.rows ?? 8;
+  const cols = args.cols ?? 8;
+
+  const payload = {
+    rows,
+    cols,
+    score: args.score ?? 0,
+    // שומרים לוח כ-0/1..n כדי שיהיה קומפקטי
+    board: Array.from({ length: rows }, (_, r) =>
+      Array.from({ length: cols }, (_, c) => {
+        const v = args.board?.[r]?.[c];
+        if (!v) return 0;
+        if (typeof v === "number") return v;
+        if (typeof v === "object" && v !== null) return Number(v.colorId ?? v.color ?? v.id ?? 1);
+        return 1;
+      })
+    ),
+    // שומרים tray כסט תאים + colorId
+    tray: (args.tray ?? []).map((t: any) => ({
+      colorId: t?.colorId ?? t?.color ?? t?.id ?? 1,
+      cells: shapeCells(t?.shape ?? t),
+    })),
+  };
+
+  return [
+    "=== BLOCKBLAST STATE v1 ===",
+    `rows=${rows} cols=${cols} score=${payload.score}`,
+    "",
+    "BOARD:",
+    boardToAscii(payload.board, rows, cols),
+    "",
+    "TRAY:",
+    trayToAscii(payload.tray),
+    "",
+    "JSON:",
+    JSON.stringify(payload),
+    "=== END ===",
+  ].join("\n");
+}
+
+// עוזר: להעתיק לקליפבורד
+export async function copyDumpToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    console.log("[BB] dump copied to clipboard ✅");
+  } catch {
+    console.log("[BB] clipboard failed; dump printed below:");
+    console.log(text);
+  }
 }

@@ -1,422 +1,270 @@
-// src/render/renderer.ts
-import type { Vec, World, Snake, Pellet } from '../engine/types';
+import type { World, Snake, Pellet, Vec } from '../engine/types';
 
-export type View = { w: number; h: number; cam: Vec };
+type View = { w: number; h: number; cam: Vec };
 
+const TAU = Math.PI * 2;
 
-function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
-function wrapAngle(a: number) {
-  const TAU = Math.PI * 2;
-  while (a <= -Math.PI) a += TAU;
-  while (a > Math.PI) a -= TAU;
-  return a;
-}
-function lerpAngle(a: number, b: number, t: number) {
-  const d = wrapAngle(b - a);
-  return a + d * t;
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
 }
 
-// --- Cache ---
-type PelletSpriteKind = 'normal' | 'death';
-const pelletSpriteCache = new Map<string, HTMLCanvasElement>();
-function pelletKey(kind: PelletSpriteKind, r: number) { return `${kind}:${Math.round(r * 2) / 2}`; }
+function drawGrid(ctx: CanvasRenderingContext2D, view: View, worldRadius: number) {
+  const gridSize = 100;
+  // Calculate visible world bounds
+  const minX = view.cam.x - view.w / 2;
+  const maxX = view.cam.x + view.w / 2;
+  const minY = view.cam.y - view.h / 2;
+  const maxY = view.cam.y + view.h / 2;
 
-function makePelletSprite(kind: PelletSpriteKind, r: number): HTMLCanvasElement {
-  const glowR = r * 5.5;
-  const size = Math.ceil(glowR + 2) * 2;
-  const c = document.createElement('canvas');
-  c.width = size; c.height = size;
-  const gctx = c.getContext('2d');
-  if (!gctx) return c;
-
-  const cx = size / 2, cy = size / 2;
-
-  let glow: CanvasGradient | null = null;
-  try {
-    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(glowR) && glowR > 0.001) {
-      glow = gctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-    }
-  } catch {
-    glow = null;
-  }
-
-  if (glow) {
-    glow.addColorStop(0, kind === 'death' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.10)');
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    gctx.fillStyle = glow;
-    gctx.beginPath(); gctx.arc(cx, cy, glowR, 0, Math.PI * 2); gctx.fill();
-  } else {
-    // Fallback: soft alpha circle (no gradient)
-    gctx.fillStyle = kind === 'death' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.06)';
-    gctx.beginPath(); gctx.arc(cx, cy, Math.max(r * 3.0, 1), 0, Math.PI * 2); gctx.fill();
-  }
-
-  gctx.fillStyle = kind === 'death' ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.80)';
-  gctx.beginPath(); gctx.arc(cx, cy, r, 0, Math.PI * 2); gctx.fill();
-
-  return c;
-}
-
-function getPelletSprite(kind: PelletSpriteKind, r: number) {
-  const k = pelletKey(kind, r);
-  let s = pelletSpriteCache.get(k);
-  if (!s) { s = makePelletSprite(kind, r); pelletSpriteCache.set(k, s); }
-  return s;
-}
-
-function getPelletSpriteCachedOnPellet(p: Pellet): HTMLCanvasElement {
-  // PERF: avoid building Map keys (strings) every frame.
-  const anyP = p as any;
-  const kind = (p.kind ?? 'normal') as PelletSpriteKind;
-  let sprite: HTMLCanvasElement | undefined = anyP._sprite;
-  if (!sprite || anyP._spriteKind !== kind || anyP._spriteR !== p.r) {
-    sprite = getPelletSprite(kind, p.r);
-    anyP._sprite = sprite;
-    anyP._spriteKind = kind;
-    anyP._spriteR = p.r;
-  }
-  return sprite;
-}
-
-let bgCache: { w: number; h: number; canvas: HTMLCanvasElement } | null = null;
-function getBackground(w: number, h: number) {
-  if (bgCache && bgCache.w === w && bgCache.h === h) return bgCache.canvas;
-
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = '#0b0e14';
-    ctx.fillRect(0, 0, w, h);
-
-    let g: CanvasGradient | null = null;
-    try {
-      g = ctx.createRadialGradient(w * 0.5, h * 0.45, 0, w * 0.5, h * 0.45, Math.max(w, h) * 0.75);
-    } catch {
-      g = null;
-    }
-    if (g) {
-      g.addColorStop(0, 'rgba(255,255,255,0.04)');
-      g.addColorStop(1, 'rgba(0,0,0,0.55)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-    }
-  }
-
-  bgCache = { w, h, canvas: c };
-  return c;
-}
-
-// --- Draw helpers ---
-function drawGrid(ctx: CanvasRenderingContext2D, view: View, camX: number, camY: number) {
-  const base = Math.min(view.w, view.h);
-  const grid = clamp(base * 0.08, 28, 70);
-
-  ctx.save();
-  ctx.globalAlpha = 0.05;
-
-  const ox = (view.w / 2 - (camX % grid));
-  const oy = (view.h / 2 - (camY % grid));
+  // Snap to grid
+  const startX = Math.floor(minX / gridSize) * gridSize;
+  const startY = Math.floor(minY / gridSize) * gridSize;
 
   ctx.beginPath();
-  for (let x = -grid; x <= view.w + grid; x += grid) { ctx.moveTo(x + ox, -grid); ctx.lineTo(x + ox, view.h + grid); }
-  for (let y = -grid; y <= view.h + grid; y += grid) { ctx.moveTo(-grid, y + oy); ctx.lineTo(view.w + grid, y + oy); }
-
-  ctx.strokeStyle = 'white';
   ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+
+  // Vertical lines
+  for (let x = startX; x <= maxX; x += gridSize) {
+    ctx.moveTo(x, minY);
+    ctx.lineTo(x, maxY);
+  }
+  // Horizontal lines
+  for (let y = startY; y <= maxY; y += gridSize) {
+    ctx.moveTo(minX, y);
+    ctx.lineTo(maxX, y);
+  }
   ctx.stroke();
 
-  ctx.restore();
-}
-
-function buildSnakePath(ctx: CanvasRenderingContext2D, view: View, s: Snake, camX: number, camY: number, alpha: number) {
-  const pts = s.points;
-  const n = pts.length;
-  if (!n) return false;
-
-  const prev = s._prev;
-  const prevLen = s._prevLen ?? 0;
-
-  const halfW = view.w * 0.5;
-  const halfH = view.h * 0.5;
-
+  // Circular World Border
+  // Since context is already translated to world space, we draw at (0,0)
   ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const p = pts[i];
-    let x = p.x, y = p.y;
-
-    if (prev && i < prevLen) {
-      const j = i * 2;
-      const px = prev[j];
-      const py = prev[j + 1];
-      x = px + (x - px) * alpha;
-      y = py + (y - py) * alpha;
-    }
-
-    const sx = (x - camX) + halfW;
-    const sy = (y - camY) + halfH;
-
-    if (i === 0) ctx.moveTo(sx, sy);
-    else ctx.lineTo(sx, sy);
-  }
-  return true;
-}
-
-function drawSnakeBody(ctx: CanvasRenderingContext2D, view: View, s: Snake, camX: number, camY: number, alpha: number) {
-  if (!s.points.length) return;
-
-  // simple cull by head
-  const head = s.points[0];
-  const sx0 = (head.x - camX) + view.w * 0.5;
-  const sy0 = (head.y - camY) + view.h * 0.5;
-  const pad = 200;
-  if (sx0 < -pad || sx0 > view.w + pad || sy0 < -pad || sy0 > view.h + pad) return;
-
-  ctx.save();
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
-  if (!buildSnakePath(ctx, view, s, camX, camY, alpha)) { ctx.restore(); return; }
-
-  // outline then color stroke WITHOUT rebuilding path
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = s.radius * 1.65;
+  ctx.lineWidth = 20;
+  ctx.strokeStyle = 'rgba(255, 0, 85, 0.3)';
+  ctx.arc(0, 0, worldRadius, 0, TAU);
   ctx.stroke();
-
-  // subtle player glow
-  if (s.isPlayer) {
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-    ctx.lineWidth = s.radius * 2.25;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  ctx.strokeStyle = s.color;
-  ctx.lineWidth = s.radius * 1.2;
+  
+  ctx.beginPath();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#FF0055';
+  ctx.arc(0, 0, worldRadius, 0, TAU);
   ctx.stroke();
-
-  ctx.restore();
 }
 
-function drawSnakeHead(ctx: CanvasRenderingContext2D, view: View, s: Snake, camX: number, camY: number, alpha: number) {
-  if (!s.points.length) return;
+function drawPellet(ctx: CanvasRenderingContext2D, p: Pellet, time: number) {
+  // Pulse effect
+  let pulseSpeed = 6;
+  let pulseSize = 0.15;
 
-  const pts = s.points;
-  const prev = s._prev;
-  const prevLen = s._prevLen ?? 0;
-
-  let x = pts[0].x, y = pts[0].y;
-  if (prev && prevLen > 0) {
-    const px = prev[0], py = prev[1];
-    x = px + (x - px) * alpha;
-    y = py + (y - py) * alpha;
+  // Make valuable pellets pulse faster/stronger
+  if (p.kind === 'gold' || p.kind === 'large') {
+    pulseSpeed = 10;
+    pulseSize = 0.25;
   }
 
-  const headX = (x - camX) + view.w * 0.5;
-  const headY = (y - camY) + view.h * 0.5;
+  const pulse = 1 + Math.sin(time * pulseSpeed + p.pos.x * 0.01 + p.pos.y * 0.01) * pulseSize;
+  const r = p.r * pulse;
 
-  // Guard against NaN/Infinity coming from simulation/interpolation
-  if (!Number.isFinite(headX) || !Number.isFinite(headY) || !Number.isFinite(s.radius) || s.radius <= 0) return;
-
-  const dir0 = (s._prevDir != null ? s._prevDir : s.dir);
-  const dir = lerpAngle(dir0, s.dir, alpha);
-
-  ctx.save();
-
-  // head body
-  ctx.fillStyle = s.color;
+  ctx.fillStyle = p.color;
+  
+  // Stronger glow for valuable items
+  ctx.shadowBlur = (p.kind === 'gold' || p.kind === 'large') ? r * 3 : r * 1.5;
+  ctx.shadowColor = p.color;
+  ctx.globalAlpha = 0.9;
+  
   ctx.beginPath();
-  ctx.arc(headX, headY, s.radius * 0.95, 0, Math.PI * 2);
-  ctx.fill();  // specular highlight (guarded: createRadialGradient throws on non-finite args)
-  const r = s.radius;
-  if (Number.isFinite(r) && r > 0.001) {
-    let g: CanvasGradient | null = null;
-    try {
-      g = ctx.createRadialGradient(headX - r * 0.35, headY - r * 0.35, 0, headX, headY, r * 1.2);
-    } catch {
-      g = null;
-    }
-    if (g) {
-      g.addColorStop(0, 'rgba(255,255,255,0.30)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(headX, headY, r * 1.1, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  ctx.arc(p.pos.x, p.pos.y, r, 0, TAU);
+  ctx.fill();
+  
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1.0;
+}
+
+function getInterpolatedPoint(s: Snake, i: number, alpha: number): { x: number, y: number } {
+  const curr = s.points[i];
+  if (!curr) return { x: 0, y: 0 };
+
+  // If we have history, interpolate
+  if (s._prev && s._prevLen && i < s._prevLen) {
+    const px = s._prev[i * 2];
+    const py = s._prev[i * 2 + 1];
+    return {
+      x: lerp(px, curr.x, alpha),
+      y: lerp(py, curr.y, alpha)
+    };
   }
+  return curr;
+}
 
-  // eyes
-  const ex = Math.cos(dir), ey = Math.sin(dir);
-  const px2 = -ey, py2 = ex;
-  const eoff = s.radius * 0.55;
-  const eside = s.radius * 0.25;
-  const er = s.radius * 0.18;
+function drawSnake(ctx: CanvasRenderingContext2D, s: Snake, alpha: number) {
+  if (s.points.length === 0) return;
 
-  const ex1 = headX + ex * eoff + px2 * eside;
-  const ey1 = headY + ey * eoff + py2 * eside;
-  const ex2 = headX + ex * eoff - px2 * eside;
-  const ey2 = headY + ey * eoff - py2 * eside;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.beginPath();
-  ctx.arc(ex1, ey1, er * 1.2, 0, Math.PI * 2);
-  ctx.arc(ex2, ey2, er * 1.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = 'rgba(255,255,255,0.88)';
-  ctx.beginPath();
-  ctx.arc(ex1, ey1, er, 0, Math.PI * 2);
-  ctx.arc(ex2, ey2, er, 0, Math.PI * 2);
-  ctx.fill();
-
-  // tiny pupil
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.beginPath();
-  ctx.arc(ex1 + ex * er * 0.3, ey1 + ey * er * 0.3, er * 0.35, 0, Math.PI * 2);
-  ctx.arc(ex2 + ex * er * 0.3, ey2 + ey * er * 0.3, er * 0.35, 0, Math.PI * 2);
-  ctx.fill();
-
-  // boost trail hint
-  if (s.boosting) {
-    ctx.globalAlpha = 0.25;
-    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-    ctx.lineWidth = s.radius * 0.6;
+  // Draw body as "tiles" (circles) from tail to head
+  for (let i = s.points.length - 1; i >= 0; i--) {
+    const p = getInterpolatedPoint(s, i, alpha);
+    
     ctx.beginPath();
-    ctx.moveTo(headX - ex * s.radius * 2.4, headY - ey * s.radius * 2.4);
-    ctx.lineTo(headX - ex * s.radius * 4.2, headY - ey * s.radius * 4.2);
-    ctx.stroke();
+    ctx.arc(p.x, p.y, s.radius, 0, TAU);
+    ctx.fillStyle = s.color;
+    ctx.fill();
   }
 
-  ctx.restore();
-}
+  // Boost indicator
+  if (s.boosting) {
+    const head = getInterpolatedPoint(s, 0, alpha);
+    const time = performance.now() / 1000;
+    
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    
+    // 1. Large soft outer glow
+    const glowRadius = s.radius * 3.0;
+    const glow = ctx.createRadialGradient(head.x, head.y, s.radius * 0.5, head.x, head.y, glowRadius);
+    glow.addColorStop(0, s.color); 
+    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    
+    ctx.fillStyle = glow;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, glowRadius, 0, TAU);
+    ctx.fill();
+    
+    // 2. Intense inner core (pulsing slightly)
+    const pulse = Math.sin(time * 6); 
+    const coreRadius = s.radius * (1.2 + pulse * 0.1); 
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, coreRadius, 0, TAU);
+    ctx.fill();
+    
+    // 3. Shockwave rings (expanding)
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const t = (time * 2 + i * 0.333) % 1; // 0 to 1 linear
+      const r = s.radius * (1 + t * 1.5); // expand
+      const a = Math.sin(t * Math.PI) * 0.5; // Smooth fade in/out
+      
+      ctx.strokeStyle = `rgba(255, 255, 255, ${a})`;
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, r, 0, TAU);
+      ctx.stroke();
+    }
+    
+    ctx.restore();
+  }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
+  // Draw Eyes on head
+  const head = getInterpolatedPoint(s, 0, alpha);
 
-function drawLeaderboard(ctx: CanvasRenderingContext2D, world: World) {
-  const lb = world.leaderboard ?? [];
-  if (!lb.length) return;
-
-  const x = 12, y = 12, w = 220, rowH = 20, h = 12 + lb.length * rowH + 10;
-
-  ctx.save();
-  ctx.globalAlpha = 0.95;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  roundRect(ctx, x, y, w, h, 16);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // 3. Draw Eyes
+  const dir = s._prevDir !== undefined ? lerp(s._prevDir, s.dir, alpha) : s.dir;
+  
+  const eyeOff = s.radius * 0.6;
+  const eyeR = s.radius * 0.35;
+  
+  const lx = head.x + Math.cos(dir - 0.6) * eyeOff;
+  const ly = head.y + Math.sin(dir - 0.6) * eyeOff;
+  const rx = head.x + Math.cos(dir + 0.6) * eyeOff;
+  const ry = head.y + Math.sin(dir + 0.6) * eyeOff;
 
   ctx.fillStyle = 'white';
-  ctx.font = '900 12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-  ctx.fillText('LEADERBOARD', x + 14, y + 18);
+  ctx.beginPath();
+  ctx.arc(lx, ly, eyeR, 0, TAU);
+  ctx.arc(rx, ry, eyeR, 0, TAU);
+  ctx.fill();
 
-  ctx.font = '700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-  for (let i = 0; i < lb.length; i++) {
-    const r = lb[i];
-    const ry = y + 34 + i * rowH;
+  ctx.fillStyle = 'black';
+  const pupilR = eyeR * 0.5;
+  ctx.beginPath();
+  ctx.arc(lx + Math.cos(dir) * 2, ly + Math.sin(dir) * 2, pupilR, 0, TAU);
+  ctx.arc(rx + Math.cos(dir) * 2, ry + Math.sin(dir) * 2, pupilR, 0, TAU);
+  ctx.fill();
 
-    ctx.fillStyle = r.color;
-    ctx.beginPath();
-    ctx.arc(x + 16, ry - 4, 4.3, 0, Math.PI * 2);
-    ctx.fill();
-
+  // Name tag
+  if (s.isPlayer || s.desiredLen > 100) {
     ctx.fillStyle = 'white';
-    ctx.fillText(`${i + 1}. ${r.name}`, x + 28, ry);
-
-    ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText(`${Math.round(r.score)}`, x + w - 14, ry);
-    ctx.textAlign = 'left';
-  }
-
-  ctx.restore();
-}
-
-function drawToast(ctx: CanvasRenderingContext2D, world: World, view: View) {
-  if (world.events?.playerDiedAt != null) {
-    const t = (world.tick - world.events.playerDiedAt);
-    if (t < 1.2) {
-      ctx.save();
-      ctx.globalAlpha = 1 - t / 1.2;
-      ctx.fillStyle = 'white';
-      ctx.font = '950 26px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('You Died — Respawning…', view.w / 2, view.h * 0.2);
-      ctx.restore();
-    }
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'black';
+    ctx.shadowBlur = 4;
+    ctx.fillText(s.name, head.x, head.y - s.radius - 14);
+    ctx.shadowBlur = 0;
   }
 }
 
-/**
- * Draw the world.
- * @param alpha Interpolation factor between previous fixed-step state (0) and current (1).
- */
-export function drawWorld(ctx: CanvasRenderingContext2D, world: World, view: View, alpha = 1) {
-  const camX = view.cam.x;
-  const camY = view.cam.y;
+export function drawWorld(ctx: CanvasRenderingContext2D, world: World, view: View, alpha: number) {
+  // Clear
+  ctx.fillStyle = '#080810'; // Deep dark blue/black
+  ctx.fillRect(0, 0, view.w, view.h);
 
-  ctx.drawImage(getBackground(view.w, view.h), 0, 0);
-  drawGrid(ctx, view, camX, camY);
-
-  // Smooth zoom out as the player grows (Slither.io feel).
-  // Keep in renderer so it stays compatible with existing `View` type.
-  const player = world.snakes[0];
-  const len = player?.alive ? (player.desiredLen ?? 0) : 0;
-  // 1.0 at small sizes → down to ~0.72 at very large sizes.
-  const zoom = clamp(1 - (Math.max(0, len - 60) / 1400) * 0.35, 0.72, 1.0);
-
-  // Visible bounds (cull)
-  const margin = 140;
-  const halfViewW = (view.w / 2) / zoom;
-  const halfViewH = (view.h / 2) / zoom;
-  const minX = camX - halfViewW - margin, maxX = camX + halfViewW + margin;
-  const minY = camY - halfViewH - margin, maxY = camY + halfViewH + margin;
-
-  // Draw world layer with zoom around the screen center.
+  // Camera Transform
   ctx.save();
-  ctx.translate(view.w * 0.5, view.h * 0.5);
-  ctx.scale(zoom, zoom);
-  ctx.translate(-view.w * 0.5, -view.h * 0.5);
+  ctx.translate(view.w / 2 - view.cam.x, view.h / 2 - view.cam.y);
+
+  // Grid
+  drawGrid(ctx, view, world.radius);
 
   // Pellets
-  const halfW = view.w * 0.5;
-  const halfH = view.h * 0.5;
+  // Optimization: Only draw pellets inside view + padding
+  const pad = 50;
+  const minX = view.cam.x - view.w / 2 - pad;
+  const maxX = view.cam.x + view.w / 2 + pad;
+  const minY = view.cam.y - view.h / 2 - pad;
+  const maxY = view.cam.y + view.h / 2 + pad;
 
-  for (let i = 0; i < world.pellets.length; i++) {
-    const p = world.pellets[i];
-    const wx = p.pos.x;
-    const wy = p.pos.y;
-    if (wx < minX || wx > maxX || wy < minY || wy > maxY) continue;
+  const time = performance.now() / 1000;
 
-    const sprite = getPelletSpriteCachedOnPellet(p);
-    ctx.drawImage(sprite, (wx - camX) + halfW - sprite.width / 2, (wy - camY) + halfH - sprite.height / 2);
+  for (const p of world.pellets) {
+    if (p.pos.x >= minX && p.pos.x <= maxX && p.pos.y >= minY && p.pos.y <= maxY) {
+      drawPellet(ctx, p, time);
+    }
   }
 
   // Snakes
-  for (let i = 0; i < world.snakes.length; i++) {
-    const s = world.snakes[i];
-    if (s.alive && s.points.length) drawSnakeBody(ctx, view, s, camX, camY, alpha);
-  }
-  for (let i = 0; i < world.snakes.length; i++) {
-    const s = world.snakes[i];
-    if (s.alive && s.points.length) drawSnakeHead(ctx, view, s, camX, camY, alpha);
+  // Draw dead/dying snakes first? (Not handled in state, they just vanish or turn to pellets)
+  // Draw bots then player
+  for (const s of world.snakes) {
+    if (!s.alive) continue;
+    drawSnake(ctx, s, alpha);
   }
 
   ctx.restore();
 
-  drawLeaderboard(ctx, world);
-  drawToast(ctx, world, view);
+  // --- Minimap (Screen Space) ---
+  const mapSize = 130;
+  const margin = 100; // was 24, now 44 to move higher
+  const r = mapSize / 2;
+  const cx = view.w - r - margin;
+  const cy = view.h - r - margin;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.clip();
+
+  const scale = r / world.radius;
+
+  for (const s of world.snakes) {
+    if (!s.alive) continue;
+    // Use interpolated head for smoothness
+    const head = getInterpolatedPoint(s, 0, alpha);
+    
+    const mx = cx + head.x * scale;
+    const my = cy + head.y * scale;
+
+    ctx.fillStyle = s.isPlayer ? '#fff' : s.color;
+    ctx.beginPath();
+    ctx.arc(mx, my, s.isPlayer ? 3.5 : 2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
 }

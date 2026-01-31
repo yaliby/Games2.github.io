@@ -1,382 +1,508 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createWorld, stepWorld } from './engine/rules_ai';
 import type { Vec, World, StepInput } from './engine/types';
 import { drawWorld } from './render/renderer';
 
-type Screen = 'menu' | 'game';
+// --- Configuration ---
+const PHYSICS_RATE = 60; // Hz
+const FIXED_DT = 1 / PHYSICS_RATE;
+const CAM_DAMPING = 5.0; // Camera smoothness (higher = tighter)
 
-function clamp(v: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, v));
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
 }
 
-function computeUiSize() {
-  // Responsive canvas sizing (no scrollbars)
-  const w = Math.max(320, Math.min(window.innerWidth, 1600));
-  const h = Math.max(320, Math.min(window.innerHeight, 900));
-  return { w, h };
-}
+type GameState = 'MENU' | 'PLAYING' | 'PAUSED' | 'GAME_OVER';
 
 export default function SlitherGame() {
-  const [screen, setScreen] = useState<Screen>('menu');
-  const [paused, setPaused] = useState(false);
-  const pausedRef = useRef(false);
+  // --- React State for UI ---
+  const [gameState, setGameState] = useState<GameState>('MENU');
+  const [score, setScore] = useState(0);
+  const [finalScore, setFinalScore] = useState(0);
+  
+  // --- Mutable Game State (Refs) ---
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const worldRef = useRef<World | null>(null);
+  const rafRef = useRef<number | undefined>(undefined);
+  const lastScoreRef = useRef(0);
+  
+  // Input state (Refs for performance)
+  const inputRef = useRef({
+    mouse: { x: 0, y: 0 },
+    boosting: false,
+    width: window.innerWidth,
+    height: window.innerHeight
+  });
 
-  const [ui, setUi] = useState(() => computeUiSize());
+  // Camera state
+  const camRef = useRef({ x: 0, y: 0 });
+  const prevCamRef = useRef({ x: 0, y: 0 });
 
-  // Handle window resize
+  // --- Helpers ---
+  const startGame = (difficulty: number, botCount: number) => {
+    worldRef.current = createWorld({ botCount, difficulty });
+    
+    // Reset camera to player position immediately
+    const player = worldRef.current.snakes[0];
+    if (player && player.points.length > 0) {
+      camRef.current = { x: player.points[0].x, y: player.points[0].y };
+    } else {
+      camRef.current = { x: 0, y: 0 };
+    }
+    prevCamRef.current = { ...camRef.current };
+    
+    lastScoreRef.current = 0;
+    setScore(0);
+    setGameState('PLAYING');
+  };
+
+  const togglePause = useCallback(() => {
+    setGameState(prev => {
+      if (prev === 'PLAYING') return 'PAUSED';
+      if (prev === 'PAUSED') return 'PLAYING';
+      return prev;
+    });
+  }, []);
+
+  // --- Event Listeners ---
   useEffect(() => {
-    const handleResize = () => {
-      setUi(computeUiSize());
+    const onResize = () => {
+      inputRef.current.width = window.innerWidth;
+      inputRef.current.height = window.innerHeight;
+    };
+    
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.shiftKey) inputRef.current.boosting = true;
+      if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+    };
+    
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || !e.shiftKey) inputRef.current.boosting = false;
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    const onMouseMove = (e: MouseEvent) => {
+      // Mouse relative to center of screen
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        inputRef.current.mouse.x = e.clientX - rect.left;
+        inputRef.current.mouse.y = e.clientY - rect.top;
+      }
+    };
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const worldRef = useRef<World | null>(null);
+    const onMouseDown = () => { inputRef.current.boosting = true; };
+    const onMouseUp = () => { inputRef.current.boosting = false; };
 
-  const mouseRef = useRef<Vec>({ x: 0, y: 0 });
-  const boostRef = useRef(false);
-  const shiftRef = useRef(false);
-
-  const fpsRef = useRef({ fps: 0, frames: 0, acc: 0 });
-
-  useEffect(() => {
-    const onResize = () => setUi(computeUiSize());
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mouseup', onMouseUp);
 
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [togglePause]);
+
+  // --- Game Loop ---
   useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
-
-  const startGame = (botCount: number, difficulty: number) => {
-    worldRef.current = createWorld({ botCount, difficulty });
-    setPaused(false);
-    setScreen('game');
-  };
-
-  const endGame = () => {
-    worldRef.current = null;
-    setPaused(false);
-    setScreen('menu');
-  };
-
-  // Game loop
-  useEffect(() => {
-    if (screen !== 'game') return;
+    if (gameState === 'MENU' || gameState === 'GAME_OVER') return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(ui.w * dpr);
-    canvas.height = Math.floor(ui.h * dpr);
-
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
-    const dprScale = dpr; // stable unless resized
+    let lastTime = performance.now();
+    let accumulator = 0;
 
-    let raf = 0;
+    const loop = (time: number) => {
+      const dt = Math.min((time - lastTime) / 1000, 0.1); // Cap dt to prevent spiral of death
+      lastTime = time;
 
-    // --- Input handlers (no allocations in loop) ---
-    const rectRef = { rect: canvas.getBoundingClientRect() as DOMRect };
+      // Handle Canvas Resize & HiDPI
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const displayWidth = inputRef.current.width;
+      const displayHeight = inputRef.current.height;
 
-    const refreshRect = () => { rectRef.rect = canvas.getBoundingClientRect(); };
-
-    const onMouseMove = (e: MouseEvent) => {
-      const rect = rectRef.rect;
-      mouseRef.current.x = e.clientX - rect.left;
-      mouseRef.current.y = e.clientY - rect.top;
-    };
-
-    const onMouseDown = () => { boostRef.current = true; };
-    const onMouseUp = () => { boostRef.current = false; };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        endGame();
-        return;
+      if (canvas.width !== displayWidth * dpr || canvas.height !== displayHeight * dpr) {
+        canvas.width = displayWidth * dpr;
+        canvas.height = displayHeight * dpr;
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
       }
-      if (e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        setPaused((p) => !p);
-        return;
-      }
-      if (e.key === 'Shift') shiftRef.current = true;
-    };
+      
+      // Always reset transform before rendering
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') shiftRef.current = false;
-    };
+      if (gameState === 'PLAYING') {
+        accumulator += dt;
+        const world = worldRef.current;
 
-    canvas.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('scroll', refreshRect, true);
-    window.addEventListener('resize', refreshRect);
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+        if (world) {
+          // Physics Steps
+          let steps = 0;
+          while (accumulator >= FIXED_DT && steps < 10) {
+            // 1. Calculate Input Aim (World Space) using CURRENT camera
+            const screenCX = displayWidth / 2;
+            const screenCY = displayHeight / 2;
+            const aimWorld = {
+              x: camRef.current.x + (inputRef.current.mouse.x - screenCX),
+              y: camRef.current.y + (inputRef.current.mouse.y - screenCY)
+            };
 
-    // Fixed-timestep loop (stable & smooth under frame drops)
-    const FIXED_DT = 1 / 100;
-    const MAX_STEPS = 7;
-    let acc = 0;
-    let lastTs = performance.now();
+            const player = world.snakes[0];
 
-    // Camera: keep previous + current for interpolation
-    const camPrev: Vec = { x: 0, y: 0 };
-    const camCurr: Vec = { x: 0, y: 0 };
-    const camRender: Vec = { x: 0, y: 0 };
-    const view = { w: ui.w, h: ui.h, cam: camRender };
+            // Dynamic speed: Smaller = Faster
+            let dtMultiplier = 1.0;
+            if (player && player.points.length > 0) {
+              // Start fast (1.3x), decay to 0.7x as you grow
+              dtMultiplier = Math.max(0.7, 1.3 - (player.points.length * 0.001));
+            }
 
-    // Reused objects to avoid per-step allocations
-    const aimWorld: Vec = { x: 0, y: 0 };
-    const stepInput: StepInput = { aimWorld, boost: false };
+            // 2. Step World (Updates snake position t -> t+1)
+            stepWorld(world, {
+              aimWorld,
+              boost: inputRef.current.boosting
+            }, FIXED_DT * dtMultiplier);
 
-    // Init camera on the player, if present
-    {
-      const w = worldRef.current;
-      const p = w?.snakes?.[0];
-      if (p?.points?.length) {
-        camPrev.x = camCurr.x = p.points[0].x;
-        camPrev.y = camCurr.y = p.points[0].y;
-      }
-    }
+            // 3. Snapshot Camera (Save state t)
+            prevCamRef.current.x = camRef.current.x;
+            prevCamRef.current.y = camRef.current.y;
 
-    // Camera tuning
-    const CAM_FOLLOW = 12; // bigger = tighter follow (stable at 120Hz)
-    const CAM_SNAP_DIST2 = 1700 * 1700;
+            // 4. Update Camera Target (Center on NEW player head t+1)
+            let targetX = camRef.current.x;
+            let targetY = camRef.current.y;
+            
+            if (player && player.points.length > 0) {
+              targetX = player.points[0].x;
+              targetY = player.points[0].y;
+            }
 
-    const step = (ts: number) => {
-      const w = worldRef.current;
-      if (!w) return;
+            // 5. Smooth Camera Follow (Updates camera t -> t+1)
+            const smoothFactor = 1 - Math.exp(-CAM_DAMPING * FIXED_DT * 1.5);
+            camRef.current.x += (targetX - camRef.current.x) * smoothFactor;
+            camRef.current.y += (targetY - camRef.current.y) * smoothFactor;
 
-      const frameDt = Math.min(0.05, (ts - lastTs) / 1000);
-      lastTs = ts;
-
-      const fps = 1 / Math.max(1e-6, frameDt);
-      fpsRef.current.frames++;
-      fpsRef.current.acc += fps;
-      if (fpsRef.current.frames >= 12) {
-        fpsRef.current.fps = fpsRef.current.acc / fpsRef.current.frames;
-        fpsRef.current.frames = 0;
-        fpsRef.current.acc = 0;
-      }
-
-      // Only advance simulation when not paused (prevents accumulator spikes on resume)
-      if (!pausedRef.current) {
-        acc += frameDt;
-
-        let steps = 0;
-        while (acc >= FIXED_DT && steps < MAX_STEPS) {
-          // Update camera in fixed step (smooth, deterministic)
-          const player = w.snakes[0];
-          let tx = camCurr.x, ty = camCurr.y;
-          if (player?.points?.length) {
-            tx = player.points[0].x;
-            ty = player.points[0].y;
+            accumulator -= FIXED_DT;
+            steps++;
           }
 
-          const dxCam = tx - camCurr.x;
-          const dyCam = ty - camCurr.y;
-
-          if ((dxCam * dxCam + dyCam * dyCam) > CAM_SNAP_DIST2) {
-            // big jump (respawn, etc.) → snap to avoid a long smear
-            camPrev.x = camCurr.x = tx;
-            camPrev.y = camCurr.y = ty;
+          // Check Death / Score
+          const player = world.snakes[0];
+          if (!player || player.points.length === 0) {
+             setFinalScore(lastScoreRef.current);
+             setGameState('GAME_OVER');
           } else {
-            camPrev.x = camCurr.x;
-            camPrev.y = camCurr.y;
-
-            const k = 1 - Math.exp(-CAM_FOLLOW * FIXED_DT);
-            camCurr.x += dxCam * k;
-            camCurr.y += dyCam * k;
+             const currentLen = player.points.length;
+             const newScore = Math.floor(currentLen * 10);
+             if (newScore !== lastScoreRef.current) {
+                 lastScoreRef.current = newScore;
+                 setScore(newScore);
+             }
           }
-
-          // Mouse → world aim using *physics* camera (not render-interpolated camera)
-          aimWorld.x = (mouseRef.current.x - ui.w / 2) + camCurr.x;
-          aimWorld.y = (mouseRef.current.y - ui.h / 2) + camCurr.y;
-
-          stepInput.boost = boostRef.current || shiftRef.current;
-
-          stepWorld(w, stepInput, FIXED_DT);
-
-          acc -= FIXED_DT;
-          steps++;
         }
-
-        // Prevent spiral-of-death under huge stalls
-        if (steps === MAX_STEPS && acc >= FIXED_DT) acc = 0;
       }
 
-      // Interpolation factor for rendering
-      const alpha = pausedRef.current ? 1 : clamp(acc / FIXED_DT, 0, 1);
+      // Render
+      const world = worldRef.current;
+      if (world) {
+        // Interpolation alpha for smoother rendering between physics steps
+        const alpha = gameState === 'PAUSED' ? 1.0 : accumulator / FIXED_DT;
+        
+        // Interpolate camera to match snake interpolation
+        const camX = lerp(prevCamRef.current.x, camRef.current.x, alpha);
+        const camY = lerp(prevCamRef.current.y, camRef.current.y, alpha);
 
-      // Render-interpolated camera (smooth visuals)
-      camRender.x = camPrev.x + (camCurr.x - camPrev.x) * alpha;
-      camRender.y = camPrev.y + (camCurr.y - camPrev.y) * alpha;
+        const view = {
+          w: displayWidth,
+          h: displayHeight,
+          cam: { x: camX, y: camY }
+        };
 
-      // Keep view object stable; only mutate fields (no per-frame allocation)
-      view.w = ui.w;
-      view.h = ui.h;
-
-      // HiDPI: draw in CSS pixels while canvas backing store is scaled.
-      ctx.setTransform(dprScale, 0, 0, dprScale, 0, 0);
-      drawWorld(ctx, w, view, alpha);
-
-      // overlay FPS + paused
-      ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.font = '600 11px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      ctx.fillText(`FPS: ${Math.round(fpsRef.current.fps)}`, 16, ui.h - 12);
-      if (pausedRef.current) {
-        ctx.fillStyle = 'rgba(255,255,255,0.75)';
-        ctx.font = '800 14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-        ctx.fillText('PAUSED (P)', 16, 26);
+        drawWorld(ctx, world, view, alpha);
       }
-      ctx.restore();
 
-      raf = requestAnimationFrame(step);
+      rafRef.current = requestAnimationFrame(loop);
     };
 
-    raf = requestAnimationFrame(step);
-
+    rafRef.current = requestAnimationFrame(loop);
     return () => {
-      cancelAnimationFrame(raf);
-      canvas.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('scroll', refreshRect, true);
-      window.removeEventListener('resize', refreshRect);
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mouseup', onMouseUp);
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [screen, ui.w, ui.h]);
-
-  const Menu = useMemo(() => {
-    const Card = (props: { title: string; desc: string; onClick: () => void }) => (
-      <button
-        onClick={props.onClick}
-        style={{
-          width: 'min(520px, 92vw)',
-          padding: 18,
-          borderRadius: 18,
-          border: '1px solid rgba(255,255,255,0.10)',
-          background: 'rgba(0,0,0,0.35)',
-          color: 'white',
-          textAlign: 'left',
-          cursor: 'pointer',
-          boxShadow: '0 12px 50px rgba(0,0,0,0.25)',
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0.3 }}>{props.title}</div>
-        <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8, lineHeight: 1.35 }}>{props.desc}</div>
-      </button>
-    );
-
-    return (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          minHeight: '70vh',
-          display: 'grid',
-          placeItems: 'center',
-          padding: 18,
-        }}
-      >
-        <div style={{ display: 'grid', gap: 14, justifyItems: 'center' }}>
-          <div style={{ color: 'white', fontWeight: 950, fontSize: 28, letterSpacing: 0.5 }}>
-            Slither vs Bots
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, maxWidth: 560, textAlign: 'center' }}>
-            Mouse to steer. Hold click or Shift to boost (costs length). Head into bodies to kill. ESC to menu, P to pause.
-          </div>
-
-          <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-            <Card
-              title="Easy — 6 bots"
-              desc="More forgiving bots, lower aggression. Great for testing performance & feel."
-              onClick={() => startGame(6, 0.85)}
-            />
-            <Card
-              title="Normal — 10 bots"
-              desc="Balanced aggression + speed, tries to cut you off sometimes."
-              onClick={() => startGame(10, 1.0)}
-            />
-            <Card
-              title="Hard — 14 bots"
-              desc="Higher aggression and better intercepts. Boost management matters."
-              onClick={() => startGame(14, 1.25)}
-            />
-          </div>
-
-          <div style={{ marginTop: 10, color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
-            Tip: keep your head safe — body is your shield.
-          </div>
-        </div>
-      </div>
-    );
-  }, []);
+  }, [gameState]);
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
-      {screen === 'menu' ? (
-        Menu
-      ) : (
-        <div style={{ position: 'relative' }}>
-          <canvas
+    <div style={{ 
+        width: '100vw', 
+        height: '100vh', 
+        overflow: 'hidden', 
+        position: 'relative',
+        backgroundColor: '#06070a',
+        color: '#eef3ff',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        userSelect: 'none'
+    }}>
+        {/* Game Canvas */}
+        <canvas
             ref={canvasRef}
-            style={{
-              width: ui.w,
-              height: ui.h,
-              borderRadius: 18,
-              border: '1px solid rgba(255,255,255,0.10)',
-              background: '#0b0e14',
-              display: 'block',
-              boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-            }}
-          />
+            style={{ display: 'block', width: '100%', height: '100%' }}
+        />
 
-          <div style={{ position: 'absolute', right: 14, top: 14, display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => setPaused((p) => !p)}
-              style={{
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: 'rgba(0,0,0,0.35)',
-                color: 'white',
-                padding: '8px 10px',
-                borderRadius: 12,
-                cursor: 'pointer',
-                fontWeight: 800,
-                fontSize: 12,
-              }}
-            >
-              {paused ? 'Resume (P)' : 'Pause (P)'}
-            </button>
+        {/* HUD */}
+        {gameState !== 'MENU' && (
+            <div style={{
+                position: 'absolute',
+                bottom: 24,
+                left: 24,
+                pointerEvents: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4
+            }}>
+                <div style={{ 
+                    fontSize: '32px', 
+                    fontWeight: 900, 
+                    color: '#fff',
+                    textShadow: '0 2px 10px rgba(0,0,0,0.5)'
+                }}>
+                    {score}
+                </div>
+                <div style={{ fontSize: '13px', opacity: 0.7, fontWeight: 600 }}>
+                    LENGTH
+                </div>
+            </div>
+        )}
 
-            <button
-              onClick={endGame}
-              style={{
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: 'rgba(0,0,0,0.35)',
-                color: 'white',
-                padding: '8px 10px',
-                borderRadius: 12,
-                cursor: 'pointer',
-                fontWeight: 800,
-                fontSize: 12,
-              }}
+        {/* Leaderboard */}
+        {gameState !== 'MENU' && worldRef.current?.leaderboard && (
+            <div style={{
+                position: 'absolute',
+                top: 24,
+                left: 24,
+                width: 200,
+                pointerEvents: 'none',
+                fontFamily: 'system-ui, sans-serif',
+                fontWeight: 700,
+                fontSize: '14px'
+            }}>
+                <div style={{ marginBottom: 8, color: 'rgba(255,255,255,0.5)', fontSize: '12px', letterSpacing: '1px' }}>LEADERBOARD</div>
+                {worldRef.current.leaderboard.map((entry, i) => (
+                    <div key={entry.id} style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        marginBottom: 4,
+                        color: entry.id.startsWith('player') ? '#fff' : 'rgba(255,255,255,0.6)',
+                        textShadow: entry.id.startsWith('player') ? '0 0 10px rgba(255,255,255,0.4)' : 'none'
+                    }}>
+                        <span>{i+1}. {entry.name.slice(0, 12)}</span>
+                        <span>{Math.floor(entry.score)}</span>
+                    </div>
+                ))}
+            </div>
+        )}
+
+        {/* Pause Overlay */}
+        {gameState === 'PAUSED' && (
+            <div style={{
+                position: 'absolute',
+                top: 24,
+                right: 24,
+                background: 'rgba(0,0,0,0.6)',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontWeight: 'bold',
+                border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+                PAUSED
+            </div>
+        )}
+
+        {/* Exit Button */}
+        {(gameState === 'PLAYING' || gameState === 'PAUSED') && (
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 64,
+                    right: 24,
+                    background: 'rgba(0,0,0,0.6)',
+                    padding: '8px 16px',
+                    borderRadius: '20px',
+                    fontWeight: 'bold',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+                    color: '#fff'
+                }}
+                onClick={() => setGameState('MENU')}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                    e.currentTarget.style.borderColor = '#ff4444';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 5px 15px rgba(255, 68, 68, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(0,0,0,0.6)';
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                }}
             >
-              Menu (ESC)
-            </button>
-          </div>
-        </div>
-      )}
+                EXIT
+            </div>
+        )}
+
+        {/* Main Menu */}
+        {gameState === 'MENU' && (
+            <div style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'grid',
+                placeItems: 'center',
+                background: 'radial-gradient(circle at center, rgba(20,30,50,0.9) 0%, #0b0e14 100%)',
+            }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30 }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <h1 style={{ 
+                            fontSize: 'clamp(40px, 8vw, 80px)', 
+                            fontWeight: 900, 
+                            margin: 0,
+                            background: 'linear-gradient(135deg, #00ff88 0%, #00aaff 100%)',
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent',
+                            filter: 'drop-shadow(0 0 30px rgba(0,255,136,0.3))'
+                        }}>
+                            SLITHER
+                        </h1>
+                        <p style={{ opacity: 0.6, marginTop: 10, fontSize: '16px' }}>
+                            Eat or be eaten. Hold Space/Click to boost.
+                        </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <MenuButton 
+                            label="Easy" 
+                            sub="Chill pace"
+                            color="#00ff88" 
+                            onClick={() => startGame(0.8, 8)} 
+                        />
+                        <MenuButton 
+                            label="Normal" 
+                            sub="Standard challenge"
+                            color="#00aaff" 
+                            onClick={() => startGame(1.0, 12)} 
+                        />
+                        <MenuButton 
+                            label="Hard" 
+                            sub="Chaos mode"
+                            color="#ff0055" 
+                            onClick={() => startGame(1.3, 18)} 
+                        />
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Game Over Screen */}
+        {gameState === 'GAME_OVER' && (
+            <div style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'grid',
+                placeItems: 'center',
+                background: 'rgba(11, 14, 20, 0.85)',
+                backdropFilter: 'blur(8px)',
+                animation: 'fadeIn 0.3s ease-out'
+            }}>
+                <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    gap: 24,
+                    padding: '40px',
+                    background: 'rgba(255,255,255,0.03)',
+                    borderRadius: '32px',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+                }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#ff4444', letterSpacing: '2px' }}>
+                        ELIMINATED
+                    </div>
+                    
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '64px', fontWeight: 900, lineHeight: 1 }}>
+                            {finalScore}
+                        </div>
+                        <div style={{ opacity: 0.5, marginTop: 8 }}>FINAL SCORE</div>
+                    </div>
+
+                    <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '10px 0' }} />
+
+                    <button
+                        onClick={() => setGameState('MENU')}
+                        style={{
+                            background: 'white',
+                            color: 'black',
+                            border: 'none',
+                            padding: '16px 32px',
+                            borderRadius: '16px',
+                            fontSize: '16px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            transition: 'transform 0.1s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                    >
+                        Play Again
+                    </button>
+                </div>
+            </div>
+        )}
     </div>
   );
+}
+
+function MenuButton({ label, sub, color, onClick }: { label: string, sub: string, color: string, onClick: () => void }) {
+    return (
+        <button
+            onClick={onClick}
+            style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: `1px solid ${color}40`,
+                borderRadius: '20px',
+                padding: '20px 24px',
+                minWidth: '140px',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+                position: 'relative',
+                overflow: 'hidden'
+            }}
+            onMouseEnter={e => {
+                e.currentTarget.style.background = `${color}15`;
+                e.currentTarget.style.borderColor = color;
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.boxShadow = `0 10px 30px -10px ${color}60`;
+            }}
+            onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                e.currentTarget.style.borderColor = `${color}40`;
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+            }}
+        >
+            <div style={{ color: color, fontSize: '20px', fontWeight: 800, marginBottom: '4px' }}>
+                {label}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>
+                {sub}
+            </div>
+        </button>
+    );
 }

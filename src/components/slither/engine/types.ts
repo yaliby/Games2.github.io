@@ -7,13 +7,15 @@ export type Pellet = {
   value: number; // how much length it adds
   color: string;
   /** For nicer visuals / rules (e.g., death pellets). */
-  kind?: 'normal' | 'death';
+  kind?: 'small' | 'medium' | 'large' | 'gold' | 'death';
 };
 
 export type SnakeAI = {
   targetPelletId: string | null;
   wanderAngle: number;
   wanderTimer: number;
+  reactionTimer: number;
+  currentAim: number;
 
   // aggression / hunting
   targetSnakeId: string | null;
@@ -110,8 +112,7 @@ export type PelletGrid = {
 };
 
 export type World = {
-  W: number;
-  H: number;
+  radius: number;
   tick: number;
 
   pellets: Pellet[];
