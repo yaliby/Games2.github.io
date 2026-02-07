@@ -7,9 +7,6 @@ type UserBoxProps = {
   userId: string;
 };
 
-const FALLBACK_AVATAR =
-  "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSI0MCIgZmlsbD0iI0IyQzZGRiIvPjxjaXJjbGUgY3g9IjQwIiBjeT0iMzAiIHI9IjEyIiBmaWxsPSIjRjJGN0ZGIi8+PHBhdGggZD0iTTIwIDY0QzI1LjUgNTUuNSAzMi41IDUwIDQwIDUwQzQ3LjUgNTAgNTQuNSA1NS41IDYwIDY0IiBzdHJva2U9IiNGMkY3RkYiIHN0cm9rZS13aWR0aD0iNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+";
-
 function optimizePhotoUrl(input: string): string {
   try {
     const url = new URL(input);

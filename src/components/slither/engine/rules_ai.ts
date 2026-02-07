@@ -20,8 +20,6 @@ const TURN_DAMPING = 0.92;       // velocity damping when turning sharply
 
 // Boost costs length + energy, but never below MIN_LEN.
 const BOOST_LEN_DRAIN_PER_SEC = 5.2;
-const BOOST_ENERGY_DRAIN_PER_SEC = 0.0;  // unused (kept for structure)
-const BOOST_ENERGY_RECHARGE_PER_SEC = 0.0; // unused (kept for structure)
 const MIN_LEN = 26;
 const MIN_ENERGY_TO_BOOST = 0.0; // minimum energy needed to start boost
 

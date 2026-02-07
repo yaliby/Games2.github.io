@@ -48,17 +48,6 @@ const scalePlane = (object: THREE.Object3D, width: number, depth: number) => {
   normalizeObject(object);
 };
 
-const scaleUniform = (object: THREE.Object3D, targetWidth: number) => {
-  object.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(object);
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const base = Math.max(size.x, size.y) || 1;
-  const scale = targetWidth / base;
-  object.scale.setScalar(scale);
-  normalizeObject(object);
-};
-
 const alignLengthToX = (object: THREE.Object3D) => {
   object.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object);

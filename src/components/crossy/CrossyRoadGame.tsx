@@ -171,10 +171,10 @@ function generateForestMetadata(rowIndex: number): RowData {
 function generateCarLaneMetadata(): RowData {
   const direction = randomElement([true, false]);
   // Faster base speeds
-  const speed = randomElement([90, 110, 125, 140]);
+  const speed = randomElement([120, 140, 160, 180]);
 
   const occupiedTiles = new Set<number>();
-  const vehicles = Array.from({ length: 4 }, () => {
+  const vehicles = Array.from({ length: 5 }, () => {
     let initialTileIndex: number;
     do {
       initialTileIndex = THREE.MathUtils.randInt(renderMinTileIndex, renderMaxTileIndex);
@@ -192,10 +192,10 @@ function generateCarLaneMetadata(): RowData {
 function generateTruckLaneMetadata(): RowData {
   const direction = randomElement([true, false]);
   // Faster base speeds
-  const speed = randomElement([80, 95, 110, 125]);
+  const speed = randomElement([110, 130, 150]);
 
   const occupiedTiles = new Set<number>();
-  const vehicles = Array.from({ length: 3 }, () => {
+  const vehicles = Array.from({ length: 4 }, () => {
     let initialTileIndex: number;
     do {
       initialTileIndex = THREE.MathUtils.randInt(renderMinTileIndex, renderMaxTileIndex);
@@ -214,7 +214,7 @@ function generateTruckLaneMetadata(): RowData {
 
 function generateRailLaneMetadata(): RowData {
   const direction = randomElement([true, false]);
-  const speed = randomElement([150, 175, 200]);
+  const speed = randomElement([200, 230, 260]);
   const trains: TrainMeta[] = [
     { initialTileIndex: direction ? renderMinTileIndex - 12 : renderMaxTileIndex + 12 },
   ];
@@ -223,9 +223,9 @@ function generateRailLaneMetadata(): RowData {
 
 function generateWaterLaneMetadata(): RowData {
   const direction = randomElement([true, false]);
-  const speed = randomElement([60, 75, 90]);
-  const logsCount = LOGS_PER_WATER_ROW;
-  const spacing = randomElement([2, 3, 4]);
+  const speed = randomElement([80, 95, 110]);
+  const logsCount = LOGS_PER_WATER_ROW + 1;
+  const spacing = randomElement([2, 3]);
   const start = THREE.MathUtils.randInt(renderMinTileIndex, renderMaxTileIndex);
   const logs: LogMeta[] = Array.from({ length: logsCount }, (_, index) => {
     const offset = direction ? index * spacing : -index * spacing;
@@ -246,10 +246,10 @@ function generateRow(
   const roll = Math.random();
   let nextType: RowData['type'];
 
-  if (roll < 0.15) nextType = 'forest';
-  else if (roll < 0.35) nextType = 'car';
-  else if (roll < 0.5) nextType = 'truck';
-  else if (roll < 0.92) nextType = 'water';
+  if (roll < 0.08) nextType = 'forest';
+  else if (roll < 0.38) nextType = 'car';
+  else if (roll < 0.6) nextType = 'truck';
+  else if (roll < 0.93) nextType = 'water';
   else nextType = 'rail';
 
   if (nextType === 'water') {

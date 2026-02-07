@@ -1,4 +1,4 @@
-import { arrayUnion, doc, getDoc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { arrayUnion, doc, runTransaction, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
 
 export async function addAchievement(uid: string, achievementId: string) {
