@@ -7,45 +7,47 @@ const TAU = Math.PI * 2;
 // Movement / body
 const BASE_SPACING = 10;         // distance between points (like vertebrae)
 const FOLLOW_ITERS = 10;         // constraint iterations (bigger = stiffer body, more accurate)
-const PLAYER_BASE_SPEED = 240;
-const BOT_BASE_SPEED = 210;
-const BOOST_MULT = 1.38;
+const PLAYER_BASE_SPEED = 220;
+const BOT_BASE_SPEED = 200;
+const BOOST_MULT = 1.6;
+const BOOST_SPEED_SMOOTH = 0.04; // soften boost transition
+const BOOST_BRAKE_SMOOTH = 0.03; // extra smoothing when leaving boost
 
 // Smooth acceleration/deceleration
-const ACCEL_RATE = 850;          // px/sec² acceleration
-const DECEL_RATE = 950;          // px/sec² deceleration
-const TURN_DAMPING = 0.96;       // velocity damping when turning sharply
+const ACCEL_RATE = 1000;         // px/sec² acceleration
+const DECEL_RATE = 1100;         // px/sec² deceleration
+const TURN_DAMPING = 0.92;       // velocity damping when turning sharply
 
 // Boost costs length + energy, but never below MIN_LEN.
-const BOOST_LEN_DRAIN_PER_SEC = 4.2;
-const BOOST_ENERGY_DRAIN_PER_SEC = 0.35;  // energy drain rate
-const BOOST_ENERGY_RECHARGE_PER_SEC = 0.25; // energy recharge rate
+const BOOST_LEN_DRAIN_PER_SEC = 5.2;
+const BOOST_ENERGY_DRAIN_PER_SEC = 0.0;  // unused (kept for structure)
+const BOOST_ENERGY_RECHARGE_PER_SEC = 0.0; // unused (kept for structure)
 const MIN_LEN = 26;
-const MIN_ENERGY_TO_BOOST = 0.15; // minimum energy needed to start boost
+const MIN_ENERGY_TO_BOOST = 0.0; // minimum energy needed to start boost
 
 // Steering
-const PLAYER_TURN = 3.5; // rad/sec
-const BOT_TURN = 3.5;
+const PLAYER_TURN = 3.2; // rad/sec
+const BOT_TURN = 3.2;
 
 // World
 const WORLD_SIZE = 3800;
 
 // Pellets
 const PELLET_TYPES = {
-  small:  { val: 1,  r: 6.2, prob: 0.80 },
-  medium: { val: 5,  r: 9.0, prob: 0.15 },
-  large:  { val: 12, r: 13.0, prob: 0.04 },
-  gold:   { val: 40, r: 18.0, prob: 0.01 },
-  death:  { val: 1.65, r: 7.0 } // Special case
+  small:  { val: 1,  r: 5.8, prob: 0.93 },
+  medium: { val: 4,  r: 8.2, prob: 0.06 },
+  large:  { val: 10, r: 12.0, prob: 0.01 },
+  gold:   { val: 30, r: 16.0, prob: 0.002 },
+  death:  { val: 2.5, r: 7.5 } // Special case
 };
-const PELLET_SPAWN_RATE = 0.8;  // pellets per second to maintain
-const PELLET_MIN_DISTANCE = 80;  // minimum distance from snakes when spawning
+const PELLET_SPAWN_RATE = 55;  // pellets per second to maintain
+const PELLET_MIN_DISTANCE = 45;  // minimum distance from snakes when spawning
 const PELLET_GRID_CELL = 120;
-const PELLET_EAT_PAD = 4;        // extra "magnet" radius for eating like Slither.io
+const PELLET_EAT_PAD = 10;       // extra "magnet" radius for eating like Slither.io
 
 // Combat
 const KILL_SPILL_MIN = 22;
-const KILL_SPILL_MAX = 110;
+const KILL_SPILL_MAX = 180;
 const HEAD_COLLISION_RADIUS = 1.15; // head collision multiplier
 
 // Respawn
@@ -181,11 +183,20 @@ function snapshotSnake(s: Snake) {
 }
 
 function snakeColor(i: number) {
-  const palette = [
-    '#00FF9F', '#00B8FF', '#001EFF', '#BD00FF', '#FF0055',
-    '#FF9100', '#F7FF00', '#FFFFFF'
-  ];
-  return palette[i % palette.length];
+  const hue = (i * 53) % 360; // spread colors evenly, avoid repeats
+  return `hsl(${hue}, 85%, 58%)`;
+}
+
+function nextDistinctColor(startIndex: number, used: Set<string>) {
+  let i = startIndex;
+  let c = snakeColor(i);
+  let guard = 0;
+  while (used.has(c) && guard < 200) {
+    i++;
+    c = snakeColor(i);
+    guard++;
+  }
+  return { color: c, index: i + 1 };
 }
 
 let _idCounter = 0;
@@ -212,9 +223,8 @@ function initBodyAt(s: Snake, pos: Vec) {
   s.targetSpeed = s.speed;
 }
 
-function ensureLength(s: Snake) {
-  const desired = safeLen(s.desiredLen);
-  const spacing = s.radius * 0.4;
+function ensureLength(s: Snake, spacing: number) {
+  const desired = safeLen(s.renderLen ?? s.desiredLen);
 
   if (s.points.length < desired) {
     // Growth: Only add a new segment if the tail has moved far enough from the previous segment.
@@ -227,7 +237,8 @@ function ensureLength(s: Snake) {
       s.points.push({ x: tail?.x || 0, y: tail?.y || 0 });
     } else {
       const d2 = dist2(tail, prev);
-      if (d2 >= spacing * spacing) {
+      const minGap = spacing * 0.95;
+      if (d2 >= minGap * minGap) {
         // There is room; duplicate the tail point to fill the gap
         s.points.push({ x: tail.x, y: tail.y });
       }
@@ -420,22 +431,30 @@ function makePellet(world: World, kind: 'random' | 'death' = 'random', avoidSnak
 function fillPellets(world: World) {
   const target = world.maxPellets;
   const current = world.pellets.length;
-  const dt = world._dtLast ?? 0.008;
-  
-  // Spawn pellets gradually to maintain count
+  const dt = world._dtLast ?? 0.016;
+
   if (current < target) {
-    const toSpawn = Math.min(Math.ceil(PELLET_SPAWN_RATE * dt), target - current);
-    for (let i = 0; i < toSpawn; i++) {
-      world.pellets.push(makePellet(world, 'random', true));
+    world._pelletSpawnAcc = (world._pelletSpawnAcc ?? 0) + PELLET_SPAWN_RATE * dt;
+    const budget = Math.floor(world._pelletSpawnAcc);
+    const minSpawn = Math.max(0, Math.ceil((target - current) * 0.08));
+    const toSpawn = Math.min(Math.max(budget, minSpawn), target - current);
+    if (toSpawn > 0) {
+      world._pelletSpawnAcc = Math.max(0, (world._pelletSpawnAcc ?? 0) - toSpawn);
+      for (let i = 0; i < toSpawn; i++) {
+        world.pellets.push(makePellet(world, 'random', true));
+      }
+      world._pelletGridDirty = true;
     }
-    if (toSpawn > 0) world._pelletGridDirty = true;
+  } else {
+    world._pelletSpawnAcc = 0;
   }
 }
 
 function checkPelletEat(world: World, s: Snake) {
   const head = s.points[0];
   const r = headRadius(s) + PELLET_EAT_PAD;
-  const r2 = r * r;
+  const dt = world._dtLast ?? 0.016;
+  let moved = false;
 
   // Query only nearby pellets (avoids O(N) scans).
   const toEat: number[] = [];
@@ -444,7 +463,22 @@ function checkPelletEat(world: World, s: Snake) {
     if (!p) return;
     const dx = p.pos.x - head.x;
     const dy = p.pos.y - head.y;
-    if (dx * dx + dy * dy <= r2) toEat.push(pi);
+    const rr = r + p.r;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= rr * rr) {
+      toEat.push(pi);
+      return;
+    }
+
+    // Light magnet effect when very close (Slither-like suction)
+    const magnetR = rr + 40;
+    if (d2 <= magnetR * magnetR) {
+      const d = Math.sqrt(d2) || 1;
+      const pull = (1 - d / magnetR) * (120 * dt);
+      p.pos.x -= (dx / d) * pull;
+      p.pos.y -= (dy / d) * pull;
+      moved = true;
+    }
   });
 
   if (toEat.length === 0) return;
@@ -456,15 +490,15 @@ function checkPelletEat(world: World, s: Snake) {
     const p = world.pellets[i];
     if (!p) continue;
 
-    // Eat (gradual growth: pellets are small, but many over time)
-    s.desiredLen += p.value;
-    s.score += p.value;
+    // One tile per pellet; higher value only thickens.
+    s.growAcc += 1;
+    s.mass = (s.mass || s.desiredLen) + p.value;
 
     const last = world.pellets[world.pellets.length - 1];
     world.pellets[i] = last;
     world.pellets.pop();
   }
-  world._pelletGridDirty = true;
+  if (toEat.length > 0 || moved) world._pelletGridDirty = true;
 }
 
 // -------------------- Bot AI (Human-like) --------------------
@@ -508,7 +542,7 @@ function botPickTarget(world: World, bot: Snake) {
   let bestScore = -1;
 
   // Nearby pellet search via grid (fast + more "human" because it doesn't see everything).
-  const scanR = 900;
+  const scanR = clamp(700 + difficulty * 600, 700, 2000);
   forNearbyPellets(world, head.x, head.y, scanR, (i) => {
     const p = world.pellets[i];
     if (!p) return;
@@ -533,8 +567,10 @@ function botPickTarget(world: World, bot: Snake) {
     // Value preference
     const vMul = 1 + (p.value - 1) * 0.5;
 
-    // Add some randomness for human-like imperfection
-    const randomness = 0.85 + rand(0, 0.3);
+    // Add some randomness for human-like imperfection (less on higher difficulty)
+    const randBase = clamp(0.85 - (difficulty - 1) * 0.06, 0.72, 0.88);
+    const randSpan = clamp(0.3 - (difficulty - 1) * 0.08, 0.12, 0.3);
+    const randomness = randBase + rand(0, randSpan);
     const score = (1 / (d + 1)) * 1600 * aheadBonus * safeMul * vMul * randomness;
 
     if (score > bestScore) {
@@ -558,19 +594,20 @@ function botPickVictim(world: World, bot: Snake) {
   for (const s of world.snakes) {
     if (!s.alive || s.id === bot.id) continue;
 
-    const d2 = dist2(head, s.points[0]);
-    if (d2 > 1100 * 1100) continue;
+      const d2 = dist2(head, s.points[0]);
+      const huntRange = clamp(900 + difficulty * 260, 900, 1650);
+      if (d2 > huntRange * huntRange) continue;
 
     const d = Math.sqrt(d2) || 1;
 
     let score = (1 / (d + 1)) * 2000;
     score *= 1.2 - Math.min(0.9, s.desiredLen / 500);
-    if (s.isPlayer) score *= 1.35;
+      if (s.isPlayer) score *= 1.45 + 0.1 * difficulty;
 
-    score *= 0.8 + 0.4 * difficulty;
+    score *= 0.9 + 0.6 * difficulty;
 
-    // Human-like: sometimes ignore good targets (hesitation)
-    if (rand() < 0.15) score *= 0.3;
+    // Human-like: sometimes ignore good targets (less on higher difficulty)
+      if (rand() < clamp(0.12 - difficulty * 0.035, 0.01, 0.12)) score *= 0.3;
 
     if (score > bestScore) {
       bestScore = score;
@@ -590,21 +627,26 @@ function botComputeThreat(world: World, bot: Snake) {
   let ay = 0;
   let threat = 0;
 
+  const diff = world.difficulty ?? 1;
   for (const s of world.snakes) {
     if (!s.alive || s.id === bot.id) continue;
 
     const pts = s.points;
-    const step = pts.length > 140 ? 3 : 2;
+    const isPlayer = s.isPlayer;
+    const step = isPlayer ? 1 : (diff >= 2.2 ? 1 : (pts.length > 140 ? 3 : 2));
+    const playerMul = isPlayer ? (1.6 + diff * 0.35) : (1 + diff * 0.05);
+    const rangeMul = 1 + (diff - 1) * 0.25;
 
     for (let i = 0; i < pts.length; i += step) {
       const p = pts[i];
       const dx = head.x - p.x;
       const dy = head.y - p.y;
       const d2 = dx * dx + dy * dy;
-      if (d2 > 320 * 320) continue;
+      const bodyRange = (isPlayer ? 420 : 320) * rangeMul;
+      if (d2 > bodyRange * bodyRange) continue;
 
       const d = Math.sqrt(d2) || 1;
-      const w = (1 / d) * (1 + (s.desiredLen / 90) * 0.18);
+      const w = (1 / d) * (1 + (s.desiredLen / 90) * 0.18) * playerMul;
 
       ax += (dx / d) * w;
       ay += (dy / d) * w;
@@ -635,9 +677,10 @@ function botComputeThreat(world: World, bot: Snake) {
     const pdx = head.x - px;
     const pdy = head.y - py;
     const pd2 = pdx * pdx + pdy * pdy;
-    if (pd2 < 220 * 220) {
+    const headRange = (isPlayer ? 320 : 220) * rangeMul;
+    if (pd2 < headRange * headRange) {
       const pd = Math.sqrt(pd2) || 1;
-      const bonus = (1 / pd) * (0.8 + Math.min(1.2, s.desiredLen / 200));
+      const bonus = (1 / pd) * (0.8 + Math.min(1.2, s.desiredLen / 200)) * playerMul;
       ax += (pdx / pd) * bonus * 1.2;
       ay += (pdy / pd) * bonus * 1.2;
       threat = Math.max(threat, bonus * 0.9);
@@ -656,12 +699,16 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   if (bot.ai.reactionTimer > 0) {
     return { aim: bot.ai.currentAim, boost: bot.boosting };
   }
-  bot.ai.reactionTimer = rand(0.05, 0.15); // Faster reaction
+    const reactMin = clamp(0.02 + (1.4 - difficulty) * 0.015, 0.01, 0.06);
+    const reactMax = clamp(0.08 + (1.2 - difficulty) * 0.04, 0.03, 0.12);
+    bot.ai.reactionTimer = rand(reactMin, reactMax); // Faster reaction on higher difficulty
 
   // Wander timer (human-like exploration)
   bot.ai.wanderTimer -= world._dtLast ?? 0;
   if (bot.ai.wanderTimer <= 0) {
-    bot.ai.wanderTimer = rand(1.0, 3.0);
+    const wanderMax = clamp(2.8 - difficulty * 0.6, 1.0, 2.8);
+    const wanderMin = clamp(1.2 - difficulty * 0.25, 0.4, 1.2);
+    bot.ai.wanderTimer = rand(wanderMin, wanderMax);
     bot.ai.wanderAngle = rand(-Math.PI, Math.PI);
   }
 
@@ -670,10 +717,10 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
 
   // Occasionally attempt intercept (with human-like hesitation)
   let victim: Snake | null = null;
-  if (rand() < 0.23 * difficulty) {
+  if (rand() < 0.32 * difficulty) {
     victim = botPickVictim(world, bot);
     // Sometimes change mind (human-like)
-    if (victim && rand() < 0.12) victim = null;
+    if (victim && rand() < 0.05) victim = null;
   }
 
   // Combine steering vectors
@@ -684,7 +731,7 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   if (targetPellet) {
     const a = angleTo(head, targetPellet.pos);
     const pelletThreat = threatAt(world, targetPellet.pos, 260);
-    const pelletWeight = pelletThreat > 0.7 ? 0.3 : 1.0;
+    const pelletWeight = pelletThreat > 0.7 ? (0.25 + 0.1 * difficulty) : (1.0 + 0.15 * difficulty);
 
     dx += Math.cos(a) * (1.0 * pelletWeight);
     dy += Math.sin(a) * (1.0 * pelletWeight);
@@ -695,7 +742,7 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
     const vHead = victim.points[0];
     const d2 = dist2(head, vHead);
     const d = Math.sqrt(d2) || 1;
-    const baseLead = clamp(0.25 + (difficulty - 1) * 0.18, 0.2, 0.55);
+    const baseLead = clamp(0.28 + (difficulty - 1) * 0.22, 0.25, 0.7);
     const speedFactor = Math.min(1.5, (bot.speed + 40) / (victim.speed + 20));
     const lead = clamp(baseLead * speedFactor * (1 + Math.max(0, 600 - d) / 900), 0.2, 0.9);
 
@@ -708,12 +755,12 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   }
 
   // Avoid threats
-  dx += threat.ax * 1.7;
-  dy += threat.ay * 1.7;
+    dx += threat.ax * (1.6 + 0.2 * difficulty);
+    dy += threat.ay * (1.6 + 0.2 * difficulty);
 
   // Evasive memory (human-like panic response)
   const threatLevel = threat.threat;
-  if (threatLevel > 0.06) {
+    if (threatLevel > 0.055) {
     if (bot.ai.evadeAngle === undefined) {
       const away = Math.atan2(-threat.ay, -threat.ax);
       bot.ai.evadeAngle = away + rand(-0.6, 0.6);
@@ -731,28 +778,38 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
   // Soft wall avoidance
   const distFromCenter = Math.sqrt(head.x * head.x + head.y * head.y);
   const distToWall = world.radius - distFromCenter;
-  if (distToWall < 400) {
-    const angleToCenter = Math.atan2(-head.y, -head.x);
-    const urgency = 1 - (distToWall / 400);
-    dx += Math.cos(angleToCenter) * 4 * urgency;
-    dy += Math.sin(angleToCenter) * 4 * urgency;
-  }
+    if (distToWall < 420) {
+      const angleToCenter = Math.atan2(-head.y, -head.x);
+      const urgency = 1 - (distToWall / 420);
+      dx += Math.cos(angleToCenter) * (4.5 + 0.6 * difficulty) * urgency;
+      dy += Math.sin(angleToCenter) * (4.5 + 0.6 * difficulty) * urgency;
+    }
 
   const aim = Math.atan2(dy, dx);
 
   // Boost logic (human-like: sometimes boost when shouldn't, sometimes don't when should)
-  const safe = threat.threat < 0.035 * (2 - clamp(difficulty, 0.6, 1.8));
+  const safe = threat.threat < 0.04 * (2 - clamp(difficulty, 0.7, 2.0));
   const chasing = !!victim && dist2(head, victim.points[0]) < (420 * 420);
   const escaping = threat.threat > 0.06;
+  const closePellet = targetPellet ? dist2(head, targetPellet.pos) < (200 * 200) : false;
+  const attackAngle = victim ? Math.abs(wrapAngle(aim - bot.dir)) : Math.PI;
+  const aimDiff = Math.abs(wrapAngle(aim - bot.dir));
 
   let boost = false;
   if (escaping) {
-    boost = rand() < 0.85; // Sometimes panic and forget to boost
-  } else if (chasing && safe) {
-    boost = rand() < (0.75 + 0.1 * difficulty); // More likely to boost on higher difficulty
+    boost = rand() < (0.98 + 0.03 * difficulty);
+  } else if (chasing) {
+    boost = rand() < (0.92 + 0.18 * difficulty);
+    // If aiming well at victim, boost more aggressively to cut off.
+    if (attackAngle < 0.6) boost = true;
+  } else if (closePellet && safe) {
+    boost = rand() < (0.4 + 0.15 * difficulty);
   } else if (safe) {
-    boost = rand() < (0.03 * difficulty); // Occasional random boost
+    boost = rand() < (0.2 * difficulty);
   }
+
+  // Don't waste boost while turning hard (unless escaping)
+  if (!escaping && aimDiff > 0.9) boost = false;
 
   bot.ai.currentAim = aim;
   return { aim, boost };
@@ -763,23 +820,57 @@ function botDesired(world: World, bot: Snake): { aim: number; boost: boolean } {
 function spillDeathPellets(world: World, s: Snake) {
   // Convert body segments into pellets (like Slither.io)
   const pts = s.points;
-  const count = clamp(Math.floor(pts.length * 0.95), KILL_SPILL_MIN, Math.max(KILL_SPILL_MAX, Math.floor(pts.length * 0.35)));
+  const baseLen = Math.max(pts.length, s.renderLen ?? 0, s.mass ?? 0, MIN_LEN);
+  const count = clamp(Math.floor(baseLen * 0.7), KILL_SPILL_MIN, KILL_SPILL_MAX);
+  const head = pts[0] ?? spawnPos(world, false);
+
+  // Reserve capacity for death pellets so they are not trimmed immediately.
+  world._reservedDeathPellets = (world._reservedDeathPellets ?? 0) + count;
 
   for (let i = 0; i < count; i++) {
-    const idx = Math.floor((i / count) * pts.length);
-    const p = pts[idx];
-    if (!p) continue;
+    let px = head.x;
+    let py = head.y;
+    if (pts.length > 0) {
+      const idx = Math.floor((i / count) * Math.max(1, pts.length));
+      const p = pts[idx];
+      if (p) {
+        px = p.x;
+        py = p.y;
+      }
+    }
 
     // Add slight randomness for natural spread
     world.pellets.push({
       id: `d-${_pelletId++}`,
-      pos: { x: p.x + rand(-12, 12), y: p.y + rand(-12, 12) },
+      pos: { x: px + rand(-12, 12), y: py + rand(-12, 12) },
       r: PELLET_TYPES.death.r,
       value: PELLET_TYPES.death.val,
       kind: 'death',
       color: s.color, // Drop body color
     });
   }
+  world._pelletGridDirty = true;
+}
+
+function trimPellets(world: World, limit: number) {
+  if (world.pellets.length <= limit) return;
+
+  // Prefer removing non-death pellets first, so death drops stay visible.
+  let i = 0;
+  while (world.pellets.length > limit && i < world.pellets.length) {
+    const p = world.pellets[i];
+    if (p && p.kind !== 'death') {
+      world.pellets[i] = world.pellets[world.pellets.length - 1];
+      world.pellets.pop();
+      continue;
+    }
+    i++;
+  }
+
+  while (world.pellets.length > limit) {
+    world.pellets.pop();
+  }
+
   world._pelletGridDirty = true;
 }
 
@@ -792,13 +883,18 @@ function killSnake(world: World, victim: Snake, killer: Snake | null) {
   victim.deaths++;
   victim.respawnTimer = RESPAWN_SECONDS;
   victim.spawnInvuln = 0;
+  victim.score = 0;
+  victim.desiredLen = MIN_LEN;
+  victim.boostDropAcc = 0;
+  victim.growAcc = 0;
+  victim.renderLen = MIN_LEN;
+  victim.mass = MIN_LEN;
 
   // Spawn death pellets
   spillDeathPellets(world, victim);
 
   if (killer) {
     killer.kills++;
-    killer.score += Math.max(10, victim.desiredLen * 0.08);
     world.events = world.events ?? {};
     world.events.lastKillAt = world.tick;
   }
@@ -903,6 +999,78 @@ function dist2PointSegment(px: number, py: number, ax: number, ay: number, bx: n
   return dx * dx + dy * dy;
 }
 
+function dist2SegmentSegment(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number
+) {
+  const ux = bx - ax;
+  const uy = by - ay;
+  const vx = dx - cx;
+  const vy = dy - cy;
+  const wx = ax - cx;
+  const wy = ay - cy;
+
+  const a = ux * ux + uy * uy;
+  const b = ux * vx + uy * vy;
+  const c = vx * vx + vy * vy;
+  const d = ux * wx + uy * wy;
+  const e = vx * wx + vy * wy;
+  const D = a * c - b * b;
+
+  let sN = 0;
+  let tN = 0;
+  let sD = D;
+  let tD = D;
+
+  if (D < 1e-8) {
+    sN = 0;
+    sD = 1;
+    tN = e;
+    tD = c;
+  } else {
+    sN = (b * e - c * d);
+    tN = (a * e - b * d);
+    if (sN < 0) {
+      sN = 0;
+      tN = e;
+      tD = c;
+    } else if (sN > sD) {
+      sN = sD;
+      tN = e + b;
+      tD = c;
+    }
+  }
+
+  if (tN < 0) {
+    tN = 0;
+    if (-d < 0) {
+      sN = 0;
+    } else if (-d > a) {
+      sN = sD;
+    } else {
+      sN = -d;
+      sD = a;
+    }
+  } else if (tN > tD) {
+    tN = tD;
+    if (-d + b < 0) {
+      sN = 0;
+    } else if (-d + b > a) {
+      sN = sD;
+    } else {
+      sN = -d + b;
+      sD = a;
+    }
+  }
+
+  const sc = Math.abs(sN) < 1e-8 ? 0 : sN / sD;
+  const tc = Math.abs(tN) < 1e-8 ? 0 : tN / tD;
+
+  const dx2 = wx + sc * ux - tc * vx;
+  const dy2 = wy + sc * uy - tc * vy;
+  return dx2 * dx2 + dy2 * dy2;
+}
+
 function rebuildCollisionGrid(world: World) {
   const grid = ensureGrid(world);
   clearGrid(grid);
@@ -933,33 +1101,30 @@ function checkSnakeCollisions(world: World) {
     if (!s1.alive || s1.points.length === 0) continue;
     if ((s1.spawnInvuln ?? 0) > 0) continue;
 
-    const h1 = s1.points[0];
-    const r1 = headRadius(s1);
+      const h1 = s1.points[0];
+      const r1 = s1.radius * 0.9;
+      const h1px = s1._prev && s1._prevLen ? s1._prev[0] : h1.x;
+      const h1py = s1._prev && s1._prevLen ? s1._prev[1] : h1.y;
 
     for (let j = i + 1; j < world.snakes.length; j++) {
       const s2 = world.snakes[j];
       if (!s2.alive || s2.points.length === 0) continue;
       if ((s2.spawnInvuln ?? 0) > 0) continue;
 
-      const h2 = s2.points[0];
-      const r2 = headRadius(s2);
-      const d2 = dist2(h1, h2);
-      const rSum = r1 + r2;
+        const h2 = s2.points[0];
+        const r2 = s2.radius * 0.9;
+        const h2px = s2._prev && s2._prevLen ? s2._prev[0] : h2.x;
+        const h2py = s2._prev && s2._prevLen ? s2._prev[1] : h2.y;
+        const rSum = r1 + r2;
 
-      if (d2 <= rSum * rSum) {
-        // Head-to-head collision: make it less "random mass extinction".
-        // Only kill if there's a meaningful size advantage; otherwise treat as a bump (no death).
-        const a = s1.desiredLen;
-        const b = s2.desiredLen;
-        const bigger = Math.max(a, b);
-        const smaller = Math.min(a, b);
-        const ratio = smaller > 0 ? bigger / smaller : 9;
-        if (ratio >= 1.12) {
-          if (a > b) killSnake(world, s2, s1);
-          else killSnake(world, s1, s2);
+        const d2Now = dist2(h1, h2);
+        const d2Swept = dist2SegmentSegment(h1px, h1py, h1.x, h1.y, h2px, h2py, h2.x, h2.y);
+        if (d2Now <= rSum * rSum || d2Swept <= rSum * rSum) {
+          // Head-to-head collision: both die (Slither-like).
+          killSnake(world, s1, s2);
+          killSnake(world, s2, s1);
         }
       }
-    }
   }
 
   // Then check head-to-body collisions
@@ -1021,9 +1186,9 @@ function checkSnakeCollisions(world: World) {
 
 // -------------------- Main step --------------------
 
-function makeSnake(index: number, isPlayer: boolean): Snake {
+function makeSnake(index: number, isPlayer: boolean, colorOverride?: string): Snake {
   const id = makeId(isPlayer ? 'player' : 'bot');
-  const color = snakeColor(index);
+  const color = colorOverride ?? snakeColor(index);
   const baseSpeed = isPlayer ? PLAYER_BASE_SPEED : BOT_BASE_SPEED;
 
   const s: Snake = {
@@ -1043,6 +1208,9 @@ function makeSnake(index: number, isPlayer: boolean): Snake {
 
     points: [],
     desiredLen: randInt(36, 46),
+    growAcc: 0,
+    renderLen: 0,
+    mass: 0,
 
     alive: true,
     respawnTimer: 0,
@@ -1073,30 +1241,60 @@ function makeSnake(index: number, isPlayer: boolean): Snake {
   return s;
 }
 
+function spawnPosFarFrom(world: World, avoidSnakes: boolean, avoidPos: Vec | null, minDist: number): Vec {
+  if (!avoidPos) return spawnPos(world, avoidSnakes);
+  let attempts = 0;
+  while (attempts < 80) {
+    const pos = spawnPos(world, avoidSnakes);
+    const dx = pos.x - avoidPos.x;
+    const dy = pos.y - avoidPos.y;
+    if (dx * dx + dy * dy >= minDist * minDist) return pos;
+    attempts++;
+  }
+  return spawnPos(world, avoidSnakes);
+}
+
 export function createWorld(cfg: WorldConfig): World {
   const world: World = {
     radius: WORLD_SIZE,
     tick: 0,
     pellets: [],
     snakes: [],
-    maxPellets: 520,
-    difficulty: clamp(cfg.difficulty ?? 1, 0.55, 2.0),
+    maxPellets: 1100,
+    difficulty: clamp(cfg.difficulty ?? 1, 0.55, 3.0),
   };
 
-  const player = makeSnake(0, true);
+  const usedColors = new Set<string>();
+  const playerColor = cfg.playerColor?.trim() || snakeColor(0);
+  usedColors.add(playerColor);
+
+  const player = makeSnake(0, true, playerColor);
   initBodyAt(player, spawnPos(world, false));
+  player.renderLen = player.desiredLen;
+  player.mass = player.desiredLen;
   world.snakes.push(player);
 
-  const bots = clamp(cfg.botCount | 0, 0, 28);
+  const bots = clamp(cfg.botCount | 0, 0, 36);
+  const cameraSafeRadius = Math.min(1200, world.radius * 0.35);
+  let colorIndex = 1;
   for (let i = 0; i < bots; i++) {
-    const b = makeSnake(i + 1, false);
-    b.speed *= 0.9 + 0.16 * (world.difficulty ?? 1);
+    const next = nextDistinctColor(colorIndex, usedColors);
+    colorIndex = next.index;
+    usedColors.add(next.color);
+    const b = makeSnake(i + 1, false, next.color);
+    b.speed *= 0.9 + 0.2 * (world.difficulty ?? 1);
     b.targetSpeed = b.speed;
-    initBodyAt(b, spawnPos(world, false));
+    const farPos = spawnPosFarFrom(world, true, player.points[0] ?? null, cameraSafeRadius);
+    initBodyAt(b, farPos);
+    b.renderLen = b.desiredLen;
+    b.mass = b.desiredLen;
     world.snakes.push(b);
   }
 
-  fillPellets(world);
+  for (let i = 0; i < world.maxPellets; i++) {
+    world.pellets.push(makePellet(world, 'random', true));
+  }
+  world._pelletGridDirty = true;
 
   for (const s of world.snakes) snapshotSnake(s);
 
@@ -1108,10 +1306,12 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
   world._dtLast = dt;
 
   fillPellets(world);
-  if (world.pellets.length > world.maxPellets * 1.6) {
-    world.pellets.length = Math.floor(world.maxPellets * 1.6);
-    world._pelletGridDirty = true;
+  const reserve = Math.min(world.maxPellets * 0.8, world._reservedDeathPellets ?? 0);
+  const maxAllowed = Math.floor(world.maxPellets * 2.0 + reserve);
+  if (world.pellets.length > maxAllowed) {
+    trimPellets(world, maxAllowed);
   }
+  world._reservedDeathPellets = Math.max(0, (world._reservedDeathPellets ?? 0) - dt * 80);
 
   for (const s of world.snakes) {
     if (!s.alive) {
@@ -1123,8 +1323,15 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
         s.energy = 1.0;
         s.spawnInvuln = SPAWN_INVULN_SECONDS;
         s.desiredLen = randInt(36, 46);
+        s.growAcc = 0;
+        s.renderLen = s.desiredLen;
+        s.mass = s.desiredLen;
         // Safer respawn to avoid instant collisions.
-        const pos = spawnPos(world, true);
+        const playerHead = world.snakes[0]?.points[0] ?? null;
+        const cameraSafeRadius = Math.min(1200, world.radius * 0.35);
+        const pos = s.isPlayer
+          ? spawnPos(world, true)
+          : spawnPosFarFrom(world, true, playerHead, cameraSafeRadius);
         initBodyAt(s, pos);
         snapshotSnake(s);
       }
@@ -1138,21 +1345,26 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
     // Check pellets early so growth happens this frame (instant visual feedback)
     checkPelletEat(world, s);
 
+    // Smooth visible length to avoid popping on growth.
+    s.renderLen = s.renderLen || s.desiredLen;
+    const lenLerp = 1 - Math.exp(-6 * dt);
+    s.renderLen += (s.desiredLen - s.renderLen) * lenLerp;
+
     // --- Dynamic Size & Speed ---
-    // Calculate scale based on mass (desiredLen). Grows with food.
-    const mass = s.desiredLen;
-    const scale = 1 + Math.sqrt(Math.max(0, mass - MIN_LEN)) * 0.05;
+    // Calculate scale based on mass (thickness can grow faster than tiles).
+    const mass = Math.max(s.renderLen, s.mass || s.renderLen);
+    const scale = 1 + Math.sqrt(Math.max(0, mass - MIN_LEN)) * 0.035;
 
     // 1. Thicker: Radius grows with scale
-    s.radius = 13 * scale;
+    s.radius = 12.5 * scale;
 
     // 2. Slower: Speed decreases with scale
     const baseSpeed = s.isPlayer ? PLAYER_BASE_SPEED : BOT_BASE_SPEED;
-    const speedScale = 1 / Math.pow(scale, 0.5);
+    const speedScale = 1 / Math.pow(scale, 0.25);
     s.speed = baseSpeed * speedScale;
 
     // 3. Tile Spacing: Overlap based on radius
-    const spacing = s.radius * 0.4;
+    const spacing = s.radius * 0.55;
 
     // Decide aim + boost
     let desiredDir: number | null = null;
@@ -1185,8 +1397,9 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
       const drain = BOOST_LEN_DRAIN_PER_SEC * dt;
       s.desiredLen -= drain;
       if (s.desiredLen < MIN_LEN) s.desiredLen = MIN_LEN;
-      s.energy = clamp(s.energy - BOOST_ENERGY_DRAIN_PER_SEC * dt, 0, 1);
-      s.boostHeat = clamp(s.boostHeat + dt * 0.9, 0, 1);
+      s.mass = Math.max(MIN_LEN, (s.mass || s.desiredLen) - drain);
+      s.energy = 1.0;
+      s.boostHeat = 0;
 
       // Slither-style mass shedding: drop small pellets behind while boosting.
       s.boostDropAcc = (s.boostDropAcc ?? 0) + drain;
@@ -1206,23 +1419,31 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
         }
       }
     } else {
-      s.energy = clamp(s.energy + BOOST_ENERGY_RECHARGE_PER_SEC * dt, 0, 1);
-      s.boostHeat = clamp(s.boostHeat - dt * 0.8, 0, 1);
+      s.energy = 1.0;
+      s.boostHeat = 0;
     }
 
-    if (s.boostHeat >= 1 && wantBoost) {
-      s.boostCooldown = clamp(s.boostCooldown + dt * 0.7, 0, 0.6);
-    } else {
-      s.boostCooldown = Math.max(0, s.boostCooldown - dt * 0.9);
+    s.boostCooldown = 0;
+
+    // Smooth growth (prevents visual popping of segments)
+    if (s.growAcc > 0) {
+      const growRate = 10; // segments per second
+      const add = Math.min(s.growAcc, growRate * dt);
+      s.growAcc -= add;
+      s.desiredLen += add;
+      if (s.desiredLen > MAX_POINTS_LEN) s.desiredLen = MAX_POINTS_LEN;
     }
 
     // Target speed
-    const targetSpeed = s.speed * (s.boosting ? BOOST_MULT : 1);
+    const sizeMul = clamp(1.7 - (scale - 1) * 0.4, 1.1, 1.7);
+    const targetSpeed = s.speed * (s.boosting ? (BOOST_MULT * sizeMul) : 1);
     s.targetSpeed = targetSpeed;
 
     // Smooth acceleration/deceleration
     const currentSpeed = Math.sqrt(s.velX * s.velX + s.velY * s.velY);
-    const speedDiff = targetSpeed - currentSpeed;
+    const smooth = s.boosting ? BOOST_SPEED_SMOOTH : BOOST_BRAKE_SMOOTH;
+    const desiredSpeed = currentSpeed + (targetSpeed - currentSpeed) * smooth;
+    const speedDiff = desiredSpeed - currentSpeed;
     
     if (Math.abs(speedDiff) > 0.1) {
       const accel = speedDiff > 0 ? ACCEL_RATE : DECEL_RATE;
@@ -1267,7 +1488,10 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
       killSnake(world, s, null);
     }
 
-    ensureLength(s);
+    // Score is mass (Slither-like)
+    s.score = s.mass || s.desiredLen;
+
+    ensureLength(s, spacing);
     follow(s.points, spacing);
   }
 

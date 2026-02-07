@@ -1,9 +1,10 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
+import UserBox from "./UserBox/UserBox";
 
 type UserInfo = {
   uid: string;
@@ -15,8 +16,49 @@ export default function Header() {
   const [user, setUser] = useState<UserInfo>(null);
   const [loading, setLoading] = useState(true);
 
-  // 📩 Letter modal
+  // Letter modal
   const [letterOpen, setLetterOpen] = useState(false);
+  // Updates modal
+  const [updatesOpen, setUpdatesOpen] = useState(false);
+
+  const updatesLog = [
+    {
+      date: "07.02.2026",
+      title: "לוג עדכונים מעודכן",
+      desc: "המסך מציג כעת את השיפורים האחרונים בצורה ברורה וקלה לקריאה.",
+      tag: "Updates",
+    },
+    {
+      date: "06.02.2026",
+      title: "שדרוג בוטים",
+      desc: "בוט ארבּע‑בשורה ובוט דמקה עודכנו להתנהגות חכמה ומאתגרת יותר.",
+      tag: "AI",
+    },
+    {
+      date: "05.02.2026",
+      title: "משחק slither נאמן יותר למקור",
+      desc: "התאמות חוקים והתנהגות משחק כדי לשחזר את החוויה המקורית.",
+      tag: "Gameplay",
+    },
+    {
+      date: "04.02.2026",
+      title: "הוספת משחק איקס עיגול משודרג!",
+      desc: "משחק איקס עיגול קלאסי עם לוח גדול יותר, אפשרות לשחק נגד בוט חכם, ומצב של גדלי לוח שונים (3x3, 5x5, 7x7) .",
+      tag: "Games",
+    },
+    {
+      date: "03.02.2026",
+      title: "Wordel – ניחוש מילים",
+      desc: "נוסף משחק ניחוש מילים בסגנון WORDEL עם טבלת תוצאות.",
+      tag: "Games",
+    },
+    {
+      date: "02.02.2026",
+      title: "מערכת משתמשים חכמה",
+      desc: "תצוגת משתמשים עם מדליות ותמונות פרופיל",
+      tag: "Users",
+    },
+  ];
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
@@ -26,7 +68,7 @@ export default function Header() {
         return;
       }
 
-      // שליפת username מ-Firestore
+      // fetch username from Firestore
       const snap = await getDoc(doc(db, "users", fbUser.uid));
       if (snap.exists()) {
         setUser({
@@ -43,30 +85,27 @@ export default function Header() {
     return () => unsub();
   }, []);
 
-  const userInitial = useMemo(() => {
-    if (!user?.username) return "P";
-    return user.username.trim().charAt(0).toUpperCase();
-  }, [user?.username]);
-
-  // UX: לנעול גלילה כשהמכתב פתוח
+  // UX: לנעול גלילה כשהמודאל פתוח
   useEffect(() => {
-    if (!letterOpen) return;
+    if (!letterOpen && !updatesOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [letterOpen]);
-
-  // UX: ESC סוגר מכתב
+  }, [letterOpen, updatesOpen]);
+  // UX: ESC closes modals
   useEffect(() => {
-    if (!letterOpen) return;
+    if (!letterOpen && !updatesOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLetterOpen(false);
+      if (e.key === "Escape") {
+        setLetterOpen(false);
+        setUpdatesOpen(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [letterOpen]);
+  }, [letterOpen, updatesOpen]);
 
   if (loading) {
     return (
@@ -104,23 +143,28 @@ export default function Header() {
             </div>
 
             <button style={styles.btnSoft} onClick={() => navigate("/")}>
-              <span style={{ fontSize: 16 }}>🏠</span>
-              <span>Home</span>
+              <span style={{ fontSize: 14 }}>Home</span>
             </button>
-          </div>
 
-          {/* RIGHT */}
-          <div style={styles.rightGroup}>
-            {/* 📩 Envelope button (תמיד מוצג) */}
+            <button
+              style={styles.btnUpdates}
+              onClick={() => setUpdatesOpen(true)}
+              title="עדכונים אחרונים"
+            >
+              <span style={{ fontSize: 14 }}>עדכונים</span>
+            </button>
+
             <button
               style={styles.btnLetter}
               onClick={() => setLetterOpen(true)}
               title="Secure Intel Letter"
             >
-              <span style={{ fontSize: 16 }}>📩</span>
-              <span>Intel</span>
+              <span style={{ fontSize: 14 }}>Intel</span>
             </button>
+          </div>
 
+          {/* RIGHT */}
+          <div style={styles.rightGroup}>
             {!user && (
               <>
                 <button style={styles.btnGhost} onClick={() => navigate("/login")}>
@@ -137,12 +181,8 @@ export default function Header() {
 
             {user && (
               <>
-                <div style={styles.userChip}>
-                  <div style={styles.avatar}>{userInitial}</div>
-                  <div style={styles.userTextWrap}>
-                    <div style={styles.userHello}>Welcome</div>
-                    <div style={styles.userName}>{user.username}</div>
-                  </div>
+                <div style={{ minWidth: 220 }}>
+                  <UserBox userId={user.uid} />
                 </div>
 
                 <button
@@ -163,12 +203,12 @@ export default function Header() {
         <style>{css}</style>
       </header>
 
-      {/* 📩 LETTER MODAL */}
+      {/* LETTER MODAL */}
       {letterOpen && (
         <div
           style={{ ...modalStyles.backdrop, direction: "rtl", textAlign: "right", fontSize: 20 }}
           onMouseDown={(e) => {
-            // קליק בחוץ סוגר
+            // ???? ???? ????
             if (e.target === e.currentTarget) setLetterOpen(false);
           }}
           aria-label="Intel letter backdrop"
@@ -185,7 +225,7 @@ export default function Header() {
                 onClick={() => setLetterOpen(false)}
                 title="Close"
               >
-                ✕
+                ?
               </button>
             </div>
 
@@ -198,48 +238,48 @@ export default function Header() {
                   </div>
 
                   <div style={modalStyles.headerMini}>
-                    <div style={modalStyles.paperTitle}>📨 מכתב התרעה</div>
+                    <div style={modalStyles.paperTitle}>?? ???? ?????</div>
                     <div style={modalStyles.paperSub}>
-                      עדכון מודיעיני • רמת סיווג: גבוהה
+                      ????? ???????? • ??? ?????: ?????
                     </div>
                   </div>
                 </div>
 
                 <div style={modalStyles.body}>
                   <p style={modalStyles.p}>
-                    <b>שימו לב:</b> לא מזמן התקבל מידע מודיעיני שהתוקף הידוע{" "}
-                    <span style={modalStyles.badName}>גל שפירו</span>{" "}
-                    מבצע ניסיונות פריצה לאתר.
+                    <b>???? ??:</b> ?? ???? ????? ???? ???????? ?????? ?????{" "}
+                    <span style={modalStyles.badName}>?? ?????</span>{" "}
+                    ???? ???????? ????? ????.
                   </p>
 
                   <div style={modalStyles.alertBox}>
-                    <div style={modalStyles.alertIcon}>⚠️</div>
+                    <div style={modalStyles.alertIcon}>??</div>
                     <div>
                       <div style={modalStyles.alertTitle}>
-                        הנחיות אבטחה למשתמשים
+                        ?????? ????? ????????
                       </div>
                       <ul style={modalStyles.ul}>
-                        <li>יש להיזהר ולגלוש באחריות.</li>
+                        <li>?? ?????? ?????? ???????.</li>
                         <li>
-                          <b>להימנע מללחוץ על מקשים שלא אמורים ללחוץ עליהם.</b>
+                          <b>?????? ?????? ?? ????? ??? ?????? ????? ?????.</b>
                         </li>
-                        <li>אם משהו נראה מוזר — צא מהדף וחזור מחדש.</li>
+                        <li>?? ???? ???? ???? — ?? ???? ????? ????.</li>
                       </ul>
                     </div>
                   </div>
 
 
 <div style={modalStyles.qaBox}>
-  <div style={modalStyles.qaIcon}>🧪</div>
+  <div style={modalStyles.qaIcon}>??</div>
 
   <div style={{ flex: 1 }}>
-    <div style={modalStyles.qaTitle}>עדכון מצוות QA</div>
+    <div style={modalStyles.qaTitle}>????? ????? QA</div>
 
     <p style={modalStyles.qaText}>
-      צוות ה־<b>QA</b> הצליח להוציא סקריפט חשוד שניסה להיכנס למערכת.
+      ???? ??<b>QA</b> ????? ?????? ?????? ???? ????? ?????? ??????.
       <br />
-      <b>לא ברור מה הסקריפט עושה.</b>  
-      הוא נראה כאילו הוא מנסה לבצע פעולה “אוטומטית” ברקע.
+      <b>?? ???? ?? ??????? ????.</b>  
+      ??? ???? ????? ??? ???? ???? ????? “????????” ????.
       <br />
     </p>
 
@@ -248,12 +288,12 @@ export default function Header() {
       onClick={() => {
         setLetterOpen(false);
 
-        // 🎭 Surprise URL: זה "אבסורדי" בכוונה, כדי ליפול ל-404 שלך
+        // ?? Surprise URL: ?? "???????" ??????, ??? ????? ?-404 ???
         const absurdUrl =
           "/ops/qa/dropbox_dump/extracted_payload/" +
           "unknown_gl_shapiro_vector/" +
           "do-not-open/" +
-          "⚠️/⚠️/⚠️/" +
+          "??/??/??/" +
           "tux_vs_windows/" +
           "this_should_not_exist/" +
           Date.now();
@@ -262,7 +302,7 @@ export default function Header() {
       }}
       title="Open extracted script (unknown behavior)"
     >
-      🧨 פתח סקריפט חשוד 
+      ?? ??? ?????? ???? 
     </button>
 
   </div>
@@ -285,14 +325,14 @@ export default function Header() {
                     </div>
                     <div style={modalStyles.termLine}>
                       <span style={modalStyles.bad}>THREAT_LEVEL=ELEVATED</span>
-                      <span style={modalStyles.cursor}>▌</span>
+                      <span style={modalStyles.cursor}>¦</span>
                     </div>
                   </div>
 
                   <div style={modalStyles.footerLine} />
 
                   <p style={modalStyles.bottomSecret}>
-                    אל תסתכל ב-"צמנהב" אלה במה שיש מתחתיו
+                    ?? ????? ?-"?????" ??? ??? ??? ??????
                   </p>
                 </div>
               </div>
@@ -306,11 +346,79 @@ export default function Header() {
                   navigate("/");
                 }}
               >
-                הבנתי • חזרה לבית
+                ????? • ???? ????
               </button>
 
               
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* UPDATES MODAL */}
+      {updatesOpen && (
+        <div
+          style={{ ...modalStyles.backdrop, direction: "rtl", textAlign: "right" }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setUpdatesOpen(false);
+          }}
+          aria-label="updates backdrop"
+        >
+          <div style={modalStyles.updatesShell} role="dialog" aria-modal="true">
+            <div style={modalStyles.updatesHeader}>
+              <div>
+                <div style={modalStyles.updatesTitle}>עדכונים אחרונים</div>
+                <div style={modalStyles.updatesSubtitle}>
+                  קצר, ברור ומעודכן
+                </div>
+              </div>
+              <button
+                style={modalStyles.closeBtn}
+                onClick={() => setUpdatesOpen(false)}
+                title="סגור"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={modalStyles.updatesBody}>
+              {updatesLog.map((item, idx) => (
+                <div key={`${item.date}-${item.title}`} style={modalStyles.updateRow}>
+                  <div style={modalStyles.updateRail}>
+                    <span
+                      style={{
+                        ...modalStyles.updateDot,
+                        ...(idx === 0 ? modalStyles.updateDotActive : null),
+                      }}
+                    />
+                    <span
+                      style={{
+                        ...modalStyles.updateLine,
+                        ...(idx === updatesLog.length - 1
+                          ? modalStyles.updateLineEnd
+                          : null),
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      ...modalStyles.updateCard,
+                      ...(idx === 0 ? modalStyles.updateCardActive : null),
+                    }}
+                  >
+                    <div style={modalStyles.updateMeta}>
+                      <span style={modalStyles.updateDate}>{item.date}</span>
+                      <span style={modalStyles.updateTag}>{item.tag}</span>
+                      {idx === 0 && <span style={modalStyles.updateNew}>חדש</span>}
+                    </div>
+                    <div style={modalStyles.updateTitle}>{item.title}</div>
+                    <div style={modalStyles.updateDesc}>{item.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
           </div>
         </div>
       )}
@@ -435,50 +543,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   userChip: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "6px 10px",
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-    boxShadow: "0 18px 35px rgba(0,0,0,0.25)",
-  },
-
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 14,
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 900,
-    color: "rgba(255,255,255,0.95)",
-    background:
-      "linear-gradient(135deg, rgba(91, 125, 255, 0.9) 0%, rgba(255, 74, 216, 0.75) 100%)",
-    boxShadow: "0 12px 28px rgba(120, 140, 255, 0.20)",
-  },
-
-  userTextWrap: {
-    display: "flex",
-    flexDirection: "column",
-    lineHeight: 1.05,
-  },
-
-  userHello: {
-    fontSize: 11,
-    opacity: 0.7,
-    fontWeight: 700,
-  },
-
-  userName: {
-    fontSize: 14,
-    fontWeight: 900,
-    letterSpacing: 0.2,
-    opacity: 0.95,
-    maxWidth: 150,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    display: "none",
   },
 
   skeletonPill: {
@@ -491,7 +556,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.08)",
   },
 
-    // 📩 envelope button
+    // ?? envelope button
   btnLetter: {
     padding: "9px 12px",
     borderRadius: 12,
@@ -507,6 +572,22 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 12px 26px rgba(255, 50, 80, 0.4)",
     transition: "transform .15s ease, filter .15s ease",
     animation: "blink-urgent 1.2s ease-in-out infinite",
+  },
+
+  btnUpdates: {
+    padding: "9px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(124, 92, 255, 0.35)",
+    background:
+      "linear-gradient(135deg, rgba(124,92,255,0.16) 0%, rgba(89,248,208,0.10) 60%, rgba(255,209,92,0.08) 130%)",
+    color: "rgba(255,255,255,0.95)",
+    cursor: "pointer",
+    fontWeight: 900,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    boxShadow: "0 12px 26px rgba(124, 92, 255, 0.25)",
+    transition: "transform .15s ease, filter .15s ease",
   },
 };
 
@@ -777,6 +858,149 @@ const modalStyles: Record<string, React.CSSProperties> = {
     color: "rgba(255,255,255,0.92)",
     border: "1px solid rgba(255,255,255,0.14)",
     background: "rgba(255,255,255,0.04)",
+  },
+
+  updatesShell: {
+    width: "min(720px, 96vw)",
+    borderRadius: 20,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background:
+      "linear-gradient(180deg, rgba(12,14,20,0.96) 0%, rgba(12,14,20,0.90) 100%)",
+    boxShadow: "0 24px 90px rgba(0,0,0,0.60)",
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  updatesHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "16px 18px",
+    borderBottom: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.02)",
+  },
+
+  updatesTitle: {
+    fontSize: 18,
+    fontWeight: 1000,
+    color: "rgba(255,255,255,0.95)",
+  },
+
+  updatesSubtitle: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.58)",
+    marginTop: 3,
+    fontWeight: 700,
+  },
+
+  updatesBody: {
+    padding: "16px 18px 18px 18px",
+    display: "grid",
+    gap: 12,
+    maxHeight: "60vh",
+    overflow: "auto",
+  },
+
+  updateRow: {
+    display: "grid",
+    gridTemplateColumns: "20px 1fr",
+    gap: 12,
+    alignItems: "stretch",
+  },
+
+  updateRail: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    paddingTop: 8,
+  },
+
+  updateCard: {
+    borderRadius: 14,
+    padding: "12px 14px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.02)",
+    boxShadow: "0 10px 28px rgba(0,0,0,0.32)",
+    transition: "transform .2s ease, box-shadow .2s ease",
+  },
+
+  updateCardActive: {
+    border: "1px solid rgba(89,248,208,0.25)",
+    background:
+      "linear-gradient(180deg, rgba(89,248,208,0.08), rgba(124,92,255,0.05))",
+    boxShadow: "0 14px 36px rgba(0,0,0,0.36)",
+  },
+
+  updateMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 6,
+  },
+
+  updateDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.35)",
+    boxShadow: "0 0 0 3px rgba(255,255,255,0.06)",
+  },
+
+  updateDotActive: {
+    background: "rgba(89,248,208,0.95)",
+    boxShadow: "0 0 0 4px rgba(89,248,208,0.20)",
+  },
+
+  updateLine: {
+    flex: 1,
+    width: 2,
+    marginTop: 6,
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0))",
+    borderRadius: 999,
+  },
+
+  updateLineEnd: {
+    opacity: 0,
+  },
+
+  updateDate: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "rgba(255,255,255,0.75)",
+  },
+
+  updateTag: {
+    fontSize: 10.5,
+    fontWeight: 900,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    color: "rgba(255,255,255,0.78)",
+  },
+
+  updateNew: {
+    fontSize: 10.5,
+    fontWeight: 1000,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(89,248,208,0.12)",
+    border: "1px solid rgba(89,248,208,0.28)",
+    color: "rgba(255,255,255,0.92)",
+  },
+
+  updateTitle: {
+    fontSize: 15,
+    fontWeight: 900,
+    color: "rgba(255,255,255,0.95)",
+    marginBottom: 4,
+  },
+
+  updateDesc: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.78)",
+    lineHeight: 1.5,
   },
 
   qaBox: {

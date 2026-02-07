@@ -8,13 +8,20 @@ import Home from "../pages/Home";
 import Game from "../pages/Game";
 import NotFound from "../pages/NotFound";
 import Secret from "../pages/Secret";
+import Profile from "../pages/Profile";
 
 import CheckersGame from "../components/checkers/CheckersGame";
 import SlitherGame from "../components/slither/SlitherGame";
 import BlockBlastGame from "../components/BlockBlast/BlockBlastGame";
+import TicTacToeGame from "../components/tic-tac-toe/TicTacToeGame";
+import WordGuessGame from "../components/word-guess/WordGuessGame";
+import CrossyRoadGame from "../components/crossy/CrossyRoadGame";
 
 import Login from "../loginRegistry/Login";
 import Register from "../loginRegistry/Register";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../services/firebase";
+import { checkWeeklyReset } from "../services/resetService";
 
 function isTypingTarget(el: EventTarget | null) {
   if (!(el instanceof HTMLElement)) return false;
@@ -40,12 +47,25 @@ export default function App() {
       "/game/checkers",
       "/game/slither",
       "/game/block-blast",
+      "/game/tic-tac-toe",
+      "/game/word-guess",
+      "/game/crossy-dash",
     ]),
     []
   );
 
-  // ✅ אם הנתיב לא נמצא ברשימה = זה NotFound
-  const isNotFound = !knownRoutes.has(location.pathname);
+  const isProfileRoute = location.pathname.startsWith("/profile/");
+  const isNotFound = !knownRoutes.has(location.pathname) && !isProfileRoute;
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, () => {
+      checkWeeklyReset().catch((err) => {
+        console.warn("weekly reset check failed:", err);
+      });
+    });
+
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -76,6 +96,11 @@ export default function App() {
         <Route path="/game/checkers" element={<CheckersGame />} />
         <Route path="/game/slither" element={<SlitherGame />} />
         <Route path="/game/block-blast" element={<BlockBlastGame />} />
+        <Route path="/game/tic-tac-toe" element={<TicTacToeGame />} />
+        <Route path="/game/word-guess" element={<WordGuessGame />} />
+        <Route path="/game/crossy-dash" element={<CrossyRoadGame />} />
+
+        <Route path="/profile/:uid" element={<Profile />} />
 
         <Route path="/secret" element={<Secret />} />
 

@@ -114,11 +114,11 @@ function boardKey(board: Board): string {
   return s;
 }
 
-function orderedMoves(board: Board): number[] {
-  const cols = validColumns(board);
+function orderedMoves(board: Board, cols?: number[]): number[] {
+  const colsToSort = cols ? cols.slice() : validColumns(board);
   const center = Math.floor(COLS / 2);
-  cols.sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
-  return cols;
+  colsToSort.sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+  return colsToSort;
 }
 
 function windowScore(window: Cell[], me: Player): number {
@@ -148,6 +148,48 @@ function windowScore(window: Cell[], me: Player): number {
   if (oppCount === 2 && empty === 2) score -= 14;
 
   return score;
+}
+
+function countDir(board: Board, r: number, c: number, dr: number, dc: number, me: Player): number {
+  let count = 0;
+  let rr = r + dr;
+  let cc = c + dc;
+  while (inBounds(rr, cc) && board[rr][cc] === me) {
+    count++;
+    rr += dr;
+    cc += dc;
+  }
+  return count;
+}
+
+function wouldWinAt(board: Board, r: number, c: number, me: Player): boolean {
+  for (const [dr, dc] of DIRS) {
+    const total =
+      1 +
+      countDir(board, r, c, dr, dc, me) +
+      countDir(board, r, c, -dr, -dc, me);
+    if (total >= 4) return true;
+  }
+  return false;
+}
+
+function winningMoves(board: Board, me: Player): number[] {
+  const cols = validColumns(board);
+  const wins: number[] = [];
+  for (const col of cols) {
+    const r = nextOpenRow(board, col);
+    if (r === null) continue;
+    if (wouldWinAt(board, r, col, me)) wins.push(col);
+  }
+  return wins;
+}
+
+function allowsImmediateLoss(board: Board, col: number, me: Player): boolean {
+  const b2 = cloneBoard(board);
+  const res = applyMove(b2, col, me);
+  if (!res.ok) return true;
+  const opp = otherPlayer(me);
+  return winningMoves(b2, opp).length > 0;
 }
 
 function evaluate(board: Board, me: Player): number {
@@ -228,6 +270,9 @@ function alphabeta(
 
   const evalNow = evaluate(board, me);
   if (depth <= 0 || Math.abs(evalNow) >= WIN_SCORE || isDraw(board)) {
+    if (Math.abs(evalNow) >= WIN_SCORE) {
+      return { value: evalNow + Math.sign(evalNow) * depth, bestCol: null };
+    }
     return { value: evalNow, bestCol: null };
   }
 
@@ -288,12 +333,41 @@ export function aiBestMove(board: Board, me: Player, depth = 6): number | null {
   const cols = validColumns(board);
   if (cols.length === 0) return null;
 
-  const tt = new Map<string, { depth: number; value: number; bestCol: number | null }>();
-  const res = alphabeta(board, depth, -INF, INF, me, me, tt);
-
-  if (res.bestCol === null) {
-    // fallback: random valid
-    return cols[Math.floor(Math.random() * cols.length)];
+  // 1) Win immediately if possible.
+  const winNow = winningMoves(board, me);
+  if (winNow.length > 0) {
+    return orderedMoves(board, winNow)[0];
   }
-  return res.bestCol;
+
+  const opp = otherPlayer(me);
+  // 2) Block opponent immediate win.
+  const oppWin = winningMoves(board, opp);
+  if (oppWin.length > 0) {
+    return orderedMoves(board, oppWin)[0];
+  }
+
+  // 3) Avoid moves that allow an immediate loss (if any safe move exists).
+  const safeCols = cols.filter((col) => !allowsImmediateLoss(board, col, me));
+  const searchCols = safeCols.length > 0 ? safeCols : cols;
+
+  const tt = new Map<string, { depth: number; value: number; bestCol: number | null }>();
+
+  let bestCol: number | null = null;
+  let bestValue = -INF;
+  const moves = orderedMoves(board, searchCols);
+  for (const col of moves) {
+    const b2 = cloneBoard(board);
+    applyMove(b2, col, me);
+    const res = alphabeta(b2, depth - 1, -INF, INF, opp, me, tt);
+    if (res.value > bestValue || bestCol === null) {
+      bestValue = res.value;
+      bestCol = col;
+    }
+  }
+
+  if (bestCol === null) {
+    // fallback: pick first available
+    return moves[0] ?? null;
+  }
+  return bestCol;
 }

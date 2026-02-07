@@ -487,9 +487,110 @@ const WIN_SCORE = 1_000_000;
 const KING_VALUE = 5;  // Increased from 3 - kings are very powerful
 const MAN_VALUE = 1;
 const INF = 10_000_000;
+const QUIESCENCE_DEPTH = 4;
+const CAPTURE_PRESSURE_WEIGHT = 0.22;
+const THREAT_WEIGHT = 0.3;
+const CENTER_MAN_WEIGHT = 0.05;
+const MOVE_PROMOTE_BONUS = 3.0;
+const MOVE_CAPTURE_WEIGHT = 1.6;
+const MOVE_CAPTURE_VALUE_WEIGHT = 0.6;
+const MOVE_FORWARD_WEIGHT = 0.25;
+const MOVE_CENTER_WEIGHT = 0.08;
 
 function cloneBoard(board: Board): Board {
   return board.map((row) => row.slice()) as Board;
+}
+
+function pieceValue(cell: Cell): number {
+  if (cell === EMPTY) return 0;
+  return isKing(cell) ? KING_VALUE : MAN_VALUE;
+}
+
+function hasCaptureMoves(moves: MoveSequence[]): boolean {
+  return moves.length > 0 && moves[0].totalCaptures > 0;
+}
+
+function captureValueFromMoves(board: Board, moves: MoveSequence[]): number {
+  if (!hasCaptureMoves(moves)) return 0;
+  const seen = new Set<string>();
+  let value = 0;
+  for (const seq of moves) {
+    for (const move of seq.moves) {
+      for (const cap of move.captures) {
+        const key = `${cap.r},${cap.c}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        value += pieceValue(board[cap.r][cap.c]);
+      }
+    }
+  }
+  return value;
+}
+
+function threatenedPiecesCount(moves: MoveSequence[]): number {
+  if (!hasCaptureMoves(moves)) return 0;
+  const seen = new Set<string>();
+  for (const seq of moves) {
+    for (const move of seq.moves) {
+      for (const cap of move.captures) {
+        const key = `${cap.r},${cap.c}`;
+        if (!seen.has(key)) seen.add(key);
+      }
+    }
+  }
+  return seen.size;
+}
+
+function sequenceCaptureValue(board: Board, seq: MoveSequence): number {
+  let value = 0;
+  for (const move of seq.moves) {
+    for (const cap of move.captures) {
+      value += pieceValue(board[cap.r][cap.c]);
+    }
+  }
+  return value;
+}
+
+function sequenceScore(board: Board, seq: MoveSequence, player: Player): number {
+  if (seq.moves.length === 0) return 0;
+  const first = seq.moves[0];
+  const last = seq.moves[seq.moves.length - 1];
+  let score = 0;
+
+  score += seq.totalCaptures * MOVE_CAPTURE_WEIGHT;
+  score += sequenceCaptureValue(board, seq) * MOVE_CAPTURE_VALUE_WEIGHT;
+  if (last.promotes) score += MOVE_PROMOTE_BONUS;
+
+  const startCell = board[first.from.r][first.from.c];
+  if (startCell !== EMPTY && !isKing(startCell)) {
+    const dir = player === RED ? -1 : 1;
+    score += (last.to.r - first.from.r) * dir * MOVE_FORWARD_WEIGHT;
+  }
+
+  const centerR = (ROWS - 1) / 2;
+  const centerC = (COLS - 1) / 2;
+  const dist = Math.abs(last.to.r - centerR) + Math.abs(last.to.c - centerC);
+  score += (4 - dist) * MOVE_CENTER_WEIGHT;
+
+  return score;
+}
+
+function orderMoves(
+  board: Board,
+  moves: MoveSequence[],
+  player: Player,
+  ttBestSeq?: MoveSequence | null
+): MoveSequence[] {
+  if (moves.length <= 1) return moves;
+  const scored = moves.map((seq) => {
+    let score = sequenceScore(board, seq, player);
+    if (ttBestSeq && areSequencesEqual(seq, ttBestSeq)) {
+      score += 10_000;
+    }
+    return { seq, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((entry) => entry.seq);
 }
 
 function evaluate(board: Board, me: Player): number {
@@ -538,6 +639,9 @@ function evaluate(board: Board, me: Player): number {
     score *= 1.2;
   }
 
+  const centerR = (ROWS - 1) / 2;
+  const centerC = (COLS - 1) / 2;
+
   // Positional: pieces closer to promotion are better
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
@@ -546,10 +650,14 @@ function evaluate(board: Board, me: Player): number {
         const promotionRow = me === RED ? 0 : ROWS - 1;
         const distance = Math.abs(r - promotionRow);
         score += (ROWS - distance) * 0.15; // Increased from 0.1
+        const centerDist = Math.abs(r - centerR) + Math.abs(c - centerC);
+        score += Math.max(0, 4 - centerDist) * CENTER_MAN_WEIGHT;
       } else if (isPlayerPiece(cell, opp) && !isKing(cell)) {
         const promotionRow = opp === RED ? 0 : ROWS - 1;
         const distance = Math.abs(r - promotionRow);
         score -= (ROWS - distance) * 0.15;
+        const centerDist = Math.abs(r - centerR) + Math.abs(c - centerC);
+        score -= Math.max(0, 4 - centerDist) * CENTER_MAN_WEIGHT;
       }
     }
   }
@@ -579,10 +687,18 @@ function evaluate(board: Board, me: Player): number {
     }
   }
 
-  // Mobility: count available moves (approximate)
-  const myMoves = getAllMoves(board, me).length;
-  const oppMoves = getAllMoves(board, opp).length;
-  score += (myMoves - oppMoves) * 0.05;
+  // Mobility and capture pressure
+  const myMoves = getAllMoves(board, me);
+  const oppMoves = getAllMoves(board, opp);
+  score += (myMoves.length - oppMoves.length) * 0.05;
+
+  const myCaptureValue = captureValueFromMoves(board, myMoves);
+  const oppCaptureValue = captureValueFromMoves(board, oppMoves);
+  score += (myCaptureValue - oppCaptureValue) * CAPTURE_PRESSURE_WEIGHT;
+
+  const myThreatened = threatenedPiecesCount(oppMoves);
+  const oppThreatened = threatenedPiecesCount(myMoves);
+  score += (oppThreatened - myThreatened) * THREAT_WEIGHT;
 
   // Double corner control (strong defensive position)
   const corners = [
@@ -600,6 +716,55 @@ function evaluate(board: Board, me: Player): number {
   }
 
   return score;
+}
+
+function quiescence(
+  board: Board,
+  alpha: number,
+  beta: number,
+  toMove: Player,
+  me: Player,
+  depth: number
+): number {
+  const standPat = evaluate(board, me);
+  if (depth <= 0) return standPat;
+
+  const moves = getAllLegalSequences(board, toMove, null);
+  if (moves.length === 0 || moves[0].totalCaptures === 0) {
+    return standPat;
+  }
+
+  const ordered = orderMoves(board, moves, toMove);
+
+  if (toMove === me) {
+    if (standPat >= beta) return standPat;
+    if (standPat > alpha) alpha = standPat;
+
+    for (const move of ordered) {
+      const b2 = cloneBoard(board);
+      for (const m of move.moves) {
+        applyMove(b2, m, toMove);
+      }
+      const val = quiescence(b2, alpha, beta, otherPlayer(toMove), me, depth - 1);
+      if (val > alpha) alpha = val;
+      if (alpha >= beta) break;
+    }
+    return alpha;
+  }
+
+  if (standPat <= alpha) return standPat;
+  if (standPat < beta) beta = standPat;
+
+  for (const move of ordered) {
+    const b2 = cloneBoard(board);
+    for (const m of move.moves) {
+      applyMove(b2, m, toMove);
+    }
+    const val = quiescence(b2, alpha, beta, otherPlayer(toMove), me, depth - 1);
+    if (val < beta) beta = val;
+    if (beta <= alpha) break;
+  }
+  return beta;
 }
 
 function minimax(
@@ -630,8 +795,19 @@ function minimax(
   const evalNow = evaluate(board, me);
   const winner = getWinner(board, toMove);
 
-  if (depth <= 0 || winner.kind !== 'NONE' || Math.abs(evalNow) >= WIN_SCORE) {
-    return { value: evalNow, bestSequence: null };
+  if (winner.kind === 'WIN') {
+    const winVal = winner.player === me ? WIN_SCORE : -WIN_SCORE;
+    return { value: winVal + Math.sign(winVal) * depth, bestSequence: null };
+  }
+  if (winner.kind === 'DRAW') {
+    return { value: 0, bestSequence: null };
+  }
+  if (Math.abs(evalNow) >= WIN_SCORE) {
+    return { value: evalNow + Math.sign(evalNow) * depth, bestSequence: null };
+  }
+  if (depth <= 0) {
+    const q = quiescence(board, alpha, beta, toMove, me, QUIESCENCE_DEPTH);
+    return { value: q, bestSequence: null };
   }
 
   // Use getAllLegalSequences to evaluate full turns (including chain captures)
@@ -640,24 +816,9 @@ function minimax(
     return { value: evalNow, bestSequence: null };
   }
 
-  // Move Ordering: TT Best Move > Captures > Promotes
-  // If we have a best move from TT (PV move), try it first!
+  // Move Ordering: TT Best Move > captures/promotions/positional heuristics
   const ttBestSeq = ttEntry?.bestSeq;
-
-  moves.sort((a, b) => {
-    // Prioritize TT move
-    if (ttBestSeq) {
-      const aIsBest = areSequencesEqual(a, ttBestSeq);
-      const bIsBest = areSequencesEqual(b, ttBestSeq);
-      if (aIsBest && !bIsBest) return -1;
-      if (!aIsBest && bIsBest) return 1;
-    }
-
-    if (a.totalCaptures !== b.totalCaptures) return b.totalCaptures - a.totalCaptures;
-    const aProm = a.moves[a.moves.length - 1].promotes ? 1 : 0;
-    const bProm = b.moves[b.moves.length - 1].promotes ? 1 : 0;
-    return bProm - aProm;
-  });
+  const orderedMoves = orderMoves(board, moves, toMove, ttBestSeq);
 
   const maximizing = toMove === me;
   let bestSequence: MoveSequence | null = null;
@@ -665,7 +826,7 @@ function minimax(
   let bestVal = maximizing ? -INF : INF;
 
   if (maximizing) {
-    for (const move of moves) {
+    for (const move of orderedMoves) {
       const b2 = cloneBoard(board);
       // Apply ALL moves in the sequence
       for (const m of move.moves) {
@@ -682,7 +843,7 @@ function minimax(
       if (beta <= alpha) break;
     }
   } else {
-    for (const move of moves) {
+    for (const move of orderedMoves) {
       const b2 = cloneBoard(board);
       // Apply ALL moves in the sequence
       for (const m of move.moves) {
@@ -790,18 +951,9 @@ function findBestMoveRoot(
   const ttBestSeq = ttEntry?.bestSeq;
 
   // Sort moves for better pruning
-  moves.sort((a, b) => {
-    // Prioritize TT move from previous depth
-    if (ttBestSeq) {
-      const aIsBest = areSequencesEqual(a, ttBestSeq);
-      const bIsBest = areSequencesEqual(b, ttBestSeq);
-      if (aIsBest && !bIsBest) return -1;
-      if (!aIsBest && bIsBest) return 1;
-    }
-    return b.totalCaptures - a.totalCaptures;
-  });
+  const orderedMoves = orderMoves(board, moves, me, ttBestSeq);
 
-  for (const seq of moves) {
+  for (const seq of orderedMoves) {
     const b2 = cloneBoard(board);
     for (const m of seq.moves) {
       applyMove(b2, m, me);

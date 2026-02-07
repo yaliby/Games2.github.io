@@ -19,6 +19,7 @@ export default function SlitherGame() {
   const [gameState, setGameState] = useState<GameState>('MENU');
   const [score, setScore] = useState(0);
   const [finalScore, setFinalScore] = useState(0);
+  const [playerColor, setPlayerColor] = useState('#00ff88');
   
   // --- Mutable Game State (Refs) ---
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,7 +41,7 @@ export default function SlitherGame() {
 
   // --- Helpers ---
   const startGame = (difficulty: number, botCount: number) => {
-    worldRef.current = createWorld({ botCount, difficulty });
+    worldRef.current = createWorld({ botCount, difficulty, playerColor });
     
     // Reset camera to player position immediately
     const player = worldRef.current.snakes[0];
@@ -158,18 +159,11 @@ export default function SlitherGame() {
 
             const player = world.snakes[0];
 
-            // Dynamic speed: Smaller = Faster
-            let dtMultiplier = 1.0;
-            if (player && player.points.length > 0) {
-              // Start fast (1.3x), decay to 0.7x as you grow
-              dtMultiplier = Math.max(0.7, 1.3 - (player.points.length * 0.001));
-            }
-
             // 2. Step World (Updates snake position t -> t+1)
             stepWorld(world, {
               aimWorld,
               boost: inputRef.current.boosting
-            }, FIXED_DT * dtMultiplier);
+            }, FIXED_DT);
 
             // 3. Snapshot Camera (Save state t)
             prevCamRef.current.x = camRef.current.x;
@@ -196,15 +190,19 @@ export default function SlitherGame() {
           // Check Death / Score
           const player = world.snakes[0];
           if (!player || player.points.length === 0) {
-             setFinalScore(lastScoreRef.current);
-             setGameState('GAME_OVER');
+            setFinalScore(lastScoreRef.current);
+            setGameState('GAME_OVER');
+          } else if (!player.alive) {
+            if (lastScoreRef.current !== 0) {
+              lastScoreRef.current = 0;
+              setScore(0);
+            }
           } else {
-             const currentLen = player.points.length;
-             const newScore = Math.floor(currentLen * 10);
-             if (newScore !== lastScoreRef.current) {
-                 lastScoreRef.current = newScore;
-                 setScore(newScore);
-             }
+            const newScore = Math.floor(player.desiredLen * 10);
+            if (newScore !== lastScoreRef.current) {
+              lastScoreRef.current = newScore;
+              setScore(newScore);
+            }
           }
         }
       }
@@ -384,6 +382,8 @@ export default function SlitherGame() {
                         </p>
                     </div>
 
+                    <SkinPicker selected={playerColor} onSelect={setPlayerColor} />
+
                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
                         <MenuButton 
                             label="Easy" 
@@ -401,7 +401,7 @@ export default function SlitherGame() {
                             label="Hard" 
                             sub="Chaos mode"
                             color="#ff0055" 
-                            onClick={() => startGame(1.3, 18)} 
+                            onClick={() => startGame(2.7, 30)} 
                         />
                     </div>
                 </div>
@@ -505,4 +505,40 @@ function MenuButton({ label, sub, color, onClick }: { label: string, sub: string
             </div>
         </button>
     );
+}
+
+const SKINS = [
+  '#00ff88', '#00aaff', '#ff0055', '#ffd700', '#ff9100', '#f7ff00',
+  '#00ffea', '#ffffff', '#ff66cc', '#6dff6d', '#8b7bff', '#ff7b54'
+];
+
+function SkinPicker({ selected, onSelect }: { selected: string; onSelect: (c: string) => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+      <div style={{ fontSize: 12, letterSpacing: 1, opacity: 0.7 }}>CHOOSE SKIN</div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 360 }}>
+        {SKINS.map((c) => {
+          const active = c.toLowerCase() === selected.toLowerCase();
+          return (
+            <button
+              key={c}
+              onClick={() => onSelect(c)}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 999,
+                border: active ? '2px solid #fff' : '1px solid rgba(255,255,255,0.25)',
+                background: c,
+                boxShadow: active ? `0 0 0 2px ${c}55, 0 6px 16px ${c}55` : 'none',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+              aria-label={`Select ${c}`}
+              title={c}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
 }

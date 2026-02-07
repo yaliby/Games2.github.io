@@ -1,0 +1,403 @@
+.ttt {
+  width: min(42rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  isolation: isolate;
+  min-height: min(80vh, 50rem);
+  justify-content: center;
+  margin-inline: auto;
+}
+
+.ttt__aura {
+  position: absolute;
+  inset: -2rem;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(108, 124, 255, 0.35), transparent 45%),
+    radial-gradient(circle at 80% 0%, rgba(255, 138, 149, 0.25), transparent 55%),
+    radial-gradient(circle at 50% 90%, rgba(255, 184, 140, 0.2), transparent 50%);
+  filter: blur(30px);
+  opacity: 0.9;
+  animation: aura-pulse 6s ease-in-out infinite;
+}
+
+.ttt.has-result .ttt__aura {
+  animation: aura-win 1.2s ease-out forwards;
+}
+
+.ttt__header {
+  width: 100%;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.ttt__subtitle {
+  margin: 0.35rem 0 0 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.ttt__controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ttt__controls button {
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  padding: 0.5rem 0.85rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ttt__controls button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(108, 124, 255, 0.45);
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
+}
+
+.ttt__controls button.is-active {
+  border-color: rgba(108, 124, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.35);
+}
+
+.ttt__reset {
+  background: rgba(108, 124, 255, 0.15);
+}
+
+.ttt__difficulty {
+  width: 100%;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ttt__size {
+  width: 100%;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ttt__difficulty button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ttt__size button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ttt__difficulty button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(108, 124, 255, 0.45);
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
+}
+
+.ttt__size button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(108, 124, 255, 0.45);
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
+}
+
+.ttt__difficulty button.is-active {
+  border-color: rgba(108, 124, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.35);
+}
+
+.ttt__size button.is-active {
+  border-color: rgba(108, 124, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.35);
+}
+.ttt__status {
+  padding: 0.6rem 1rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    120deg,
+    rgba(108, 124, 255, 0.15),
+    rgba(255, 138, 149, 0.12)
+  );
+  border: 1px solid rgba(108, 124, 255, 0.35);
+  font-weight: 600;
+  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.2);
+  animation: floaty 3.5s ease-in-out infinite;
+}
+
+.ttt__stats {
+  width: min(36rem, 100%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.ttt__stat {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.25rem;
+  place-items: center;
+  text-align: center;
+}
+
+.ttt__stat strong {
+  font-size: 1.3rem;
+}
+
+.ttt__stat small {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.ttt__stat-badge {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ttt__stat-badge--x {
+  color: #ffb88c;
+  border-color: rgba(255, 184, 140, 0.5);
+}
+
+.ttt__stat-badge--o {
+  color: #6c7cff;
+  border-color: rgba(108, 124, 255, 0.5);
+}
+
+.ttt__board {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.2rem;
+  border-radius: 1.5rem;
+  background: linear-gradient(
+    140deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.02)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1.5rem 3.5rem rgba(0, 0, 0, 0.45);
+  position: relative;
+}
+
+.ttt__win-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ttt__win-line line {
+  stroke-width: var(--win-line-width, 3.5);
+  stroke-linecap: round;
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: line-draw 0.7s ease forwards;
+  filter: drop-shadow(0 0 6px rgba(255, 184, 140, 0.6));
+}
+
+.ttt__win-line.is-x line {
+  stroke: rgba(255, 184, 140, 0.95);
+  filter: drop-shadow(0 0 6px rgba(255, 184, 140, 0.7));
+}
+
+.ttt__win-line.is-o line {
+  stroke: rgba(108, 124, 255, 0.95);
+  filter: drop-shadow(0 0 6px rgba(108, 124, 255, 0.7));
+}
+
+.ttt__cell {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 700;
+  color: var(--text-main);
+  background: radial-gradient(
+    circle at 20% 20%,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.02)
+  );
+  border: 1px solid var(--border-soft);
+  border-radius: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ttt__mark {
+  width: 70%;
+  height: 70%;
+  stroke: #e6e6eb;
+  stroke-width: 10;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: scale(var(--mark-scale, 1));
+  transform-origin: center;
+}
+
+.ttt__mark--o {
+  stroke: #6c7cff;
+}
+
+.ttt__mark--x {
+  stroke: #ffb88c;
+}
+
+.ttt__mark-line,
+.ttt__mark-circle {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: draw 0.45s ease forwards;
+}
+
+.ttt__mark-line--b {
+  animation-delay: 0.08s;
+}
+
+.ttt__cell:hover {
+  transform: translateY(-3px) scale(1.02);
+  border-color: rgba(108, 124, 255, 0.55);
+  box-shadow: 0 0.7rem 1.6rem rgba(0, 0, 0, 0.35);
+}
+
+.ttt__cell.is-filled {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ttt__cell.is-winning {
+  border-color: rgba(255, 184, 140, 0.8);
+  box-shadow:
+    0 0 0.6rem rgba(255, 184, 140, 0.6),
+    0 0 1.4rem rgba(255, 184, 140, 0.4);
+  animation: win-pop 0.6s ease both;
+}
+
+.ttt__medal {
+  width: min(34rem, 100%);
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(
+    120deg,
+    rgba(255, 184, 140, 0.18),
+    rgba(108, 124, 255, 0.12)
+  );
+  border: 1px solid rgba(255, 184, 140, 0.5);
+  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.35);
+  animation: medal-slide 0.7s ease both;
+}
+
+.ttt__medal-icon {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: #0f1117;
+  background: radial-gradient(circle at 30% 30%, #fff2c6, #ffb88c);
+  box-shadow: 0 0 0.5rem rgba(255, 184, 140, 0.8);
+}
+
+.ttt__medal-title {
+  font-weight: 700;
+}
+
+.ttt__medal-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .ttt__header {
+    text-align: center;
+    justify-content: center;
+  }
+
+  .ttt__controls {
+    justify-content: center;
+  }
+
+  .ttt__difficulty {
+    justify-content: center;
+  }
+
+  .ttt__board {
+    grid-template-columns: repeat(3, minmax(3.5rem, 6rem));
+  }
+}
+
+@keyframes aura-pulse {
+  0% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 0.85; transform: scale(1); }
+}
+
+@keyframes aura-win {
+  0% { opacity: 0.7; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes floaty {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes win-pop {
+  0% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+@keyframes medal-slide {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes line-draw {
+  to { stroke-dashoffset: 0; }
+}

@@ -14,6 +14,8 @@ import {
   aiBestMove,
 } from './engine/rules_ai';
 import { drawBoard } from './render/renderer';
+import { addAchievement } from '../../services/achievementService';
+import { auth } from '../../services/firebase';
 
 /* ================= CONFIG ================= */
 
@@ -55,6 +57,7 @@ type Anim = {
 export default function ConnectFourGame() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const medalAwardedRef = useRef<boolean>(false);
   const navigate = useNavigate();
 
   /* ---------- UI STATE ---------- */
@@ -104,6 +107,7 @@ export default function ConnectFourGame() {
       gameRef.current.aiTimer = 0;
       gameRef.current.msg = 'Click a column to drop a disc.';
     }
+    medalAwardedRef.current = false;
   }, []);
 
   /* ================= GAME LOOP ================= */
@@ -136,13 +140,16 @@ export default function ConnectFourGame() {
       aiTimer: 0,
       msg: 'Click a column to drop a disc.',
     };
+    medalAwardedRef.current = false;
 
     let lastTs = performance.now();
 
-    const tryDrop = (col: number) => {
+    const tryDrop = (col: number, fromAI = false) => {
     const g = gameRef.current!;
     if (g.winner.kind !== 'NONE') return;
     if (g.anim?.active) return;
+    if (!fromAI && vsAI && g.turn === YELLOW) return;
+    if (!fromAI && g.aiPending) return;
     if (!canDrop(g.board, col)) return;
 
     const b2 = g.board.map(r => r.slice()) as Board;
@@ -184,7 +191,7 @@ export default function ConnectFourGame() {
         if (g.aiTimer >= AI_DELAY && !g.anim?.active) {
           g.aiPending = false;
           const col = aiBestMove(g.board, YELLOW, aiDepth);
-          if (col != null) tryDrop(col);
+          if (col != null) tryDrop(col, true);
         }
       }
 
@@ -205,6 +212,18 @@ export default function ConnectFourGame() {
               g.winner.player === RED
                 ? 'RED wins!'
                 : 'YELLOW wins!';
+              if (
+              vsAI &&
+              aiDepth >= 9 &&
+              g.winner.player === RED &&
+              !medalAwardedRef.current
+            ) {
+              const uid = auth.currentUser?.uid;
+              if (uid) {
+                medalAwardedRef.current = true;
+                addAchievement(uid, 'cf_bot_master').catch(() => {});
+              }
+            }
           } else if (isDraw(g.board)) {
             g.winner = { kind: 'DRAW' };
             g.msg = 'Draw!';

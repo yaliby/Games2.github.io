@@ -10,8 +10,10 @@ import { drawBoard } from './render/renderer';
 
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db  } from "../../services/firebase";
-import { updateBlockBlastBestScoreIfHigher } from "../../services/scoreService";
-import { doc, onSnapshot, collection, query, orderBy, limit } from "firebase/firestore";
+import { submitBlockBlastScore } from "../../services/scoreService";
+import UserBox from "../UserBox/UserBox";
+import { checkWeeklyReset } from "../../services/resetService";
+import { doc, onSnapshot, collection } from "firebase/firestore";
 
 
 
@@ -275,7 +277,8 @@ export default function BlockBlastGame() {
   const [screen, setScreen] = useState<Screen>('MENU');
   const [scoreUI, setScoreUI] = useState(0);
   const [bestScoreUI, setBestScoreUI] = useState(0);
-  const [leaderboard, setLeaderboard] = useState<Array<{ name: string; score: number }>>([]);
+  const [leaderboard, setLeaderboard] = useState<Array<{ uid: string; score: number }>>([]);
+  const [currentSeasonId, setCurrentSeasonId] = useState<number | null>(null);
   const [tileSize, setTileSize] = useState<number>(calculateTileSize());
 
   // Combo rules (new):
@@ -312,30 +315,59 @@ export default function BlockBlastGame() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    const ref = doc(db, "system", "weekly");
+    const unsub = onSnapshot(
+      ref,
+      async (snap) => {
+        if (!snap.exists()) {
+          try {
+            await checkWeeklyReset();
+          } catch (err) {
+            console.warn("weekly reset check failed:", err);
+          }
+          return;
+        }
+
+        const seasonId = Number((snap.data() as any)?.seasonId ?? 1) || 1;
+        setCurrentSeasonId(seasonId);
+      },
+      (err) => console.warn("weekly doc listener failed:", err)
+    );
+
+    return () => unsub();
+  }, []);
+
 
   useEffect(() => {
     let unsubDoc: null | (() => void) = null;
 
     const unsubAuth = onAuthStateChanged(auth, (user) => {
-      // נקה listener קודם אם היה
       if (unsubDoc) {
         unsubDoc();
         unsubDoc = null;
       }
 
-      if (!user) {
+      if (!user || currentSeasonId === null) {
         setBestScoreUI(0);
         return;
       }
 
-      const ref = doc(db, "users", user.uid);
+      const ref = doc(db, "scores", "block-blast", "users", user.uid);
 
-      // ✅ מאזין בזמן אמת לשינויים במסמך
       unsubDoc = onSnapshot(
         ref,
         (snap) => {
-          const best = Number((snap.data() as any)?.bestScore ?? 0) || 0;
-          setBestScoreUI(best);
+          if (!snap.exists()) {
+            setBestScoreUI(0);
+            return;
+          }
+
+          const data = snap.data() as any;
+          const seasonId = Number(data?.seasonId ?? 0) || 0;
+          const score = Number(data?.score ?? 0) || 0;
+
+          setBestScoreUI(seasonId === currentSeasonId ? score : 0);
         },
         (err) => {
           console.warn("bestScore listener failed:", err);
@@ -343,38 +375,45 @@ export default function BlockBlastGame() {
       );
     });
 
-  return () => {
-    if (unsubDoc) unsubDoc();
-    unsubAuth();
-  };
-}, []);
+    return () => {
+      if (unsubDoc) unsubDoc();
+      unsubAuth();
+    };
+  }, [currentSeasonId]);
 
-// ✅ Live leaderboard (Top players) – updates in realtime (from /users collection)
+// ✅ Live leaderboard (Top players) – client-side filter to avoid composite index
 useEffect(() => {
-  // לפי המבנה שלך במסד: users/{uid} -> { username, bestScore }
-  const q = query(
-    collection(db, "users"),
-    orderBy("bestScore", "desc"),
-    limit(10)
-  );
+  if (currentSeasonId === null) {
+    setLeaderboard([]);
+    return;
+  }
+
+  const q = collection(db, "scores", "block-blast", "users");
 
   const unsub = onSnapshot(
     q,
     (snap) => {
-      const rows = snap.docs.map((d) => {
-        const data = d.data() as any;
-        return {
-          name: String(data?.username ?? data?.displayName ?? "Anonymous"),
-          score: Number(data?.bestScore ?? 0) || 0,
-        };
-      });
+      const rows = snap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          return {
+            uid: d.id,
+            score: Number(data?.score ?? 0) || 0,
+            seasonId: Number(data?.seasonId ?? 0) || 0,
+          };
+        })
+        .filter((row) => row.seasonId === currentSeasonId)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(({ uid, score }) => ({ uid, score }));
+
       setLeaderboard(rows);
     },
     (err) => console.warn("leaderboard listener failed:", err)
   );
 
   return () => unsub();
-}, []);
+}, [currentSeasonId]);
 /* ================= GAME CONTROL ================= */
 
   const triggerShake = (strength: 'sm' | 'md' | 'lg' | 'xl' = 'sm') => {
@@ -957,7 +996,7 @@ const tryPushBestScore = (score: number) => {
   bestUpdateInFlight.current = true;
   lastBestUpdateAt.current = now;
 
-  updateBlockBlastBestScoreIfHigher(user.uid, score)
+  submitBlockBlastScore(user.uid, score)
     .catch((e) => console.warn("bestScore update failed:", e))
     .finally(() => {
       bestUpdateInFlight.current = false;
@@ -1540,11 +1579,32 @@ if (screen === 'MENU') {
             height: 'fit-content',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ color: '#EAF0FF', fontWeight: 900, letterSpacing: 0.2 }}>
-              🏆 Leaderboard
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}
+          >
+            <div style={{ color: '#BFD2FF', fontWeight: 700, fontSize: 14 }}>
+              Leaderboard
             </div>
-            <div style={{ color: '#BFD2FF', fontSize: 12, opacity: 0.75 }}>Top 10</div>
+            <div
+              style={{
+                padding: '4px 10px',
+                borderRadius: 999,
+                border: '1px solid rgba(120,150,255,.25)',
+                background: 'rgba(120,150,255,.12)',
+                color: '#D7E3FF',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Season {currentSeasonId ? `#${currentSeasonId}` : '—'}
+            </div>
           </div>
 
           <div style={{ height: 1, background: 'rgba(140,170,255,.14)' }} />
@@ -1555,14 +1615,14 @@ if (screen === 'MENU') {
             ) : (
               leaderboard.map((row, i) => (
                 <div
-                  key={`${row.name}-${i}`}
+                  key={`${row.uid}-${i}`}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '26px 1fr auto',
+                    gridTemplateColumns: '22px 1fr auto',
                     alignItems: 'center',
-                    gap: 10,
-                    padding: '8px 10px',
-                    borderRadius: 14,
+                    gap: 8,
+                    padding: '6px 8px',
+                    borderRadius: 12,
                     border: '1px solid rgba(140,170,255,.12)',
                     background:
                       i === 0
@@ -1578,18 +1638,8 @@ if (screen === 'MENU') {
                     {i + 1}
                   </div>
 
-                  <div
-                    style={{
-                      color: '#EAF0FF',
-                      fontWeight: 800,
-                      fontSize: 13,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                    title={row.name}
-                  >
-                    {row.name}
+                  <div style={{ minWidth: 0 }}>
+                    <UserBox userId={row.uid} />
                   </div>
 
                   <div style={{ color: '#FFD34A', fontWeight: 900 }}>
@@ -1960,7 +2010,7 @@ export function boardToAscii(board: AnyBoard, rows = 8, cols = 8): string {
     }
     out.push(line);
   }
-  return out.join("\n");
+  return out.join("n");
 }
 
 // ממיר Shape לרשימת תאים יחסיים
@@ -2005,7 +2055,7 @@ export function shapeToAscii(shape: AnyShape): string {
   for (const { r, c } of cells) {
     grid[r - minR][c - minC] = "■";
   }
-  return grid.map((row) => row.join(" ")).join("\n");
+  return grid.map((row) => row.join(" ")).join("n");
 }
 
 export function trayToAscii(tray: AnyTrayItem[]): string {
@@ -2019,9 +2069,9 @@ export function trayToAscii(tray: AnyTrayItem[]): string {
       return [
         `#${i + 1} color=${colorId} size=${size}`,
         shapeToAscii(shape),
-      ].join("\n");
+      ].join("n");
     })
-    .join("\n\n");
+    .join("nn");
 }
 
 // דמפ מלא: ASCII + JSON קטן לשחזור
@@ -2069,7 +2119,7 @@ export function dumpBlockBlastState(args: {
     "JSON:",
     JSON.stringify(payload),
     "=== END ===",
-  ].join("\n");
+  ].join("n");
 }
 
 // עוזר: להעתיק לקליפבורד
@@ -2082,3 +2132,9 @@ export async function copyDumpToClipboard(text: string) {
     console.log(text);
   }
 }
+
+
+
+
+
+

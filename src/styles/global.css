@@ -20,9 +20,12 @@
 }
 
 html,
-body {
+body,
+#root {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
 }
 
 body {
@@ -46,7 +49,7 @@ body {
 
   color: var(--text-main);
   font-family: Inter, system-ui, sans-serif;
-  min-height: 100vh;
+  min-height: 100%;
 
   transition: background 0.15s linear;
 }
@@ -277,6 +280,7 @@ header span {
   width: 100%;
   padding: clamp(0.5rem, 2vh, 1.5rem);
   box-sizing: border-box;
+  min-height: 100%;
 }
 
 /* Responsive game canvas container */

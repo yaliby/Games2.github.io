@@ -5,7 +5,7 @@ export default function GameCard({ game }: { game: Game }) {
   // Use base path for images to work with GitHub Pages
   // BASE_URL already includes trailing slash, so we don't need to add one
   //const baseUrl = import.meta.env.BASE_URL;
-  const imagePath = `${import.meta.env.BASE_URL}${game.image}`;
+  const imagePath = `${import.meta.env.BASE_URL}img/${game.image}`;
   
   return (
     <Link to={game.path} className="game-card-wrapper">

@@ -1,5 +1,23 @@
-import { doc, getDoc, runTransaction, increment } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  runTransaction,
+  increment,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "./firebase";
+import { checkWeeklyReset, getCurrentSeasonId } from "./resetService";
+import { awardBlockBlastSeasonMedals, awardWordGuessSeasonMedals } from "./medalService";
+
+function isValidUsername(name: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_]{2,17}$/.test(name);
+}
+
+function fallbackUsername(uid: string): string {
+  const base = `user_${uid.replace(/[^a-zA-Z0-9_]/g, "")}`;
+  return base.length >= 3 ? base.slice(0, 18) : "user_000";
+}
+
 
 /**
  * Block Blast best score is stored on the user document: users/{uid}.bestScore
@@ -51,4 +69,94 @@ export async function updateBlockBlastBestScoreIfHigher(uid: string, score: numb
 
     tx.update(ref, { bestScore: score });
   });
+}
+
+export async function submitBlockBlastScore(uid: string, score: number) {
+  await checkWeeklyReset();
+  const seasonId = await getCurrentSeasonId();
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "block-blast", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+
+    if (!snap.exists()) {
+      tx.set(scoreRef, {
+        username,
+        score,
+        seasonId,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedSeasonId = Number(data?.seasonId ?? 0) || 0;
+    const storedScore = Number(data?.score ?? 0) || 0;
+
+    const effectiveScore = storedSeasonId === seasonId ? storedScore : 0;
+    if (score <= effectiveScore) return;
+
+    tx.update(scoreRef, {
+      username,
+      score,
+      seasonId,
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  // Best-effort medal assignment for the current season
+  awardBlockBlastSeasonMedals(seasonId).catch(() => {});
+}
+
+export async function submitWordGuessScore(uid: string, score: number) {
+  await checkWeeklyReset();
+  const seasonId = await getCurrentSeasonId();
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "word-guess", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+
+    if (!snap.exists()) {
+      tx.set(scoreRef, {
+        username,
+        score,
+        seasonId,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedSeasonId = Number(data?.seasonId ?? 0) || 0;
+    const storedScore = Number(data?.score ?? 0) || 0;
+
+    const effectiveScore = storedSeasonId === seasonId ? storedScore : 0;
+    if (score <= effectiveScore) return;
+
+    tx.update(scoreRef, {
+      username,
+      score,
+      seasonId,
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  // Best-effort medal assignment for the current season
+  awardWordGuessSeasonMedals(seasonId).catch(() => {});
 }

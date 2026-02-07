@@ -43,6 +43,12 @@ export type Snake = {
 
   points: Vec[];      // points[0] = head
   desiredLen: number; // how many points we want (grows with pellets)
+  /** Pending growth to apply smoothly (prevents visual popping). */
+  growAcc: number;
+  /** Smoothed length for rendering/physics to avoid popping. */
+  renderLen: number;
+  /** Mass used for thickness (can grow faster than tiles). */
+  mass: number;
 
   alive: boolean;
   respawnTimer: number;
@@ -138,6 +144,10 @@ export type World = {
   _dtLast?: number;
   /** Internal accumulator for leaderboard refresh */
   _leaderboardAcc?: number;
+  /** Internal accumulator for pellet spawning */
+  _pelletSpawnAcc?: number;
+  /** Internal: reserve space for death pellets to avoid trimming them instantly. */
+  _reservedDeathPellets?: number;
 
   /** Visual event flags (renderer can read and clear if desired). */
   events?: {
@@ -154,4 +164,5 @@ export type StepInput = {
 export type WorldConfig = {
   botCount: number;
   difficulty?: number; // 1 = default
+  playerColor?: string;
 };

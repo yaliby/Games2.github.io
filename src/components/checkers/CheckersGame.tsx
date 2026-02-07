@@ -15,6 +15,8 @@ import {
   EMPTY,
 } from './engine/rules_ai';
 import { drawBoard } from './render/renderer';
+import { addAchievement } from '../../services/achievementService';
+import { auth } from '../../services/firebase';
 
 /* ================= CONFIG ================= */
 const AI_DELAY = 0.5;
@@ -55,6 +57,7 @@ export default function CheckersGame() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const workerRef = useRef<Worker | null>(null);
+  const medalAwardedRef = useRef<boolean>(false);
   const navigate = useNavigate();
 
   /* ---------- UI STATE ---------- */
@@ -171,6 +174,7 @@ export default function CheckersGame() {
       g.chainCaptureFrom = null;
       g.forcedCaptures = [];
     }
+    medalAwardedRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -213,6 +217,7 @@ export default function CheckersGame() {
       inChainCapture: false,
       chainCaptureFrom: null,
     };
+    medalAwardedRef.current = false;
 
     let lastTs = performance.now();
     const gameStartTime = performance.now();
@@ -650,6 +655,18 @@ export default function CheckersGame() {
             g.winner = getWinner(g.board, g.turn);
             if (g.winner.kind === 'WIN') {
               g.msg = g.winner.player === RED ? 'RED wins!' : 'BLACK wins!';
+              if (
+                vsAI &&
+                aiDepth >= 9 &&
+                g.winner.player === RED &&
+                !medalAwardedRef.current
+              ) {
+                const uid = auth.currentUser?.uid;
+                if (uid) {
+                  medalAwardedRef.current = true;
+                  addAchievement(uid, 'checkers_bot_master').catch(() => {});
+                }
+              }
             } else {
               g.turn = otherPlayer(g.turn);
               g.selectedPos = null;
