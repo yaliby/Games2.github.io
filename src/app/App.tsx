@@ -29,7 +29,7 @@ import {
   awardSeasonMedalsByAdmin,
   claimSeasonMedalsForUser,
 } from "../services/medalService";
-import { getAdminDebugInfo, isAdminUid } from "../services/admin";
+import { isAdminUid } from "../services/admin";
 
 const SoundShooterGame = lazy(() => import("../components/sound-shooter/SoundShooter"));
 
@@ -74,13 +74,11 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, (user) => {
       void (async () => {
         try {
-          console.info("[AdminDebug] Auth state changed:", getAdminDebugInfo(user?.uid));
           await checkWeeklyReset();
           if (!user) return;
 
           const seasonId = await getCurrentSeasonId();
           if (isAdminUid(user.uid)) {
-            console.log("[Auth] Admin connected:", user.uid);
             await awardHallOfFameMedalsByAdmin();
             if (seasonId > 1) {
               await awardSeasonMedalsByAdmin(seasonId - 1);

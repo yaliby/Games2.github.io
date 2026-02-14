@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../services/firebase";
 import UserBox from "./UserBox/UserBox";
-import { getAdminDebugInfo, isAdminUid } from "../services/admin";
+import { isAdminUid } from "../services/admin";
 import { HOURLY_MAGIC_OPEN_EVENT } from "./HourlyMagicPrompt";
 
 type UserInfo = {
@@ -142,8 +142,6 @@ export default function Header() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      console.info("[AdminDebug] Header auth:", getAdminDebugInfo(fbUser?.uid));
-
       if (!fbUser) {
         setUser(null);
         setLoading(false);
