@@ -166,6 +166,25 @@ service cloud.firestore {
         && game != 'which-country';
     }
 
+    match /feedback/{messageId} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && hasAllKeys(['uid', 'username', 'kind', 'text', 'createdAt'])
+        && onlyKeys(['uid', 'username', 'kind', 'text', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username is string
+        && request.resource.data.username.size() >= 1
+        && request.resource.data.username.size() <= 32
+        && request.resource.data.kind in ['bug', 'idea', 'other']
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 4
+        && request.resource.data.text.size() <= 600
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if isAdmin();
+    }
+
     match /system/weekly {
       allow read: if true;
 

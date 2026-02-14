@@ -2,10 +2,20 @@
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "../services/firebase";
 import UserBox from "./UserBox/UserBox";
-import { isAdminUid } from "../services/admin";
+import { getAdminDebugInfo, isAdminUid } from "../services/admin";
 import { HOURLY_MAGIC_OPEN_EVENT } from "./HourlyMagicPrompt";
 
 type UserInfo = {
@@ -22,6 +32,27 @@ type UpdateItem = {
   details?: string[];
 };
 
+type FeedbackKind = "bug" | "idea" | "other";
+
+type FeedbackEntry = {
+  id: string;
+  uid: string;
+  username: string;
+  kind: FeedbackKind;
+  text: string;
+  createdAtMs: number;
+};
+
+function formatFeedbackTime(createdAtMs: number) {
+  if (!createdAtMs) return "עכשיו";
+  return new Date(createdAtMs).toLocaleString("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
 export default function Header() {
   const navigate = useNavigate();
   const [user, setUser] = useState<UserInfo>(null);
@@ -31,6 +62,13 @@ export default function Header() {
   const [letterOpen, setLetterOpen] = useState(false);
   // Updates modal
   const [updatesOpen, setUpdatesOpen] = useState(false);
+  // Feedback modal
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackKind, setFeedbackKind] = useState<FeedbackKind>("bug");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+  const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
 
   const updatesLog: UpdateItem[] = [
     {
@@ -104,6 +142,8 @@ export default function Header() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      console.info("[AdminDebug] Header auth:", getAdminDebugInfo(fbUser?.uid));
+
       if (!fbUser) {
         setUser(null);
         setLoading(false);
@@ -128,27 +168,105 @@ export default function Header() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    if (!feedbackOpen) return;
+
+    const feedbackQuery = query(
+      collection(db, "feedback"),
+      orderBy("createdAt", "desc"),
+      limit(30)
+    );
+
+    const unsub = onSnapshot(
+      feedbackQuery,
+      (snap) => {
+        const rows: FeedbackEntry[] = snap.docs.map((entry) => {
+          const data = entry.data() as {
+            uid?: string;
+            username?: string;
+            kind?: FeedbackKind;
+            text?: string;
+            createdAt?: { toMillis?: () => number };
+          };
+
+          const createdAtMs =
+            data.createdAt && typeof data.createdAt.toMillis === "function"
+              ? data.createdAt.toMillis()
+              : 0;
+
+          return {
+            id: entry.id,
+            uid: typeof data.uid === "string" ? data.uid : "",
+            username: typeof data.username === "string" ? data.username : "Player",
+            kind: data.kind === "idea" || data.kind === "other" ? data.kind : "bug",
+            text: typeof data.text === "string" ? data.text : "",
+            createdAtMs,
+          };
+        });
+
+        setFeedbackEntries(rows);
+      },
+      (err) => {
+        console.warn("feedback feed listener failed:", err);
+      }
+    );
+
+    return () => unsub();
+  }, [feedbackOpen]);
+
+  const submitFeedback = async () => {
+    if (!user) {
+      setFeedbackError("צריך להתחבר כדי לשלוח דיווח.");
+      return;
+    }
+
+    const message = feedbackText.trim();
+    if (message.length < 4) {
+      setFeedbackError("נא לכתוב לפחות 4 תווים.");
+      return;
+    }
+
+    setFeedbackSending(true);
+    setFeedbackError("");
+    try {
+      await addDoc(collection(db, "feedback"), {
+        uid: user.uid,
+        username: user.username,
+        kind: feedbackKind,
+        text: message,
+        createdAt: serverTimestamp(),
+      });
+      setFeedbackText("");
+    } catch (err) {
+      console.warn("feedback submit failed:", err);
+      setFeedbackError("שליחה נכשלה. בדוק הרשאות Firebase/חיבור ונסה שוב.");
+    } finally {
+      setFeedbackSending(false);
+    }
+  };
+
   // UX: לנעול גלילה כשהמודאל פתוח
   useEffect(() => {
-    if (!letterOpen && !updatesOpen) return;
+    if (!letterOpen && !updatesOpen && !feedbackOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [letterOpen, updatesOpen]);
+  }, [letterOpen, updatesOpen, feedbackOpen]);
   // UX: ESC closes modals
   useEffect(() => {
-    if (!letterOpen && !updatesOpen) return;
+    if (!letterOpen && !updatesOpen && !feedbackOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setLetterOpen(false);
         setUpdatesOpen(false);
+        setFeedbackOpen(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [letterOpen, updatesOpen]);
+  }, [letterOpen, updatesOpen, feedbackOpen]);
 
   if (loading) {
     return (
@@ -195,6 +313,14 @@ export default function Header() {
               title="עדכונים אחרונים"
             >
               <span style={{ fontSize: 14 }}>עדכונים</span>
+            </button>
+
+            <button
+              style={styles.btnFeedback}
+              onClick={() => setFeedbackOpen(true)}
+              title="דיווח תקלות והצעות"
+            >
+              <span style={{ fontSize: 14 }}>פידבק</span>
             </button>
 
             <button
@@ -479,6 +605,101 @@ export default function Header() {
           </div>
         </div>
       )}
+
+      {/* FEEDBACK MODAL */}
+      {feedbackOpen && (
+        <div
+          style={{ ...modalStyles.backdrop, direction: "rtl", textAlign: "right" }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setFeedbackOpen(false);
+          }}
+          aria-label="feedback backdrop"
+        >
+          <div style={modalStyles.feedbackShell} role="dialog" aria-modal="true">
+            <div style={modalStyles.feedbackHeader}>
+              <div>
+                <div style={modalStyles.feedbackTitle}>צ'אט תקלות והצעות</div>
+                <div style={modalStyles.feedbackSubtitle}>
+                  דווחו על באגים, רעיונות ושיפורים - זה עוזר לנו לשפר מהר.
+                </div>
+              </div>
+              <button
+                style={modalStyles.closeBtn}
+                onClick={() => setFeedbackOpen(false)}
+                title="סגור"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={modalStyles.feedbackBody}>
+              <div style={modalStyles.feedbackComposer}>
+                <label style={modalStyles.feedbackLabel} htmlFor="feedback-kind">
+                  סוג
+                </label>
+                <select
+                  id="feedback-kind"
+                  style={modalStyles.feedbackSelect}
+                  value={feedbackKind}
+                  onChange={(e) => setFeedbackKind(e.target.value as FeedbackKind)}
+                >
+                  <option value="bug">תקלה</option>
+                  <option value="idea">הצעה לשיפור</option>
+                  <option value="other">אחר</option>
+                </select>
+
+                <label style={modalStyles.feedbackLabel} htmlFor="feedback-text">
+                  הודעה
+                </label>
+                <textarea
+                  id="feedback-text"
+                  style={modalStyles.feedbackTextarea}
+                  placeholder="כתבו כאן מה לא עובד / מה כדאי להוסיף..."
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  maxLength={600}
+                />
+
+                <div style={modalStyles.feedbackActionRow}>
+                  <span style={modalStyles.feedbackCounter}>{feedbackText.trim().length}/600</span>
+                  <button
+                    style={modalStyles.feedbackSendBtn}
+                    onClick={submitFeedback}
+                    disabled={feedbackSending || !user}
+                  >
+                    {feedbackSending ? "שולח..." : "שלח"}
+                  </button>
+                </div>
+                {!user && (
+                  <div style={modalStyles.feedbackNotice}>יש להתחבר כדי לשלוח הודעה.</div>
+                )}
+                {feedbackError && <div style={modalStyles.feedbackError}>{feedbackError}</div>}
+              </div>
+
+              <div style={modalStyles.feedbackFeed}>
+                {feedbackEntries.length === 0 ? (
+                  <div style={modalStyles.feedbackEmpty}>עדיין אין הודעות.</div>
+                ) : (
+                  feedbackEntries.map((entry) => (
+                    <article key={entry.id} style={modalStyles.feedbackCard}>
+                      <div style={modalStyles.feedbackMeta}>
+                        <span style={modalStyles.feedbackUser}>{entry.username}</span>
+                        <span style={modalStyles.feedbackKindTag}>
+                          {entry.kind === "bug" ? "תקלה" : entry.kind === "idea" ? "הצעה" : "אחר"}
+                        </span>
+                        <span style={modalStyles.feedbackTime}>
+                          {formatFeedbackTime(entry.createdAtMs)}
+                        </span>
+                      </div>
+                      <p style={modalStyles.feedbackText}>{entry.text}</p>
+                    </article>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -635,7 +856,23 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.08)",
   },
 
-    // Intel button
+  btnFeedback: {
+    padding: "9px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(89,248,208,0.32)",
+    background:
+      "linear-gradient(135deg, rgba(89,248,208,0.14) 0%, rgba(124,92,255,0.10) 55%, rgba(255,209,92,0.08) 130%)",
+    color: "rgba(255,255,255,0.95)",
+    cursor: "pointer",
+    fontWeight: 900,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    boxShadow: "0 12px 26px rgba(89,248,208,0.22)",
+    transition: "transform .15s ease, filter .15s ease",
+  },
+
+  // Intel button
   btnLetter: {
     padding: "9px 12px",
     borderRadius: 12,
@@ -1130,6 +1367,189 @@ const modalStyles: Record<string, React.CSSProperties> = {
     color: "rgba(255,255,255,0.86)",
     fontSize: 12.5,
     lineHeight: 1.45,
+  },
+
+  feedbackShell: {
+    width: "min(860px, 96vw)",
+    borderRadius: 20,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background:
+      "linear-gradient(180deg, rgba(12,14,20,0.96) 0%, rgba(12,14,20,0.90) 100%)",
+    boxShadow: "0 24px 90px rgba(0,0,0,0.60)",
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  feedbackHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "16px 18px",
+    borderBottom: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.02)",
+  },
+
+  feedbackTitle: {
+    fontSize: 18,
+    fontWeight: 1000,
+    color: "rgba(255,255,255,0.95)",
+  },
+
+  feedbackSubtitle: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.58)",
+    marginTop: 3,
+    fontWeight: 700,
+  },
+
+  feedbackBody: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: 12,
+    padding: 14,
+    maxHeight: "68vh",
+  },
+
+  feedbackComposer: {
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.03)",
+    padding: 12,
+    display: "grid",
+    gap: 8,
+    alignContent: "start",
+  },
+
+  feedbackLabel: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: "rgba(255,255,255,0.86)",
+  },
+
+  feedbackSelect: {
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(0,0,0,0.28)",
+    color: "rgba(255,255,255,0.94)",
+    padding: "8px 10px",
+    fontWeight: 700,
+  },
+
+  feedbackTextarea: {
+    minHeight: 120,
+    resize: "vertical",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(0,0,0,0.28)",
+    color: "rgba(255,255,255,0.94)",
+    padding: 10,
+    fontFamily: "inherit",
+    fontSize: 13.5,
+    lineHeight: 1.45,
+  },
+
+  feedbackActionRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  feedbackCounter: {
+    fontSize: 11.5,
+    color: "rgba(255,255,255,0.56)",
+    fontWeight: 700,
+  },
+
+  feedbackSendBtn: {
+    border: "none",
+    cursor: "pointer",
+    padding: "9px 14px",
+    borderRadius: 12,
+    fontWeight: 900,
+    color: "#0b0f1c",
+    background:
+      "linear-gradient(135deg, rgba(89,248,208,0.95) 0%, rgba(124,92,255,0.85) 55%, rgba(255,79,216,0.75) 130%)",
+    boxShadow: "0 12px 26px rgba(0,0,0,0.32)",
+  },
+
+  feedbackNotice: {
+    fontSize: 12,
+    color: "rgba(255,220,141,0.94)",
+    fontWeight: 700,
+  },
+
+  feedbackError: {
+    fontSize: 12,
+    color: "rgba(255,120,144,0.95)",
+    fontWeight: 800,
+  },
+
+  feedbackFeed: {
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.02)",
+    padding: 10,
+    overflow: "auto",
+    display: "grid",
+    gap: 8,
+    alignContent: "start",
+  },
+
+  feedbackEmpty: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.58)",
+    padding: "8px 4px",
+    fontWeight: 700,
+  },
+
+  feedbackCard: {
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    padding: "10px 11px",
+    display: "grid",
+    gap: 6,
+  },
+
+  feedbackMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+
+  feedbackUser: {
+    fontSize: 12.5,
+    fontWeight: 900,
+    color: "rgba(255,255,255,0.92)",
+  },
+
+  feedbackKindTag: {
+    fontSize: 10.5,
+    fontWeight: 900,
+    borderRadius: 999,
+    padding: "2px 8px",
+    border: "1px solid rgba(89,248,208,0.28)",
+    background: "rgba(89,248,208,0.10)",
+    color: "rgba(255,255,255,0.92)",
+  },
+
+  feedbackTime: {
+    marginInlineStart: "auto",
+    fontSize: 11,
+    color: "rgba(255,255,255,0.56)",
+    fontWeight: 700,
+  },
+
+  feedbackText: {
+    margin: 0,
+    fontSize: 13.5,
+    color: "rgba(255,255,255,0.86)",
+    lineHeight: 1.5,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
   },
 
   qaBox: {

@@ -29,7 +29,7 @@ import {
   awardSeasonMedalsByAdmin,
   claimSeasonMedalsForUser,
 } from "../services/medalService";
-import { isAdminUid } from "../services/admin";
+import { getAdminDebugInfo, isAdminUid } from "../services/admin";
 
 const SoundShooterGame = lazy(() => import("../components/sound-shooter/SoundShooter"));
 
@@ -74,6 +74,7 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, (user) => {
       void (async () => {
         try {
+          console.info("[AdminDebug] Auth state changed:", getAdminDebugInfo(user?.uid));
           await checkWeeklyReset();
           if (!user) return;
 
