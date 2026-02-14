@@ -56,4 +56,3 @@ export async function login(
   const email = usernameToEmail(username);
   await signInWithEmailAndPassword(auth, email, password);
 }
-console.log("API KEY:", import.meta.env.VITE_FB_API_KEY);
