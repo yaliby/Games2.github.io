@@ -79,6 +79,7 @@ export default function App() {
 
           const seasonId = await getCurrentSeasonId();
           if (isAdminUid(user.uid)) {
+            console.log("[Auth] Admin connected:", user.uid);
             await awardHallOfFameMedalsByAdmin();
             if (seasonId > 1) {
               await awardSeasonMedalsByAdmin(seasonId - 1);
