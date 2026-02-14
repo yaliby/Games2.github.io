@@ -14,8 +14,6 @@ const firebaseConfig = {
 };
 
 
-console.log("API KEY:", firebaseConfig.apiKey); // לבדיקה רגע
-
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
