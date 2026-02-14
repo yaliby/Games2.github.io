@@ -5,11 +5,22 @@ import { auth } from "../services/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import UserBox from "./UserBox/UserBox";
+import { isAdminUid } from "../services/admin";
+import { HOURLY_MAGIC_OPEN_EVENT } from "./HourlyMagicPrompt";
 
 type UserInfo = {
   uid: string;
   username: string;
+  isAdmin: boolean;
 } | null;
+
+type UpdateItem = {
+  date: string;
+  title: string;
+  desc: string;
+  tag: string;
+  details?: string[];
+};
 
 export default function Header() {
   const navigate = useNavigate();
@@ -21,7 +32,38 @@ export default function Header() {
   // Updates modal
   const [updatesOpen, setUpdatesOpen] = useState(false);
 
-  const updatesLog = [
+  const updatesLog: UpdateItem[] = [
+    {
+      date: "14.02.2026",
+      title: "תוקנו באגים בכל המשחקים",
+      desc: "בוצעו תיקוני יציבות ותיקוני באגים רוחביים בכל המשחקים בפלטפורמה.",
+      tag: "Fixes",
+      details: [
+        "תוקנו תקלות תצוגה, ניקוד ומעברי סיבובים במספר משחקים.",
+        "שופרו ביצועים במסכים עמוסים ורינדור רכיבים כבדים.",
+        "בוצעו תיקוני UX ושגיאות שגרמו להתנהגות לא עקבית.",
+      ],
+    },
+    {
+      date: "14.02.2026",
+      title: "נוספו פודיומים למשחקים",
+      desc: "נוספה תצוגת פודיום במשחקים לתוצאות ולמובילים.",
+      tag: "Leaderboard",
+      details: [
+        "הפודיום מציג מובילים בצורה ברורה ונגישה יותר.",
+        "שופר הסדר בין הישגים, ניקוד ומיקום בשחקנים מובילים.",
+      ],
+    },
+    {
+      date: "14.02.2026",
+      title: "נוספו משחקים חדשים",
+      desc: "נוספו המשחק של המדינות וגם המשחק של הרוסית (Sound Shooter).",
+      tag: "Games",
+      details: [
+        "Which Country: משחק לימודי לזיהוי מדינות בעולם.",
+        "Sound Shooter: משחק לימוד פונטיקה ואותיות ברוסית.",
+      ],
+    },
     {
       date: "07.02.2026",
       title: "לוג עדכונים מעודכן",
@@ -74,9 +116,10 @@ export default function Header() {
         setUser({
           uid: fbUser.uid,
           username: snap.data().username,
+          isAdmin: isAdminUid(fbUser.uid),
         });
       } else {
-        setUser({ uid: fbUser.uid, username: "Player" });
+        setUser({ uid: fbUser.uid, username: "Player", isAdmin: isAdminUid(fbUser.uid) });
       }
 
       setLoading(false);
@@ -157,9 +200,9 @@ export default function Header() {
             <button
               style={styles.btnLetter}
               onClick={() => setLetterOpen(true)}
-              title="Secure Intel Letter"
+              title="אימות משתמשים שעתי"
             >
-              <span style={{ fontSize: 14 }}>Intel</span>
+              <span style={{ fontSize: 14 }}>אימות שעתי</span>
             </button>
           </div>
 
@@ -181,8 +224,11 @@ export default function Header() {
 
             {user && (
               <>
-                <div style={{ minWidth: 220 }}>
-                  <UserBox userId={user.uid} />
+                <div style={styles.userInfoWrap}>
+                  <div style={{ minWidth: 220 }}>
+                    <UserBox userId={user.uid} />
+                  </div>
+                  {user.isAdmin && <span style={styles.adminBadge}>ADMIN</span>}
                 </div>
 
                 <button
@@ -208,7 +254,7 @@ export default function Header() {
         <div
           style={{ ...modalStyles.backdrop, direction: "rtl", textAlign: "right", fontSize: 20 }}
           onMouseDown={(e) => {
-            // ???? ???? ????
+            // סגירה בלחיצה על הרקע
             if (e.target === e.currentTarget) setLetterOpen(false);
           }}
           aria-label="Intel letter backdrop"
@@ -225,8 +271,21 @@ export default function Header() {
                 onClick={() => setLetterOpen(false)}
                 title="Close"
               >
-                ?
+                ✕
               </button>
+            </div>
+
+            <div style={modalStyles.noticeBanner}>
+              בעקבות המתקפה של גל שפירו נעשית בדיקה שעתית לאימות המשתמשים.
+            </div>
+
+            <div style={modalStyles.noticeDetails}>
+              <div style={modalStyles.noticeDetailsTitle}>פרטי המודעה</div>
+              <ul style={modalStyles.noticeDetailsList}>
+                <li>אימות משתמש מתבצע אחת לשעה לכל משתמש פעיל.</li>
+                <li>משתמש שלא מאמת בזמן עשוי להיות מנותק עד התחברות מחדש.</li>
+                <li>בכל חריגה, האירוע נרשם ומועבר לבדיקה מיידית.</li>
+              </ul>
             </div>
 
             <div style={modalStyles.paperWrap}>
@@ -238,48 +297,48 @@ export default function Header() {
                   </div>
 
                   <div style={modalStyles.headerMini}>
-                    <div style={modalStyles.paperTitle}>?? ???? ?????</div>
+                    <div style={modalStyles.paperTitle}>הודעת אבטחה רשמית</div>
                     <div style={modalStyles.paperSub}>
-                      ????? ???????? • ??? ?????: ?????
+                      בעקבות המתקפה של גל שפירו • בדיקה שעתית לאימות משתמשים
                     </div>
                   </div>
                 </div>
 
                 <div style={modalStyles.body}>
                   <p style={modalStyles.p}>
-                    <b>???? ??:</b> ?? ???? ????? ???? ???????? ?????? ?????{" "}
-                    <span style={modalStyles.badName}>?? ?????</span>{" "}
-                    ???? ???????? ????? ????.
+                    <b>שימו לב:</b> בעקבות המתקפה של{" "}
+                    <span style={modalStyles.badName}>גל שפירו</span>{" "}
+                    נעשית בדיקה שעתית לאימות המשתמשים בכל המערכת.
                   </p>
 
                   <div style={modalStyles.alertBox}>
-                    <div style={modalStyles.alertIcon}>??</div>
+                    <div style={modalStyles.alertIcon}>⚠️</div>
                     <div>
                       <div style={modalStyles.alertTitle}>
-                        ?????? ????? ????????
+                        מה זה אומר בפועל?
                       </div>
                       <ul style={modalStyles.ul}>
-                        <li>?? ?????? ?????? ???????.</li>
+                        <li>אחת לשעה תתבקשו לבצע אימות משתמש.</li>
                         <li>
-                          <b>?????? ?????? ?? ????? ??? ?????? ????? ?????.</b>
+                          <b>משתמש שלא יאמת את עצמו עשוי להיות מנותק מהסשן.</b>
                         </li>
-                        <li>?? ???? ???? ???? — ?? ???? ????? ????.</li>
+                        <li>במקרה חסימה יש להתחבר מחדש ולאמת שוב.</li>
                       </ul>
                     </div>
                   </div>
 
 
 <div style={modalStyles.qaBox}>
-  <div style={modalStyles.qaIcon}>??</div>
+  <div style={modalStyles.qaIcon}>🧪</div>
 
   <div style={{ flex: 1 }}>
-    <div style={modalStyles.qaTitle}>????? ????? QA</div>
+    <div style={modalStyles.qaTitle}>סטטוס תפעולי</div>
 
     <p style={modalStyles.qaText}>
-      ???? ??<b>QA</b> ????? ?????? ?????? ???? ????? ?????? ??????.
+      צוות <b>QA</b> ו-<b>DevOps</b> מריצים בדיקה שעתית לאימות המשתמשים בזמן אמת.
       <br />
-      <b>?? ???? ?? ??????? ????.</b>  
-      ??? ???? ????? ??? ???? ???? ????? “????????” ????.
+      <b>כל אירוע חריג נרשם ומטופל מיידית.</b>
+      ניתן להפעיל בדיקה ידנית עכשיו.
       <br />
     </p>
 
@@ -287,22 +346,11 @@ export default function Header() {
       style={modalStyles.openScriptBtn}
       onClick={() => {
         setLetterOpen(false);
-
-        // ?? Surprise URL: ?? "???????" ??????, ??? ????? ?-404 ???
-        const absurdUrl =
-          "/ops/qa/dropbox_dump/extracted_payload/" +
-          "unknown_gl_shapiro_vector/" +
-          "do-not-open/" +
-          "??/??/??/" +
-          "tux_vs_windows/" +
-          "this_should_not_exist/" +
-          Date.now();
-
-        navigate(absurdUrl);
+        window.dispatchEvent(new Event(HOURLY_MAGIC_OPEN_EVENT));
       }}
-      title="Open extracted script (unknown behavior)"
+      title="הפעל בדיקת אימות ידנית"
     >
-      ?? ??? ?????? ???? 
+      הפעל בדיקת אימות עכשיו
     </button>
 
   </div>
@@ -332,7 +380,7 @@ export default function Header() {
                   <div style={modalStyles.footerLine} />
 
                   <p style={modalStyles.bottomSecret}>
-                    ?? ????? ?-"?????" ??? ??? ??? ??????
+                    הבדיקה השעתית פעילה עד הודעה חדשה.
                   </p>
                 </div>
               </div>
@@ -346,7 +394,7 @@ export default function Header() {
                   navigate("/");
                 }}
               >
-                ????? • ???? ????
+                הבנתי
               </button>
 
               
@@ -369,7 +417,7 @@ export default function Header() {
               <div>
                 <div style={modalStyles.updatesTitle}>עדכונים אחרונים</div>
                 <div style={modalStyles.updatesSubtitle}>
-                  קצר, ברור ומעודכן
+                  מסודר, מפורט ומעודכן
                 </div>
               </div>
               <button
@@ -414,6 +462,15 @@ export default function Header() {
                     </div>
                     <div style={modalStyles.updateTitle}>{item.title}</div>
                     <div style={modalStyles.updateDesc}>{item.desc}</div>
+                    {item.details && item.details.length > 0 && (
+                      <ul style={modalStyles.updateList}>
+                        {item.details.map((line) => (
+                          <li key={`${item.title}-${line}`} style={modalStyles.updateListItem}>
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
               ))}
@@ -461,6 +518,28 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "flex-end",
     gap: 10,
     minWidth: 240,
+  },
+
+  userInfoWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  adminBadge: {
+    padding: "5px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(255, 211, 74, 0.42)",
+    background:
+      "linear-gradient(135deg, rgba(255,211,74,0.22) 0%, rgba(255,138,77,0.16) 100%)",
+    color: "#FFE28D",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    boxShadow: "0 8px 22px rgba(255, 180, 72, 0.22)",
+    userSelect: "none",
+    whiteSpace: "nowrap",
   },
 
   brandWrap: {
@@ -556,7 +635,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.08)",
   },
 
-    // ?? envelope button
+    // Intel button
   btnLetter: {
     padding: "9px 12px",
     borderRadius: 12,
@@ -645,6 +724,43 @@ const modalStyles: Record<string, React.CSSProperties> = {
     color: "rgba(255,255,255,0.72)",
     fontSize: 12,
     fontWeight: 700,
+  },
+
+  noticeBanner: {
+    margin: "10px 14px 0 14px",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(255, 116, 141, 0.35)",
+    background:
+      "linear-gradient(180deg, rgba(255, 80, 120, 0.16), rgba(124, 92, 255, 0.08))",
+    color: "rgba(255,255,255,0.95)",
+    fontSize: 13,
+    fontWeight: 900,
+    lineHeight: 1.45,
+  },
+
+  noticeDetails: {
+    margin: "10px 14px 0 14px",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.03)",
+  },
+
+  noticeDetailsTitle: {
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: 0.2,
+    marginBottom: 6,
+    color: "rgba(255,255,255,0.92)",
+  },
+
+  noticeDetailsList: {
+    margin: 0,
+    paddingInlineStart: 18,
+    color: "rgba(255,255,255,0.82)",
+    fontSize: 12.5,
+    lineHeight: 1.5,
   },
 
   closeBtn: {
@@ -1001,6 +1117,19 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: "rgba(255,255,255,0.78)",
     lineHeight: 1.5,
+  },
+
+  updateList: {
+    margin: "8px 0 0 0",
+    paddingInlineStart: 18,
+    display: "grid",
+    gap: 4,
+  },
+
+  updateListItem: {
+    color: "rgba(255,255,255,0.86)",
+    fontSize: 12.5,
+    lineHeight: 1.45,
   },
 
   qaBox: {

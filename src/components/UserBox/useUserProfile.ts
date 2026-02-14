@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import {
+  Timestamp,
   arrayUnion,
   collection,
   doc,
   getDoc,
   getDocs,
-  serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../services/firebase";
@@ -91,6 +91,54 @@ const FALLBACK_ACHIEVEMENTS: AchievementMeta[] = [
     icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Twemoji2_1f949.svg/500px-Twemoji2_1f949.svg.png",
     game: "word-guess",
     priority: 75,
+  },
+  {
+    id: "wc_gold",
+    title: "Which Country #1",
+    description: "Finished season in 1st place.",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Twemoji12_1f947.svg/500px-Twemoji12_1f947.svg.png",
+    game: "which-country",
+    priority: 94,
+  },
+  {
+    id: "wc_silver",
+    title: "Which Country #2",
+    description: "Finished season in 2nd place.",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Twemoji12_1f948.svg/960px-Twemoji12_1f948.svg.png",
+    game: "which-country",
+    priority: 84,
+  },
+  {
+    id: "wc_bronze",
+    title: "Which Country #3",
+    description: "Finished season in 3rd place.",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Twemoji2_1f949.svg/500px-Twemoji2_1f949.svg.png",
+    game: "which-country",
+    priority: 74,
+  },
+  {
+    id: "hof_gold",
+    title: "Hall of Fame #1",
+    description: "Reached 1st place on the all-time leaderboard.",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Twemoji12_1f947.svg/500px-Twemoji12_1f947.svg.png",
+    game: "hall-of-fame",
+    priority: 130,
+  },
+  {
+    id: "hof_silver",
+    title: "Hall of Fame #2",
+    description: "Reached 2nd place on the all-time leaderboard.",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Twemoji12_1f948.svg/960px-Twemoji12_1f948.svg.png",
+    game: "hall-of-fame",
+    priority: 120,
+  },
+  {
+    id: "hof_bronze",
+    title: "Hall of Fame #3",
+    description: "Reached 3rd place on the all-time leaderboard.",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Twemoji2_1f949.svg/500px-Twemoji2_1f949.svg.png",
+    game: "hall-of-fame",
+    priority: 110,
   },
   {
     id: "cf_bot_master",
@@ -213,7 +261,7 @@ export function useUserProfile(userId: string | null) {
         ) {
           try {
             await updateDoc(userRef, {
-              achievements: arrayUnion({ id: "bb_gold", earnedAt: serverTimestamp() }),
+              achievements: arrayUnion({ id: "bb_gold", earnedAt: Timestamp.now() }),
             });
             userAchievements.push({ id: "bb_gold", earnedAt: new Date() });
           } catch {

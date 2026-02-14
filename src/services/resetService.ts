@@ -1,6 +1,5 @@
 import { doc, getDoc, runTransaction, Timestamp } from "firebase/firestore";
 import { db } from "./firebase";
-import { awardBlockBlastSeasonMedals, awardWordGuessSeasonMedals } from "./medalService";
 
 type WeeklyDoc = {
   seasonId: number;
@@ -64,7 +63,6 @@ function parseTimestamp(value: unknown): Date | null {
 export async function checkWeeklyReset(): Promise<boolean> {
   const ref = doc(db, ...WEEKLY_DOC_PATH);
   let didReset = false;
-  let prevSeasonId = 0;
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
@@ -97,13 +95,7 @@ export async function checkWeeklyReset(): Promise<boolean> {
     });
 
     didReset = true;
-    prevSeasonId = seasonId;
   });
-
-  if (didReset && prevSeasonId > 0) {
-    await awardBlockBlastSeasonMedals(prevSeasonId).catch(() => {});
-    await awardWordGuessSeasonMedals(prevSeasonId).catch(() => {});
-  }
 
   return didReset;
 }

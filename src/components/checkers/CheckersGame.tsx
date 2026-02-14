@@ -664,7 +664,9 @@ export default function CheckersGame() {
                 const uid = auth.currentUser?.uid;
                 if (uid) {
                   medalAwardedRef.current = true;
-                  addAchievement(uid, 'checkers_bot_master').catch(() => {});
+                  addAchievement(uid, 'checkers_bot_master').catch((err) => {
+                    console.warn('checkers medal grant failed:', err);
+                  });
                 }
               }
             } else {

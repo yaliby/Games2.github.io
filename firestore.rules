@@ -1,0 +1,199 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Client-only admin mode: replace placeholder with your real Firebase Auth UID.
+    function isAdmin() {
+      return signedIn()
+        && request.auth.uid in ['PUT_ADMIN_UID_HERE'];
+    }
+
+    function validUsername(name) {
+      return name is string
+        && name.size() >= 3
+        && name.size() <= 18
+        && name.matches('^[a-zA-Z0-9][a-zA-Z0-9_]*$');
+    }
+
+    function onlyKeys(allowed) {
+      return request.resource.data.keys().hasOnly(allowed);
+    }
+
+    function hasAllKeys(required) {
+      return request.resource.data.keys().hasAll(required);
+    }
+
+    function hasKey(key) {
+      return request.resource.data.keys().hasAny([key]);
+    }
+
+    function changedKey(key) {
+      return request.resource.data.diff(resource.data).changedKeys().hasAny([key]);
+    }
+
+    function changedKeysOnly(allowed) {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly(allowed);
+    }
+
+    function validScore(score) {
+      return score is int
+        && score >= 0
+        && score <= 9007199254740991;
+    }
+
+    function validSeasonId(seasonId) {
+      return seasonId is int && seasonId >= 1;
+    }
+
+    function validUpdatedAtNow() {
+      return request.resource.data.updatedAt == request.time;
+    }
+
+    function validSeasonalScoreCreate() {
+      return hasAllKeys(['username', 'score', 'seasonId', 'updatedAt'])
+        && onlyKeys(['username', 'score', 'seasonId', 'updatedAt'])
+        && validUsername(request.resource.data.username)
+        && validSeasonId(request.resource.data.seasonId)
+        && validScore(request.resource.data.score)
+        && validUpdatedAtNow();
+    }
+
+    function validSeasonalScoreUpdate() {
+      return hasAllKeys(['username', 'score', 'seasonId', 'updatedAt'])
+        && onlyKeys(['username', 'score', 'seasonId', 'updatedAt'])
+        && validUsername(request.resource.data.username)
+        && validSeasonId(request.resource.data.seasonId)
+        && validScore(request.resource.data.score)
+        && validUpdatedAtNow()
+        && request.resource.data.updatedAt > resource.data.updatedAt
+        && request.resource.data.seasonId >= resource.data.seasonId
+        && (
+          (request.resource.data.seasonId == resource.data.seasonId
+            && request.resource.data.score >= resource.data.score)
+          ||
+          (request.resource.data.seasonId > resource.data.seasonId)
+        );
+    }
+
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if signedIn()
+        && validUsername(username)
+        && hasAllKeys(['uid', 'createdAt'])
+        && onlyKeys(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if true;
+
+      allow create: if (isOwner(uid) || isAdmin())
+        && hasAllKeys(['username', 'createdAt', 'bestScore', 'gamesPlayed'])
+        && onlyKeys(['username', 'photoURL', 'createdAt', 'bestScore', 'gamesPlayed', 'achievements'])
+        && validUsername(request.resource.data.username)
+        && validScore(request.resource.data.bestScore)
+        && request.resource.data.gamesPlayed is int
+        && request.resource.data.gamesPlayed >= 0
+        && (!hasKey('photoURL') || request.resource.data.photoURL is string || request.resource.data.photoURL == "")
+        && (!hasKey('achievements') || request.resource.data.achievements is list);
+
+      allow update: if (isOwner(uid) || isAdmin())
+        && changedKeysOnly(['username', 'photoURL', 'bestScore', 'gamesPlayed', 'achievements'])
+        && (!changedKey('username') || validUsername(request.resource.data.username))
+        && (!changedKey('bestScore') || (
+              validScore(request.resource.data.bestScore)
+              && request.resource.data.bestScore >= resource.data.bestScore
+            ))
+        && (!changedKey('gamesPlayed') || (
+              request.resource.data.gamesPlayed is int
+              && request.resource.data.gamesPlayed >= resource.data.gamesPlayed
+            ))
+        && (!changedKey('photoURL') || request.resource.data.photoURL is string || request.resource.data.photoURL == "")
+        && (!changedKey('achievements') || request.resource.data.achievements is list);
+
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /achievements/{achievementId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /scores/block-blast/users/{uid} {
+      allow read: if true;
+      allow create: if (isOwner(uid) || isAdmin()) && validSeasonalScoreCreate();
+      allow update: if (isOwner(uid) || isAdmin()) && validSeasonalScoreUpdate();
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /scores/word-guess/users/{uid} {
+      allow read: if true;
+      allow create: if (isOwner(uid) || isAdmin()) && validSeasonalScoreCreate();
+      allow update: if (isOwner(uid) || isAdmin()) && validSeasonalScoreUpdate();
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /scores/which-country/users/{uid} {
+      allow read: if true;
+      allow create: if (isOwner(uid) || isAdmin()) && validSeasonalScoreCreate();
+      allow update: if (isOwner(uid) || isAdmin()) && validSeasonalScoreUpdate();
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /scores/{game}/users/{uid} {
+      allow read: if true;
+      allow create, update: if (isOwner(uid) || isAdmin())
+        && game != 'block-blast'
+        && game != 'word-guess'
+        && game != 'which-country'
+        && hasAllKeys(['username', 'score'])
+        && onlyKeys(['username', 'score', 'updatedAt'])
+        && validUsername(request.resource.data.username)
+        && validScore(request.resource.data.score)
+        && (!hasKey('updatedAt') || request.resource.data.updatedAt is timestamp);
+      allow delete: if (isOwner(uid) || isAdmin())
+        && game != 'block-blast'
+        && game != 'word-guess'
+        && game != 'which-country';
+    }
+
+    match /system/weekly {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && hasAllKeys(['seasonId', 'lastReset', 'nextReset'])
+        && onlyKeys(['seasonId', 'lastReset', 'nextReset'])
+        && request.resource.data.seasonId == 1
+        && request.resource.data.lastReset is timestamp
+        && request.resource.data.nextReset is timestamp
+        && request.resource.data.lastReset <= request.time
+        && request.resource.data.nextReset > request.resource.data.lastReset;
+
+      allow update: if signedIn()
+        && hasAllKeys(['seasonId', 'lastReset', 'nextReset'])
+        && onlyKeys(['seasonId', 'lastReset', 'nextReset'])
+        && resource.data.seasonId is int
+        && resource.data.lastReset is timestamp
+        && resource.data.nextReset is timestamp
+        && request.resource.data.seasonId is int
+        && request.resource.data.lastReset is timestamp
+        && request.resource.data.nextReset is timestamp
+        && request.resource.data.seasonId == resource.data.seasonId + 1
+        && request.time >= resource.data.nextReset
+        && request.resource.data.lastReset > resource.data.lastReset
+        && request.resource.data.lastReset <= request.time
+        && request.resource.data.nextReset > request.resource.data.lastReset;
+
+      allow delete: if false;
+    }
+  }
+}

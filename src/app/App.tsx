@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo } from "react";
+﻿import { Suspense, lazy, useEffect, useMemo } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 
 import Header from "../components/Header";
@@ -15,13 +15,23 @@ import SlitherGame from "../components/slither/SlitherGame";
 import BlockBlastGame from "../components/BlockBlast/BlockBlastGame";
 import TicTacToeGame from "../components/tic-tac-toe/TicTacToeGame";
 import WordGuessGame from "../components/word-guess/WordGuessGame";
-import CrossyRoadGame from "../components/crossy/CrossyRoadGame";
+import ExpoCrossyRoadEmbed from "../components/ExpoCrossyRoadEmbed";
+import WhichCountryGame from "../components/Which contry/WhichCountryGame";
+import HourlyMagicPrompt, { HOURLY_MAGIC_OPEN_EVENT } from "../components/HourlyMagicPrompt";
 
 import Login from "../loginRegistry/Login";
 import Register from "../loginRegistry/Register";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../services/firebase";
-import { checkWeeklyReset } from "../services/resetService";
+import { checkWeeklyReset, getCurrentSeasonId } from "../services/resetService";
+import {
+  awardHallOfFameMedalsByAdmin,
+  awardSeasonMedalsByAdmin,
+  claimSeasonMedalsForUser,
+} from "../services/medalService";
+import { isAdminUid } from "../services/admin";
+
+const SoundShooterGame = lazy(() => import("../components/sound-shooter/SoundShooter"));
 
 function isTypingTarget(el: EventTarget | null) {
   if (!(el instanceof HTMLElement)) return false;
@@ -35,6 +45,7 @@ export default function App() {
   const location = useLocation();
 
   const isSecret = location.pathname === "/secret";
+  const isWhichCountryRoute = location.pathname === "/game/which-country";
 
   // ✅ רשימת כל הנתיבים החוקיים אצלך (כמו ברואטר)
   const knownRoutes = useMemo(
@@ -49,7 +60,9 @@ export default function App() {
       "/game/block-blast",
       "/game/tic-tac-toe",
       "/game/word-guess",
-      "/game/crossy-dash",
+      "/game/expo-crossy-road",
+      "/game/which-country",
+      "/game/sound-shooter",
     ]),
     []
   );
@@ -58,10 +71,28 @@ export default function App() {
   const isNotFound = !knownRoutes.has(location.pathname) && !isProfileRoute;
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, () => {
-      checkWeeklyReset().catch((err) => {
-        console.warn("weekly reset check failed:", err);
-      });
+    const unsub = onAuthStateChanged(auth, (user) => {
+      void (async () => {
+        try {
+          await checkWeeklyReset();
+          if (!user) return;
+
+          const seasonId = await getCurrentSeasonId();
+          if (isAdminUid(user.uid)) {
+            await awardHallOfFameMedalsByAdmin();
+            if (seasonId > 1) {
+              await awardSeasonMedalsByAdmin(seasonId - 1);
+            }
+            return;
+          }
+
+          if (seasonId <= 1) return;
+
+          await claimSeasonMedalsForUser(user.uid, seasonId - 1);
+        } catch (err) {
+          console.warn("weekly reset/medal claim failed:", err);
+        }
+      })();
     });
 
     return () => unsub();
@@ -70,6 +101,14 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
+
+      const isStarKey = e.key === "*" || e.code === "NumpadMultiply";
+
+      if (isStarKey) {
+        e.preventDefault();
+        window.dispatchEvent(new Event(HOURLY_MAGIC_OPEN_EVENT));
+        return;
+      }
 
       if (e.code === "Space") {
         e.preventDefault();
@@ -83,33 +122,53 @@ export default function App() {
   }, [navigate]);
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout${isWhichCountryRoute ? " is-which-country-route" : ""}`}>
       {/* ✅ אין Header בעמוד הסודי וגם ב-NotFound */}
       {!isSecret && !isNotFound && <Header />}
+      <div className="app-body">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+          <Route path="/game/connect-four" element={<Game />} />
+          <Route path="/game/checkers" element={<CheckersGame />} />
+          <Route path="/game/slither" element={<SlitherGame />} />
+          <Route path="/game/block-blast" element={<BlockBlastGame />} />
+          <Route path="/game/tic-tac-toe" element={<TicTacToeGame />} />
+          <Route path="/game/word-guess" element={<WordGuessGame />} />
+          <Route path="/game/expo-crossy-road" element={<ExpoCrossyRoadEmbed />} />
+          <Route path="/game/which-country" element={<WhichCountryGame />} />
+          <Route
+            path="/game/sound-shooter"
+            element={(
+              <Suspense
+                fallback={(
+                  <main className="game-page">
+                    <p>Loading Sound Shooter...</p>
+                  </main>
+                )}
+              >
+                <SoundShooterGame />
+              </Suspense>
+            )}
+          />
 
-        <Route path="/game/connect-four" element={<Game />} />
-        <Route path="/game/checkers" element={<CheckersGame />} />
-        <Route path="/game/slither" element={<SlitherGame />} />
-        <Route path="/game/block-blast" element={<BlockBlastGame />} />
-        <Route path="/game/tic-tac-toe" element={<TicTacToeGame />} />
-        <Route path="/game/word-guess" element={<WordGuessGame />} />
-        <Route path="/game/crossy-dash" element={<CrossyRoadGame />} />
+          <Route path="/profile/:uid" element={<Profile />} />
 
-        <Route path="/profile/:uid" element={<Profile />} />
+          <Route path="/secret" element={<Secret />} />
 
-        <Route path="/secret" element={<Secret />} />
+          {/* ✅ תמיד בסוף */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
 
-        {/* ✅ תמיד בסוף */}
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+        {/* ✅ Footer יופיע בכל מקום חוץ מעמוד סודי וגם ב-NotFound (אם בא לך גם להסתיר שם) */}
+        {!isSecret && !isNotFound && !isWhichCountryRoute && <Footer />}
+      </div>
 
-      {/* ✅ Footer יופיע בכל מקום חוץ מעמוד סודי וגם ב-NotFound (אם בא לך גם להסתיר שם) */}
-      {!isSecret && !isNotFound && <Footer />}
+      <HourlyMagicPrompt />
     </div>
   );
 }
+
+

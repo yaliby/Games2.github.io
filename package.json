@@ -5,19 +5,30 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run verify:crossy-embed",
+    "verify:crossy-embed": "node scripts/verify-crossy-embed.mjs",
+    "sync:crossy-web": "node scripts/sync-crossy-web.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/d3-geo": "^3.1.0",
+    "@types/geojson": "^7946.0.16",
+    "@types/topojson-client": "^3.1.5",
+    "canvas-confetti": "^1.9.4",
+    "d3-geo": "^3.1.1",
     "firebase": "^12.8.0",
+    "framer-motion": "^12.34.0",
+    "lucide-react": "^0.564.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^6.28.0",
-    "three": "^0.182.0"
+    "three": "^0.182.0",
+    "topojson-client": "^3.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",

@@ -13,7 +13,7 @@ import { auth, db  } from "../../services/firebase";
 import { submitBlockBlastScore } from "../../services/scoreService";
 import UserBox from "../UserBox/UserBox";
 import { checkWeeklyReset } from "../../services/resetService";
-import { doc, onSnapshot, collection } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, orderBy, limit } from "firebase/firestore";
 
 
 
@@ -34,6 +34,25 @@ function calculateTileSize(): number {
   const scale = Math.min(scaleX, scaleY, 1);
   
   return Math.max(25, Math.floor(baseTile * scale));
+}
+
+const MAX_SAFE_SCORE = Number.MAX_SAFE_INTEGER;
+
+function normalizeScore(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.min(MAX_SAFE_SCORE, Math.floor(numeric));
+}
+
+function addScoreSafely(current: number, delta: number): number {
+  const safeCurrent = normalizeScore(current);
+  const safeDelta = normalizeScore(delta);
+
+  if (safeCurrent >= MAX_SAFE_SCORE) return MAX_SAFE_SCORE;
+  if (safeDelta === 0) return safeCurrent;
+
+  const room = MAX_SAFE_SCORE - safeCurrent;
+  return safeDelta > room ? MAX_SAFE_SCORE : safeCurrent + safeDelta;
 }
 
 const PALETTE = [
@@ -98,6 +117,159 @@ type GameState = {
   gameOver: boolean;
   scoreSubmitted: boolean;
 };
+
+const BLOCK_BLAST_SAVE_KEY = "gameshub:block-blast:state:v1";
+const BLOCK_BLAST_SAVE_INTERVAL_MS = 1200;
+const BLOCK_BLAST_SNAPSHOT_VERSION = 1;
+
+type BlockBlastTraySnapshot = {
+  shapeIdx: number;
+  colorId: number;
+};
+
+type BlockBlastSnapshot = {
+  v: number;
+  savedAt: number;
+  board: number[][];
+  tray: BlockBlastTraySnapshot[];
+  score: number;
+  gameOver: boolean;
+  comboTier: number;
+  comboStreakTurns: number;
+  trayHadAnyClear: boolean;
+};
+
+type RestoredBlockBlastState = {
+  board: Board;
+  tray: TrayBlock[];
+  score: number;
+  gameOver: boolean;
+  comboTier: number;
+  comboStreakTurns: number;
+  trayHadAnyClear: boolean;
+};
+
+const BLOCK_SIGNATURE_TO_INDEX = new Map<string, number>(
+  BLOCKS.map((shape, idx) => [shapeSignature(shape), idx])
+);
+
+function shapeSignature(shape: BlockShape): string {
+  return shape
+    .map((p) => `${p.r}:${p.c}`)
+    .sort()
+    .join("|");
+}
+
+function toFiniteInt(value: unknown, fallback = 0): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.floor(n);
+}
+
+function normalizeColorId(value: unknown): number {
+  return Math.max(1, toFiniteInt(value, 1));
+}
+
+function findShapeIndex(shape: BlockShape): number {
+  const byRef = BLOCKS.findIndex((candidate) => candidate === shape);
+  if (byRef >= 0) return byRef;
+  return BLOCK_SIGNATURE_TO_INDEX.get(shapeSignature(shape)) ?? -1;
+}
+
+function normalizeBoardSnapshot(input: unknown): Board | null {
+  if (!Array.isArray(input) || input.length !== ROWS) return null;
+
+  const board: number[][] = [];
+  for (let r = 0; r < ROWS; r++) {
+    const rawRow = input[r];
+    if (!Array.isArray(rawRow) || rawRow.length !== COLS) return null;
+    board.push(rawRow.map((cell) => normalizeScore(cell)));
+  }
+
+  return board as Board;
+}
+
+function normalizeTraySnapshot(input: unknown): TrayBlock[] | null {
+  if (!Array.isArray(input) || input.length > 3) return null;
+
+  const tray: TrayBlock[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") return null;
+    const raw = item as Partial<BlockBlastTraySnapshot>;
+    const shapeIdx = toFiniteInt(raw.shapeIdx, -1);
+    if (shapeIdx < 0 || shapeIdx >= BLOCKS.length) return null;
+
+    tray.push({
+      shape: BLOCKS[shapeIdx],
+      colorId: normalizeColorId(raw.colorId),
+    });
+  }
+
+  return tray;
+}
+
+function parseBlockBlastSnapshot(raw: string): RestoredBlockBlastState | null {
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+  const snapshot = parsed as Partial<BlockBlastSnapshot>;
+  if (toFiniteInt(snapshot.v, 0) !== BLOCK_BLAST_SNAPSHOT_VERSION) return null;
+
+  const board = normalizeBoardSnapshot(snapshot.board);
+  if (!board) return null;
+
+  const tray = normalizeTraySnapshot(snapshot.tray);
+  if (!tray) return null;
+
+  return {
+    board,
+    tray: tray.length > 0 ? tray : pickTrayGuaranteed(board),
+    score: normalizeScore(snapshot.score),
+    gameOver: Boolean(snapshot.gameOver),
+    comboTier: Math.max(1, toFiniteInt(snapshot.comboTier, 1)),
+    comboStreakTurns: Math.max(0, toFiniteInt(snapshot.comboStreakTurns, 0)),
+    trayHadAnyClear: Boolean(snapshot.trayHadAnyClear),
+  };
+}
+
+function toBlockBlastSnapshot(
+  game: GameState,
+  comboTier: number,
+  comboStreakTurns: number,
+  trayHadAnyClear: boolean
+): BlockBlastSnapshot | null {
+  const tray = game.tray
+    .map((item) => {
+      const shapeIdx = findShapeIndex(item.shape);
+      if (shapeIdx < 0) return null;
+      return {
+        shapeIdx,
+        colorId: normalizeColorId(item.colorId),
+      };
+    })
+    .filter((item): item is BlockBlastTraySnapshot => item !== null);
+
+  if (tray.length !== game.tray.length) return null;
+
+  const board = game.board.map((row) => row.map((cell) => normalizeScore(cell)));
+
+  return {
+    v: BLOCK_BLAST_SNAPSHOT_VERSION,
+    savedAt: Date.now(),
+    board,
+    tray,
+    score: normalizeScore(game.score),
+    gameOver: game.gameOver,
+    comboTier: Math.max(1, toFiniteInt(comboTier, 1)),
+    comboStreakTurns: Math.max(0, toFiniteInt(comboStreakTurns, 0)),
+    trayHadAnyClear: Boolean(trayHadAnyClear),
+  };
+}
 
 
 /* ================= COMPONENT ================= */
@@ -278,6 +450,7 @@ export default function BlockBlastGame() {
   const [scoreUI, setScoreUI] = useState(0);
   const [bestScoreUI, setBestScoreUI] = useState(0);
   const [leaderboard, setLeaderboard] = useState<Array<{ uid: string; score: number }>>([]);
+  const [hallOfFame, setHallOfFame] = useState<Array<{ uid: string; score: number }>>([]);
   const [currentSeasonId, setCurrentSeasonId] = useState<number | null>(null);
   const [tileSize, setTileSize] = useState<number>(calculateTileSize());
 
@@ -304,6 +477,86 @@ export default function BlockBlastGame() {
 
   const TRAY_HEIGHT = useMemo(() => Math.floor(tileSize * 3.2), [tileSize]);
   const boardPx = useMemo(() => ({ w: COLS * tileSize, h: ROWS * tileSize }), [tileSize]);
+
+  const saveSnapshotRef = useRef<() => void>(() => {});
+  saveSnapshotRef.current = () => {
+    if (screen !== "GAME") return;
+
+    const snapshot = toBlockBlastSnapshot(
+      gameRef.current,
+      comboTierRef.current,
+      comboStreakTurnsRef.current,
+      trayHadAnyClearRef.current
+    );
+    if (!snapshot) return;
+
+    try {
+      window.localStorage.setItem(BLOCK_BLAST_SAVE_KEY, JSON.stringify(snapshot));
+    } catch (err) {
+      console.warn("block blast local save failed:", err);
+    }
+  };
+
+  useEffect(() => {
+    let restored: RestoredBlockBlastState | null = null;
+
+    try {
+      const raw = window.localStorage.getItem(BLOCK_BLAST_SAVE_KEY);
+      if (!raw) return;
+      restored = parseBlockBlastSnapshot(raw);
+      if (!restored) {
+        window.localStorage.removeItem(BLOCK_BLAST_SAVE_KEY);
+        return;
+      }
+    } catch (err) {
+      console.warn("block blast restore failed:", err);
+      return;
+    }
+
+    gameRef.current = {
+      board: restored.board,
+      tray: restored.tray,
+      score: restored.score,
+      drag: null,
+      flash: null,
+      comboAnim: null,
+      gameOver: restored.gameOver,
+      scoreSubmitted: false,
+    };
+    comboTierRef.current = restored.comboTier;
+    comboStreakTurnsRef.current = restored.comboStreakTurns;
+    trayHadAnyClearRef.current = restored.trayHadAnyClear;
+    lastToastMultRef.current = restored.comboTier;
+
+    setScoreUI(restored.score);
+    setBestScoreUI((prev) => (restored.score > prev ? restored.score : prev));
+    setScreen("GAME");
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "GAME") return;
+
+    const persistNow = () => {
+      saveSnapshotRef.current();
+    };
+
+    const intervalId = window.setInterval(persistNow, BLOCK_BLAST_SAVE_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        persistNow();
+      }
+    };
+
+    window.addEventListener("beforeunload", persistNow);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      persistNow();
+      window.clearInterval(intervalId);
+      window.removeEventListener("beforeunload", persistNow);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [screen]);
 
   // Handle window resize
   useEffect(() => {
@@ -364,10 +617,13 @@ export default function BlockBlastGame() {
           }
 
           const data = snap.data() as any;
-          const seasonId = Number(data?.seasonId ?? 0) || 0;
-          const score = Number(data?.score ?? 0) || 0;
+          const seasonId = normalizeScore(data?.seasonId);
+          const score = normalizeScore(data?.score);
 
-          setBestScoreUI(seasonId === currentSeasonId ? score : 0);
+          setBestScoreUI((prev) => {
+            if (seasonId !== currentSeasonId) return 0;
+            return score > prev ? score : prev;
+          });
         },
         (err) => {
           console.warn("bestScore listener failed:", err);
@@ -398,8 +654,8 @@ useEffect(() => {
           const data = d.data() as any;
           return {
             uid: d.id,
-            score: Number(data?.score ?? 0) || 0,
-            seasonId: Number(data?.seasonId ?? 0) || 0,
+            score: normalizeScore(data?.score),
+            seasonId: normalizeScore(data?.seasonId),
           };
         })
         .filter((row) => row.seasonId === currentSeasonId)
@@ -414,6 +670,35 @@ useEffect(() => {
 
   return () => unsub();
 }, [currentSeasonId]);
+
+useEffect(() => {
+  const hallQuery = query(
+    collection(db, "users"),
+    orderBy("bestScore", "desc"),
+    limit(3)
+  );
+
+  const unsub = onSnapshot(
+    hallQuery,
+    (snap) => {
+      const rows = snap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          return {
+            uid: d.id,
+            score: normalizeScore(data?.bestScore),
+          };
+        })
+        .filter((row) => row.score > 0)
+        .slice(0, 3);
+
+      setHallOfFame(rows);
+    },
+    (err) => console.warn("hall of fame listener failed:", err)
+  );
+
+  return () => unsub();
+}, []);
 /* ================= GAME CONTROL ================= */
 
   const triggerShake = (strength: 'sm' | 'md' | 'lg' | 'xl' = 'sm') => {
@@ -469,6 +754,12 @@ const pulseBoard = (level: number) => {
   comboStreakTurnsRef.current = 0;
   trayHadAnyClearRef.current = false;
   lastToastMultRef.current = 1;
+
+  try {
+    window.localStorage.removeItem(BLOCK_BLAST_SAVE_KEY);
+  } catch (err) {
+    console.warn("block blast clear local save failed:", err);
+  }
 };
 
 
@@ -864,16 +1155,17 @@ if (cleared > 0) {
 const placedCells = drag.block.shape.length;
 const placementScore = placedCells * 12;
 const clearScore = res.cleared * 140;
-const gained = Math.round(placementScore + (clearScore * comboTierRef.current));
+const gained = normalizeScore(Math.round(placementScore + (clearScore * comboTierRef.current)));
+const nextScore = addScoreSafely(g.score, gained);
 
-g.score += gained;
-setScoreUI(g.score);
+g.score = nextScore;
+setScoreUI(nextScore);
 
 // ✅ עדכון UI מיידי (לא מחכה למסד)
-setBestScoreUI((prev) => (g.score > prev ? g.score : prev));
+setBestScoreUI((prev) => (nextScore > prev ? nextScore : prev));
 
 // ✅ ניסיון עדכון למסד (רק אם עקפנו)
-tryPushBestScore(g.score);
+tryPushBestScore(nextScore);
 
 // remove used tray block
 g.tray.splice(drag.index, 1);
@@ -974,34 +1266,100 @@ g.gameOver = !anyMoveExists(g.board, g.tray.map((b) => b.shape));
   }, [screen, boardPx.h, boardPx.w, tileSize]);
 
 const bestScoreRef = useRef(0);
-useEffect(() => { bestScoreRef.current = bestScoreUI; }, [bestScoreUI]);
+useEffect(() => {
+  bestScoreRef.current = normalizeScore(bestScoreUI);
+}, [bestScoreUI]);
 
 const bestUpdateInFlight = useRef(false);
+const pendingBestScoreRef = useRef(0);
+const pendingBestUidRef = useRef<string | null>(null);
+const bestFlushTimerRef = useRef<number | null>(null);
 const lastBestUpdateAt = useRef(0);
 const BEST_UPDATE_COOLDOWN_MS = 1200;
 
+
+const scheduleBestScoreFlush = (delayMs: number) => {
+  if (bestFlushTimerRef.current !== null) return;
+
+  bestFlushTimerRef.current = window.setTimeout(() => {
+    bestFlushTimerRef.current = null;
+    flushBestScoreUpdate();
+  }, Math.max(0, delayMs));
+};
+
+const flushBestScoreUpdate = () => {
+  const user = auth.currentUser;
+  if (!user) {
+    pendingBestScoreRef.current = 0;
+    pendingBestUidRef.current = null;
+    return;
+  }
+
+  if (pendingBestUidRef.current !== user.uid) {
+    pendingBestScoreRef.current = 0;
+    pendingBestUidRef.current = user.uid;
+    return;
+  }
+
+  if (bestUpdateInFlight.current) return;
+
+  const targetScore = pendingBestScoreRef.current;
+  if (targetScore <= bestScoreRef.current) {
+    pendingBestScoreRef.current = 0;
+    return;
+  }
+
+  const now = Date.now();
+  const waitMs = BEST_UPDATE_COOLDOWN_MS - (now - lastBestUpdateAt.current);
+  if (waitMs > 0) {
+    scheduleBestScoreFlush(waitMs);
+    return;
+  }
+
+  bestUpdateInFlight.current = true;
+  lastBestUpdateAt.current = now;
+
+  submitBlockBlastScore(user.uid, targetScore)
+    .then(() => {
+      bestScoreRef.current = Math.max(bestScoreRef.current, targetScore);
+      if (pendingBestScoreRef.current <= targetScore) {
+        pendingBestScoreRef.current = 0;
+      }
+    })
+    .catch((e) => console.warn("bestScore update failed:", e))
+    .finally(() => {
+      bestUpdateInFlight.current = false;
+      if (pendingBestScoreRef.current > bestScoreRef.current) {
+        flushBestScoreUpdate();
+      }
+    });
+};
 
 const tryPushBestScore = (score: number) => {
   const user = auth.currentUser;
   if (!user) return;
 
-  // ✅ לא שולחים אם לא עקפנו את הבסט הידוע כרגע
-  if (score <= bestScoreRef.current) return;
+  const safeScore = normalizeScore(score);
+  pendingBestUidRef.current = user.uid;
 
-  // ✅ throttle כדי לא לירות למסד בכל פריים/מהלך
-  const now = Date.now();
-  if (bestUpdateInFlight.current) return;
-  if (now - lastBestUpdateAt.current < BEST_UPDATE_COOLDOWN_MS) return;
-
-  bestUpdateInFlight.current = true;
-  lastBestUpdateAt.current = now;
-
-  submitBlockBlastScore(user.uid, score)
-    .catch((e) => console.warn("bestScore update failed:", e))
-    .finally(() => {
-      bestUpdateInFlight.current = false;
-    });
+  if (safeScore <= bestScoreRef.current && safeScore <= pendingBestScoreRef.current) return;
+  pendingBestScoreRef.current = Math.max(pendingBestScoreRef.current, safeScore);
+  flushBestScoreUpdate();
 };
+
+useEffect(() => {
+  return () => {
+    if (bestFlushTimerRef.current !== null) {
+      window.clearTimeout(bestFlushTimerRef.current);
+    }
+  };
+}, []);
+
+const hallOfFamePodium = [
+  { rank: 2, row: hallOfFame[1], pillar: 94, color: '#C8D5F7', bg: 'rgba(200,213,247,.11)' },
+  { rank: 1, row: hallOfFame[0], pillar: 124, color: '#FFD34A', bg: 'rgba(255,211,74,.14)' },
+  { rank: 3, row: hallOfFame[2], pillar: 78, color: '#D8A57A', bg: 'rgba(216,165,122,.11)' },
+];
 
 
 
@@ -1655,6 +2013,105 @@ if (screen === 'MENU') {
           <div style={{ opacity: 0.65, color: '#BFD2FF', fontSize: 12, lineHeight: 1.35 }}>
             השיאים מתעדכנים בזמן אמת 🔥
           </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '0 clamp(12px, 3vw, 30px) clamp(20px, 4vw, 34px)' }}>
+        <div
+          style={{
+            width: 'min(980px, 100%)',
+            borderRadius: 22,
+            background: 'rgba(8,10,18,.68)',
+            border: '1px solid rgba(120,150,255,.14)',
+            boxShadow: '0 20px 60px rgba(0,0,0,.45)',
+            padding: 'clamp(12px, 2.5vw, 20px)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+            <div style={{ color: '#BFD2FF', fontWeight: 900, letterSpacing: '0.08em', fontSize: 13 }}>
+              HALL OF FAME
+            </div>
+            <div
+              style={{
+                padding: '4px 10px',
+                borderRadius: 999,
+                border: '1px solid rgba(255,211,74,.30)',
+                background: 'rgba(255,211,74,.10)',
+                color: '#FFE8A4',
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: '0.08em',
+              }}
+            >
+              ALL-TIME TOP 3
+            </div>
+          </div>
+
+          {hallOfFame.length === 0 ? (
+            <div style={{ color: '#BFD2FF', opacity: 0.74, fontSize: 13 }}>No all-time records yet.</div>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'end',
+                gap: 'clamp(8px, 2vw, 20px)',
+                flexWrap: 'wrap',
+              }}
+            >
+              {hallOfFamePodium.map((slot) => (
+                <div
+                  key={slot.rank}
+                  style={{
+                    width: 'clamp(105px, 22vw, 190px)',
+                    display: 'grid',
+                    gap: 8,
+                    justifyItems: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      minHeight: 48,
+                      borderRadius: 12,
+                      border: `1px solid ${slot.color}33`,
+                      background: 'rgba(12,16,30,.72)',
+                      padding: '6px 8px',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    {slot.row ? (
+                      <UserBox userId={slot.row.uid} />
+                    ) : (
+                      <div style={{ color: '#BFD2FF', opacity: 0.66, fontSize: 12 }}>Waiting...</div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      width: '100%',
+                      height: slot.pillar,
+                      borderRadius: '14px 14px 10px 10px',
+                      border: `1px solid ${slot.color}55`,
+                      background: slot.bg,
+                      display: 'grid',
+                      alignContent: 'center',
+                      justifyItems: 'center',
+                      gap: 3,
+                    }}
+                  >
+                    <div style={{ color: slot.color, fontWeight: 900, fontSize: 26, lineHeight: 1 }}>
+                      #{slot.rank}
+                    </div>
+                    <div style={{ color: '#EAF0FF', fontWeight: 900, fontSize: 14 }}>
+                      {slot.row ? slot.row.score.toLocaleString() : '0'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>

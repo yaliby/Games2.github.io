@@ -221,7 +221,9 @@ export default function ConnectFourGame() {
               const uid = auth.currentUser?.uid;
               if (uid) {
                 medalAwardedRef.current = true;
-                addAchievement(uid, 'cf_bot_master').catch(() => {});
+                addAchievement(uid, 'cf_bot_master').catch((err) => {
+                  console.warn('connect-four medal grant failed:', err);
+                });
               }
             }
           } else if (isDraw(g.board)) {

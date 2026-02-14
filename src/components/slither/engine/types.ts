@@ -117,6 +117,12 @@ export type PelletGrid = {
   usedKeys: number[];
 };
 
+export type HeadBustEvent = {
+  snakeAId: string;
+  snakeBId: string;
+  atTick: number;
+};
+
 export type World = {
   radius: number;
   tick: number;
@@ -153,6 +159,8 @@ export type World = {
   events?: {
     playerDiedAt?: number; // world.tick timestamp
     lastKillAt?: number;
+    headBust?: HeadBustEvent;
+    headBustResolvedAt?: number;
   };
 };
 

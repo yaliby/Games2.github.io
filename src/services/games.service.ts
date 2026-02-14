@@ -8,6 +8,8 @@ export function getGames(): Game[] {
     {id: '4',title: 'Block Blast',image: 'Screenshot 2026-01-23 151215.png',path: '/game/block-blast'},
     {id: '5',title: 'איקס עיגול',image: 'Screenshot 2026-02-06 183007.png',path: '/game/tic-tac-toe'},
     {id: '6',title: 'Word Guess',image: 'Cosmic word puzzle challenge.png',path: '/game/word-guess'},
-    {id: '7',title: 'Crossy Dash',image: 'Screenshot 2026-02-07 134537.png',path: '/game/crossy-dash'},
+    {id: '7',title: 'Crossy Dash',image: 'Screenshot 2026-02-07 134537.png',path: '/game/expo-crossy-road'},
+    {id: '8',title: 'Which country',image: 'Screenshot 2026-02-14 191129.png',path: '/game/which-country'},
+    {id: '9',title: 'Russian Shooter',image: 'Screenshot 2026-02-14 225050.png',path: '/game/sound-shooter'},
   ];
 }

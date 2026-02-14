@@ -1,4 +1,4 @@
-import type { Pellet, Snake, StepInput, Vec, World, WorldConfig, SpatialGrid, PelletGrid } from './types';
+import type { HeadBustEvent, Pellet, Snake, StepInput, Vec, World, WorldConfig, SpatialGrid, PelletGrid } from './types';
 
 const TAU = Math.PI * 2;
 
@@ -903,6 +903,28 @@ function killSnake(world: World, victim: Snake, killer: Snake | null) {
   }
 }
 
+function queueHeadBust(world: World, a: Snake, b: Snake) {
+  world.events = world.events ?? {};
+  if (world.events.headBust) return;
+
+  const evt: HeadBustEvent = {
+    snakeAId: a.id,
+    snakeBId: b.id,
+    atTick: world.tick,
+  };
+  world.events.headBust = evt;
+}
+
+function resolveBotHeadBust(world: World, a: Snake, b: Snake) {
+  const aPower = (a.score || a.desiredLen) + a.kills * 4 + rand(-16, 16);
+  const bPower = (b.score || b.desiredLen) + b.kills * 4 + rand(-16, 16);
+  if (aPower >= bPower) {
+    killSnake(world, b, a);
+  } else {
+    killSnake(world, a, b);
+  }
+}
+
 // -------------------- Collisions (spatial grid) --------------------
 
 function gridKey(cx: number, cy: number, cols: number) {
@@ -1091,6 +1113,9 @@ function rebuildCollisionGrid(world: World) {
 }
 
 function checkSnakeCollisions(world: World) {
+  // During a headbust duel, collisions are temporarily frozen.
+  if (world.events?.headBust) return;
+
   const grid = ensureGrid(world);
 
   // First check head-to-head collisions
@@ -1118,9 +1143,14 @@ function checkSnakeCollisions(world: World) {
         const d2Now = dist2(h1, h2);
         const d2Swept = dist2SegmentSegment(h1px, h1py, h1.x, h1.y, h2px, h2py, h2.x, h2.y);
         if (d2Now <= rSum * rSum || d2Swept <= rSum * rSum) {
-          // Head-to-head collision: both die (Slither-like).
-          killSnake(world, s1, s2);
-          killSnake(world, s2, s1);
+          // Player-involved head clash is resolved in the HEADBUST screen.
+          if (s1.isPlayer || s2.isPlayer) {
+            queueHeadBust(world, s1, s2);
+            return;
+          }
+
+          // Bot-vs-bot clashes no longer kill both; one wins and survives.
+          resolveBotHeadBust(world, s1, s2);
         }
       }
   }
@@ -1299,7 +1329,40 @@ export function createWorld(cfg: WorldConfig): World {
   return world;
 }
 
+export function resolveHeadBust(world: World, winnerId: string, loserId: string) {
+  if (winnerId === loserId) {
+    world.events = world.events ?? {};
+    world.events.headBust = undefined;
+    world.events.headBustResolvedAt = world.tick;
+    return false;
+  }
+
+  const winner = world.snakes.find((s) => s.id === winnerId) ?? null;
+  const loser = world.snakes.find((s) => s.id === loserId) ?? null;
+
+  if (!winner || !loser) {
+    world.events = world.events ?? {};
+    world.events.headBust = undefined;
+    world.events.headBustResolvedAt = world.tick;
+    return false;
+  }
+
+  if (loser.alive) {
+    killSnake(world, loser, winner.alive ? winner : null);
+  }
+
+  world.events = world.events ?? {};
+  world.events.headBust = undefined;
+  world.events.headBustResolvedAt = world.tick;
+  return true;
+}
+
 export function stepWorld(world: World, input: StepInput, dt: number) {
+  if (world.events?.headBust) {
+    world._dtLast = 0;
+    return;
+  }
+
   world.tick += dt;
   world._dtLast = dt;
 
@@ -1501,33 +1564,10 @@ export function stepWorld(world: World, input: StepInput, dt: number) {
     world._leaderboardAcc = 0;
 
     const N = 6;
-    const top: { id: string; name: string; score: number; color: string }[] = [];
-    for (let i = 0; i < world.snakes.length; i++) {
-      const s = world.snakes[i];
-      if (!s.alive) continue;
-      const item = { id: s.id, name: s.name, score: s.score, color: s.color };
-
-      let j = top.length;
-      if (j < N) {
-        top.push(item);
-      } else if (item.score <= top[j - 1].score) {
-        continue;
-      } else {
-        top[j - 1] = item;
-      }
-
-      while (j > 0) {
-        const a = top[j - 1];
-        const b = top[j];
-        if (!b || a.score >= b.score) break;
-        top[j - 1] = b;
-        top[j] = a;
-        j--;
-      }
-
-      if (top.length > N) top.length = N;
-    }
-
-    world.leaderboard = top;
+    world.leaderboard = world.snakes
+      .filter((s) => s.alive)
+      .map((s) => ({ id: s.id, name: s.name, score: s.score, color: s.color }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, N);
   }
 }
