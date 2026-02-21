@@ -15,5 +15,6 @@ export function getGames(): Game[] {
     {id: '11',title: 'Coyote Flapy',image: 'Screenshot 2026-02-20 140254.png',path: '/game/coyote-flapy'},
     {id: '12',title: 'SysTris',image: 'Screenshot_20260221_014939.png',path: '/game/systris'},
     {id: '13',title: '6767',image: 'Screenshot_20260221_165024.png',path: '/game/6767'},
+    {id: '14',title: 'BlobBlast',image: 'Screenshot_20260221_223512.png',path: '/game/blob-blast'},
   ];
 }

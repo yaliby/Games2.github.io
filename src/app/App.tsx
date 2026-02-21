@@ -13,6 +13,7 @@ import Profile from "../pages/Profile";
 import CheckersGame from "../components/checkers/CheckersGame";
 import SlitherGame from "../components/slither/SlitherGame";
 import BlockBlastGame from "../components/BlockBlast/BlockBlastGame";
+import BlobBlastGame from "../components/BlobBlast/BlobBlastGame";
 import TicTacToeGame from "../components/tic-tac-toe/TicTacToeGame";
 import WordGuessGame from "../components/word-guess/WordGuessGame";
 import ExpoCrossyRoadEmbed from "../components/ExpoCrossyRoadEmbed";
@@ -54,6 +55,7 @@ export default function App() {
       "/game/checkers",
       "/game/slither",
       "/game/block-blast",
+      "/game/blob-blast",
       "/game/tic-tac-toe",
       "/game/word-guess",
       "/game/expo-crossy-road",
@@ -112,6 +114,7 @@ export default function App() {
           <Route path="/game/checkers" element={<CheckersGame />} />
           <Route path="/game/slither" element={<SlitherGame />} />
           <Route path="/game/block-blast" element={<BlockBlastGame />} />
+          <Route path="/game/blob-blast" element={<BlobBlastGame />} />
           <Route path="/game/tic-tac-toe" element={<TicTacToeGame />} />
           <Route path="/game/word-guess" element={<WordGuessGame />} />
           <Route path="/game/expo-crossy-road" element={<ExpoCrossyRoadEmbed />} />
