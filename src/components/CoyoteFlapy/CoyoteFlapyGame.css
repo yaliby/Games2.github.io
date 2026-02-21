@@ -1,0 +1,612 @@
+/* ══════════════════════════════════════════════════════════
+   COYOTE FLAPY  v5  —  "Desert Legend"
+   Theme: deep cosmic desert · golden hour · boss pulse
+   Palette: midnight ink · amber fire · terracotta · cyan gem
+   Font:   Georgia serif (display) + system-ui (labels/UI)
+══════════════════════════════════════════════════════════ */
+
+/* ── Reset ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ══════════════════════════════════════════════════════════
+   PAGE SHELL
+══════════════════════════════════════════════════════════ */
+.cfp-page {
+  min-height: 100svh;
+  display: grid;
+  justify-items: center;
+  align-items: flex-start;
+  padding: 1.4rem 0.75rem 2rem;
+
+  /* Rich dark background with ambient glow & grain */
+  background-color: #080610;
+  background-image:
+    radial-gradient(ellipse 80% 55% at 50% -5%,  rgba(185,70,10,0.14)   0%, transparent 65%),
+    radial-gradient(ellipse 50% 40% at 85% 100%,  rgba(60,10,120,0.12)   0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.80' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+  background-attachment: fixed;
+
+  font-family: 'Georgia', 'Times New Roman', serif;
+  color: #f0e8d8;
+}
+
+.cfp-layout {
+  width: min(980px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 460px) minmax(220px, 300px);
+  gap: 0.9rem;
+  align-items: start;
+  justify-content: center;
+}
+
+/* ══════════════════════════════════════════════════════════
+   CARD
+══════════════════════════════════════════════════════════ */
+.cfp-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.80rem;
+  padding: 1.0rem 1.0rem 1.15rem;
+
+  border-radius: 24px;
+  background: linear-gradient(
+    150deg,
+    rgba(245, 166, 35, 0.10) 0%,
+    rgba(255, 107, 53, 0.07) 48%,
+    rgba(8,   5,  22, 0.20) 100%
+  );
+  border: 1px solid rgba(245, 166, 35, 0.18);
+  box-shadow:
+    0 36px 80px rgba(0, 0, 0, 0.75),
+    0  0   0 1px rgba(255, 255, 255, 0.05) inset,
+    0  1px 0 rgba(255, 210, 110, 0.12) inset;
+
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+  outline: none;
+
+  animation: cfp-entrance 0.50s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: box-shadow 0.20s ease;
+}
+
+.cfp-card:focus-visible {
+  box-shadow:
+    0 36px 80px rgba(0, 0, 0, 0.75),
+    0 0 0 3px rgba(245, 166, 35, 0.55);
+}
+
+/* ══════════════════════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════════════════════ */
+.cfp-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.20rem;
+}
+
+.cfp-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cfp-title {
+  font-size: 1.40rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #f5d78e;
+  letter-spacing: 0.03em;
+  text-shadow:
+    0 2px 16px rgba(245, 166, 35, 0.55),
+    0 0   4px  rgba(245, 166, 35, 0.28);
+}
+
+.cfp-hint {
+  font-size: 0.76rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: rgba(255, 255, 255, 0.38);
+  letter-spacing: 0.022em;
+}
+
+/* ── Pause button ─── */
+.cfp-pause-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(245, 166, 35, 0.35);
+  background: rgba(245, 166, 35, 0.08);
+  color: #ffd8a0;
+  border-radius: 999px;
+  padding: 0.28rem 0.70rem;
+  font: 700 0.66rem/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.10s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cfp-pause-btn:hover { background: rgba(245,166,35,0.18); border-color: rgba(245,166,35,0.55); }
+.cfp-pause-btn:active { transform: translateY(1px); }
+.cfp-pause-btn.is-paused {
+  background: #ffd166;
+  border-color: #ffd166;
+  color: #1a0e04;
+  box-shadow: 0 0 12px rgba(255,209,102,0.45);
+}
+
+/* ══════════════════════════════════════════════════════════
+   CANVAS
+══════════════════════════════════════════════════════════ */
+.cfp-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 18px;
+  border: 1px solid rgba(245, 166, 35, 0.15);
+  touch-action: none;
+  box-shadow:
+    0 12px 44px rgba(0, 0, 0, 0.62),
+    0  0   0 1px rgba(255, 255, 255, 0.04) inset,
+    0  2px 0 rgba(245, 166, 35, 0.07) inset;
+  /* Crisp pixels — important for canvas games */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ══════════════════════════════════════════════════════════
+   FOOTER STATS
+══════════════════════════════════════════════════════════ */
+.cfp-footer {
+  display: flex;
+  gap: 0.55rem;
+}
+
+/* ── Base stat box ─── */
+.cfp-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.10rem;
+  padding: 0.48rem 0.45rem 0.54rem;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(245, 166, 35, 0.14);
+  min-width: 0;
+  transition: border-color 0.22s, background 0.22s, box-shadow 0.22s;
+}
+
+/* Active (playing) score box */
+.cfp-stat--active {
+  border-color: rgba(245, 166, 35, 0.50);
+  background: rgba(245, 166, 35, 0.08);
+  animation: cfp-pulse 2.2s ease-in-out infinite;
+}
+
+/* New best glow */
+.cfp-stat--best {
+  border-color: rgba(255, 215, 0, 0.75);
+  background: rgba(255, 215, 0, 0.10);
+  animation: cfp-best-pop 0.60s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Stage / Mode stat ─── */
+.cfp-stat--stage {
+  flex: 0 0 auto;
+  min-width: 76px;
+  border-color: rgba(180, 130, 50, 0.22);
+  transition: border-color 0.4s ease, background 0.4s ease;
+}
+
+/* Boss mode — pulsing red */
+.cfp-stat--boss {
+  border-color: rgba(255, 60, 20, 0.70);
+  background: rgba(255, 60, 20, 0.10);
+  animation: cfp-boss-pulse 0.8s ease-in-out infinite;
+}
+
+/* ── Labels ─── */
+.cfp-stat-label {
+  font-size: 0.57rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(245, 166, 35, 0.70);
+  line-height: 1;
+}
+
+.cfp-stat--stage   .cfp-stat-label { color: rgba(200, 150, 60, 0.70); }
+.cfp-stat--boss    .cfp-stat-label { color: rgba(255, 100, 60, 0.90); }
+
+/* ── Values ─── */
+.cfp-stat-value {
+  font-size: 1.80rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.cfp-stat-value--sm {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ffd8a0;
+  text-transform: uppercase;
+}
+
+.cfp-stat--boss .cfp-stat-value--sm {
+  color: #ff7055;
+  animation: cfp-boss-text 0.6s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════════════════════════
+   LEADERBOARD + PODIUM
+══════════════════════════════════════════════════════════ */
+.cfp-leaderboard {
+  width: 100%;
+  max-width: 300px;
+  border-radius: 18px;
+  border: 1px solid rgba(245, 166, 35, 0.20);
+  background: linear-gradient(150deg, rgba(255, 183, 77, 0.08), rgba(16, 8, 30, 0.55));
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.54),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.56rem;
+}
+
+.cfp-leaderboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.cfp-leaderboard-head h2 {
+  margin: 0;
+  font-size: 0.80rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #f5dca5;
+}
+
+.cfp-leaderboard-badge {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 196, 99, 0.32);
+  background: rgba(255, 196, 99, 0.12);
+  padding: 0.14rem 0.5rem;
+  font: 700 0.56rem/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffe2a8;
+}
+
+.cfp-leaderboard-best {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 190, 90, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.45rem 0.56rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.cfp-leaderboard-best span {
+  font: 700 0.62rem/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(255, 224, 166, 0.84);
+}
+
+.cfp-leaderboard-best strong {
+  font-size: 1.22rem;
+  color: #fff8e8;
+  font-variant-numeric: tabular-nums;
+}
+
+.cfp-leaderboard-list {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.cfp-leaderboard-row {
+  border-radius: 11px;
+  border: 1px solid rgba(255, 190, 90, 0.16);
+  background: rgba(16, 9, 34, 0.58);
+  padding: 0.30rem 0.42rem;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.cfp-leaderboard-row.is-self {
+  border-color: rgba(255, 215, 128, 0.52);
+  box-shadow: 0 0 0 1px rgba(255, 215, 128, 0.24) inset;
+}
+
+.cfp-leaderboard-rank {
+  font: 700 0.76rem/1 system-ui, -apple-system, sans-serif;
+  color: #f7dca6;
+}
+
+.cfp-leaderboard-user {
+  min-width: 0;
+}
+
+.cfp-leaderboard-user .userbox {
+  min-width: 0;
+  width: 100%;
+  border-radius: 8px;
+  padding: 0.2rem 0.28rem;
+  gap: 0.32rem;
+  border-width: 1px;
+}
+
+.cfp-leaderboard-user .userbox__avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 0.58rem;
+}
+
+.cfp-leaderboard-user .userbox__name {
+  font-size: 0.62rem;
+  max-width: 8rem;
+}
+
+.cfp-leaderboard-score {
+  font-size: 0.84rem;
+  color: #ffd36b;
+  font-variant-numeric: tabular-nums;
+}
+
+.cfp-leaderboard-empty {
+  margin: 0;
+  font-size: 0.76rem;
+  color: rgba(255, 227, 170, 0.74);
+}
+
+.cfp-podium-shell {
+  width: min(780px, 100%);
+  margin-inline: auto;
+  margin-top: 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(245, 166, 35, 0.18);
+  background: rgba(12, 7, 24, 0.62);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  padding: 0.72rem 0.8rem 0.86rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.cfp-podium-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cfp-podium-head h2 {
+  margin: 0;
+  font-size: 0.79rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #f5dca5;
+}
+
+.cfp-podium-head span {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 196, 99, 0.30);
+  background: rgba(255, 196, 99, 0.10);
+  padding: 0.16rem 0.52rem;
+  font: 700 0.56rem/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffe2a8;
+}
+
+.cfp-podium {
+  display: flex;
+  justify-content: center;
+  align-items: end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.cfp-podium-slot {
+  width: min(31%, 192px);
+  min-width: 118px;
+  display: grid;
+  gap: 0.44rem;
+}
+
+.cfp-podium-user {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 190, 90, 0.20);
+  background: rgba(255, 255, 255, 0.04);
+  min-height: 2.5rem;
+  padding: 0.24rem 0.34rem;
+  display: grid;
+  align-items: center;
+}
+
+.cfp-podium-user span {
+  font-size: 0.74rem;
+  text-align: center;
+  color: rgba(255, 228, 180, 0.72);
+}
+
+.cfp-podium-user .userbox {
+  width: 100%;
+  min-width: 0;
+  border-radius: 8px;
+  padding: 0.2rem 0.28rem;
+  gap: 0.32rem;
+}
+
+.cfp-podium-user .userbox__avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 0.56rem;
+}
+
+.cfp-podium-user .userbox__name {
+  font-size: 0.62rem;
+  max-width: 7rem;
+}
+
+.cfp-podium-pillar {
+  border-radius: 12px 12px 8px 8px;
+  border: 1px solid rgba(255, 190, 90, 0.32);
+  background: rgba(255, 196, 99, 0.10);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.1rem;
+}
+
+.cfp-podium-pillar strong {
+  font-size: 1.08rem;
+  color: #fff0cc;
+}
+
+.cfp-podium-pillar span {
+  font-size: 0.74rem;
+  color: #ffe1a8;
+  font-variant-numeric: tabular-nums;
+}
+
+.cfp-podium-slot--gold .cfp-podium-pillar {
+  border-color: rgba(255, 217, 110, 0.56);
+  background: rgba(255, 217, 110, 0.18);
+}
+
+.cfp-podium-slot--silver .cfp-podium-pillar {
+  border-color: rgba(215, 226, 255, 0.46);
+  background: rgba(215, 226, 255, 0.16);
+}
+
+.cfp-podium-slot--bronze .cfp-podium-pillar {
+  border-color: rgba(216, 164, 122, 0.56);
+  background: rgba(216, 164, 122, 0.16);
+}
+
+.cfp-podium-empty {
+  margin: 0;
+  font-size: 0.76rem;
+  color: rgba(255, 227, 170, 0.74);
+}
+
+/* ══════════════════════════════════════════════════════════
+   KEYFRAMES
+══════════════════════════════════════════════════════════ */
+@keyframes cfp-entrance {
+  from { opacity: 0; transform: translateY(22px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1.00); }
+}
+
+@keyframes cfp-pulse {
+  0%, 100% { box-shadow: 0 0  0    0    rgba(245, 166, 35, 0.00); }
+  50%       { box-shadow: 0 0 16px 4px  rgba(245, 166, 35, 0.20); }
+}
+
+@keyframes cfp-best-pop {
+  0%   { transform: scale(1.00); }
+  30%  { transform: scale(1.10); }
+  60%  { transform: scale(0.95); }
+  80%  { transform: scale(1.04); }
+  100% { transform: scale(1.00); }
+}
+
+@keyframes cfp-boss-pulse {
+  0%, 100% { box-shadow: 0 0  0    0    rgba(255, 60, 20, 0.00); }
+  50%       { box-shadow: 0 0 18px 5px  rgba(255, 60, 20, 0.28); }
+}
+
+@keyframes cfp-boss-text {
+  0%, 100% { color: #ff7055; }
+  50%       { color: #ffcc44; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════════════════════════════ */
+@media (max-width: 980px) {
+  .cfp-layout {
+    width: min(460px, 100%);
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .cfp-podium-shell {
+    width: min(460px, 100%);
+    margin-top: 0.78rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .cfp-page {
+    padding: 0 0 0.5rem;
+    align-items: flex-start;
+  }
+  .cfp-layout {
+    width: 100%;
+    gap: 0.62rem;
+  }
+  .cfp-card {
+    width: 100%;
+    border-radius: 0 0 20px 20px;
+    border-left: none; border-right: none; border-top: none;
+    padding: 0.80rem 0.80rem 0.95rem;
+    gap: 0.65rem;
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.60),
+      0 1px  0 rgba(245, 166, 35, 0.10) inset;
+  }
+  .cfp-canvas {
+    border-radius: 12px;
+  }
+  .cfp-leaderboard,
+  .cfp-podium-shell {
+    width: 100%;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    padding: 0.68rem 0.75rem 0.76rem;
+  }
+  .cfp-title { font-size: 1.20rem; }
+  .cfp-stat-value { font-size: 1.52rem; }
+  .cfp-stat-value--sm { font-size: 0.92rem; }
+  .cfp-stat--stage { min-width: 64px; }
+}
+
+@media (max-width: 360px) {
+  .cfp-title { font-size: 1.06rem; }
+  .cfp-stat-value { font-size: 1.28rem; }
+  .cfp-stat { padding: 0.40rem 0.30rem 0.46rem; }
+  .cfp-pause-btn { padding: 0.24rem 0.50rem; font-size: 0.60rem; }
+}
+
+/* ── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .cfp-card,
+  .cfp-stat--active,
+  .cfp-stat--best,
+  .cfp-stat--boss {
+    animation: none;
+  }
+  .cfp-stat, .cfp-hint, .cfp-pause-btn {
+    transition: none;
+  }
+}
+
+/* ── Force dark even in light-mode contexts ─── */
+@media (prefers-color-scheme: light) {
+  .cfp-page { background-color: #080610; }
+}

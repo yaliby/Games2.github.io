@@ -11,5 +11,9 @@ export function getGames(): Game[] {
     {id: '7',title: 'Crossy Dash',image: 'Screenshot 2026-02-07 134537.png',path: '/game/expo-crossy-road'},
     {id: '8',title: 'Which country',image: 'Screenshot 2026-02-14 191129.png',path: '/game/which-country'},
     {id: '9',title: 'Russian Shooter',image: 'Screenshot 2026-02-14 225050.png',path: '/game/sound-shooter'},
+    {id: '10',title: 'שש בש',image: 'Screenshot 2026-02-20 140254.png',path: '/game/backgammon'},
+    {id: '11',title: 'Coyote Flapy',image: 'Screenshot_20260221_005227.png',path: '/game/coyote-flapy'},
+    {id: '12',title: 'SysTris',image: 'Screenshot_20260221_014939.png',path: '/game/systris'},
+    {id: '13',title: '6767',image: 'Screenshot_20260221_165024.png',path: '/game/6767'},
   ];
 }

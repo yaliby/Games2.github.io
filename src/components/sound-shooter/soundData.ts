@@ -573,6 +573,9 @@ const lessonMap = Object.fromEntries(
 ) as Readonly<Record<string, SoundLesson>>;
 
 const CYRILLIC_LETTER_REGEX = /^[\u0400-\u04FF]$/;
+const SOUND_DISPLAY_ALIAS: Readonly<Record<string, string>> = {
+  J: "Ĭ",
+};
 
 export function getSoundLesson(sound: string): SoundLesson {
   return lessonMap[sound] ?? {
@@ -592,6 +595,8 @@ export function isRussianLetter(value: string): boolean {
 }
 
 export function formatRussianLetterPair(value: string): string {
+  const alias = SOUND_DISPLAY_ALIAS[value];
+  if (alias) return alias;
   if (!isRussianLetter(value)) return value;
   const upper = value.toLocaleUpperCase("ru-RU");
   const lower = value.toLocaleLowerCase("ru-RU");

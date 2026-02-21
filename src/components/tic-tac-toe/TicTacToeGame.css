@@ -1,8 +1,13 @@
+/* ─────────────────────────────────────────────
+   TicTacToeGame — Improved UI/UX
+   ───────────────────────────────────────────── */
+
+/* ── Layout ─────────────────────────────────── */
 .ttt {
   width: min(42rem, 100%);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
   align-items: center;
   text-align: center;
   position: relative;
@@ -10,8 +15,10 @@
   min-height: min(80vh, 50rem);
   justify-content: center;
   margin-inline: auto;
+  padding-block: 1rem;
 }
 
+/* ── Ambient Aura ────────────────────────────── */
 .ttt__aura {
   position: absolute;
   inset: -2rem;
@@ -29,204 +36,278 @@
   animation: aura-win 1.2s ease-out forwards;
 }
 
+/* ── Header ──────────────────────────────────── */
 .ttt__header {
   width: 100%;
   display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.6rem;
   align-items: center;
-  justify-content: center;
-  text-align: center;
 }
 
-.ttt__subtitle {
-  margin: 0.35rem 0 0 0;
-  color: var(--text-muted);
-  font-size: 0.95rem;
-}
-
-.ttt__controls {
+/* ── Control Groups ──────────────────────────── */
+.ttt__controls,
+.ttt__difficulty,
+.ttt__size {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
   justify-content: center;
 }
 
-.ttt__controls button {
-  border: 1px solid var(--border-soft);
+/* ── Shared Button Base ──────────────────────── */
+.ttt__controls button,
+.ttt__difficulty button,
+.ttt__size button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-main);
-  padding: 0.5rem 0.85rem;
-  border-radius: 0.6rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.65rem;
   cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.ttt__controls button:hover {
-  transform: translateY(-1px);
-  border-color: rgba(108, 124, 255, 0.45);
-  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
-}
-
-.ttt__controls button.is-active {
-  border-color: rgba(108, 124, 255, 0.8);
-  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.35);
-}
-
-.ttt__reset {
-  background: rgba(108, 124, 255, 0.15);
-}
-
-.ttt__difficulty {
-  width: 100%;
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  justify-content: center;
+  align-items: center;
+  gap: 0.3rem;
+  position: relative;
+  overflow: hidden;
 }
 
-.ttt__size {
-  width: 100%;
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.ttt__difficulty button {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-main);
-  padding: 0.45rem 0.8rem;
-  border-radius: 0.6rem;
-  cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.ttt__size button {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-main);
-  padding: 0.45rem 0.8rem;
-  border-radius: 0.6rem;
-  cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.ttt__difficulty button:hover {
-  transform: translateY(-1px);
-  border-color: rgba(108, 124, 255, 0.45);
-  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
-}
-
+.ttt__controls button:hover,
+.ttt__difficulty button:hover,
 .ttt__size button:hover {
-  transform: translateY(-1px);
-  border-color: rgba(108, 124, 255, 0.45);
-  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+  border-color: rgba(108, 124, 255, 0.5);
+  background: rgba(108, 124, 255, 0.08);
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.25);
 }
 
-.ttt__difficulty button.is-active {
-  border-color: rgba(108, 124, 255, 0.8);
-  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.35);
+.ttt__controls button:active,
+.ttt__difficulty button:active,
+.ttt__size button:active {
+  transform: translateY(0);
 }
 
+.ttt__controls button.is-active,
+.ttt__difficulty button.is-active,
 .ttt__size button.is-active {
-  border-color: rgba(108, 124, 255, 0.8);
-  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.35);
-}
-.ttt__status {
-  padding: 0.6rem 1rem;
-  border-radius: 999px;
-  background: linear-gradient(
-    120deg,
-    rgba(108, 124, 255, 0.15),
-    rgba(255, 138, 149, 0.12)
-  );
-  border: 1px solid rgba(108, 124, 255, 0.35);
-  font-weight: 600;
-  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.2);
-  animation: floaty 3.5s ease-in-out infinite;
+  border-color: rgba(108, 124, 255, 0.85);
+  background: rgba(108, 124, 255, 0.15);
+  box-shadow: 0 0 0 1px rgba(108, 124, 255, 0.3), 0 0.3rem 0.8rem rgba(108, 124, 255, 0.2);
+  color: #b4bcff;
 }
 
+/* Reset button accent */
+.ttt__reset {
+  background: rgba(108, 124, 255, 0.12) !important;
+  border-color: rgba(108, 124, 255, 0.3) !important;
+}
+.ttt__reset:hover {
+  background: rgba(108, 124, 255, 0.22) !important;
+}
+
+/* Board-size hint label */
+.ttt__size-hint {
+  font-size: 0.72rem;
+  opacity: 0.55;
+  font-weight: 400;
+  margin-left: 0.1rem;
+}
+
+/* ── Turn Row (chips + status) ───────────────── */
+.ttt__turn-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(32rem, 100%);
+}
+
+/* Player chips */
+.ttt__player-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 700;
+  font-size: 1rem;
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ttt__player-chip.is-active {
+  transform: translateY(-2px) scale(1.05);
+}
+
+.ttt__player-chip--x.is-active {
+  border-color: rgba(255, 184, 140, 0.7);
+  background: rgba(255, 184, 140, 0.12);
+  box-shadow: 0 0 0.8rem rgba(255, 184, 140, 0.25);
+}
+
+.ttt__player-chip--o.is-active {
+  border-color: rgba(108, 124, 255, 0.7);
+  background: rgba(108, 124, 255, 0.12);
+  box-shadow: 0 0 0.8rem rgba(108, 124, 255, 0.25);
+}
+
+.ttt__chip-mark {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ttt__chip-mark--x {
+  stroke: #ffb88c;
+}
+
+.ttt__chip-mark--o {
+  stroke: #6c7cff;
+}
+
+/* ── Status Pill ─────────────────────────────── */
+.ttt__status {
+  flex: 1;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(108, 124, 255, 0.14), rgba(255, 138, 149, 0.1));
+  border: 1px solid rgba(108, 124, 255, 0.3);
+  font-weight: 600;
+  font-size: 0.88rem;
+  box-shadow: 0 0.3rem 0.9rem rgba(0, 0, 0, 0.18);
+  animation: floaty 3.5s ease-in-out infinite;
+  min-height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+/* ── Bot Thinking Dots ───────────────────────── */
+.ttt__thinking-dots {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.ttt__thinking-dots span {
+  font-size: 0.5rem;
+  opacity: 0;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+.ttt__thinking-dots span:nth-child(1) { animation-delay: 0s; }
+.ttt__thinking-dots span:nth-child(2) { animation-delay: 0.22s; }
+.ttt__thinking-dots span:nth-child(3) { animation-delay: 0.44s; }
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-4px); }
+}
+
+/* ── Stats Bar ───────────────────────────────── */
 .ttt__stats {
-  width: min(36rem, 100%);
+  width: min(28rem, 100%);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 
 .ttt__stat {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.9rem;
-  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.5rem;
   display: grid;
-  gap: 0.25rem;
+  gap: 0.2rem;
   place-items: center;
   text-align: center;
+  transition: border-color 0.3s ease, background 0.3s ease;
 }
 
 .ttt__stat strong {
-  font-size: 1.3rem;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  transition: transform 0.2s ease;
 }
 
 .ttt__stat small {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .ttt__stat-badge {
-  width: 2rem;
-  height: 2rem;
+  width: 1.8rem;
+  height: 1.8rem;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .ttt__stat-badge--x {
   color: #ffb88c;
-  border-color: rgba(255, 184, 140, 0.5);
+  border-color: rgba(255, 184, 140, 0.45);
 }
 
 .ttt__stat-badge--o {
   color: #6c7cff;
-  border-color: rgba(108, 124, 255, 0.5);
+  border-color: rgba(108, 124, 255, 0.45);
 }
 
+/* ── Board Container ─────────────────────────── */
 .ttt__board {
   display: grid;
-  gap: 0.65rem;
-  padding: 1.2rem;
+  padding: 1.1rem;
   border-radius: 1.5rem;
-  background: linear-gradient(
-    140deg,
-    rgba(255, 255, 255, 0.06),
-    rgba(255, 255, 255, 0.02)
-  );
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 1.5rem 3.5rem rgba(0, 0, 0, 0.45);
+  box-shadow:
+    0 1.5rem 3.5rem rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   position: relative;
+  transition: box-shadow 0.4s ease;
 }
 
+.ttt.is-thinking .ttt__board {
+  box-shadow:
+    0 1.5rem 3.5rem rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(108, 124, 255, 0.25),
+    0 0 1.5rem rgba(108, 124, 255, 0.1);
+}
+
+/* ── Win Line SVG ────────────────────────────── */
 .ttt__win-line {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
+  z-index: 2;
 }
 
 .ttt__win-line line {
   stroke-width: var(--win-line-width, 3.5);
   stroke-linecap: round;
-  stroke-dasharray: 120;
-  stroke-dashoffset: 120;
-  animation: line-draw 0.7s ease forwards;
-  filter: drop-shadow(0 0 6px rgba(255, 184, 140, 0.6));
+  stroke-dasharray: 150;
+  stroke-dashoffset: 150;
+  animation: line-draw 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: 0.1s;
 }
 
 .ttt__win-line.is-x line {
@@ -239,29 +320,59 @@
   filter: drop-shadow(0 0 6px rgba(108, 124, 255, 0.7));
 }
 
+/* ── Cell ────────────────────────────────────── */
 .ttt__cell {
   width: 100%;
   aspect-ratio: 1 / 1;
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  font-weight: 700;
-  color: var(--text-main);
-  background: radial-gradient(
-    circle at 20% 20%,
-    rgba(255, 255, 255, 0.08),
-    rgba(255, 255, 255, 0.02)
-  );
-  border: 1px solid var(--border-soft);
-  border-radius: 0.85rem;
+  background: radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.8rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+  position: relative;
+  overflow: hidden;
 }
 
+/* Hover glow */
+.ttt__cell:not(.is-filled):not(:disabled):hover {
+  transform: translateY(-3px) scale(1.03);
+  border-color: rgba(108, 124, 255, 0.5);
+  background: rgba(108, 124, 255, 0.07);
+  box-shadow: 0 0.6rem 1.4rem rgba(0, 0, 0, 0.3);
+}
+
+.ttt__cell:active:not(.is-filled):not(:disabled) {
+  transform: scale(0.96);
+}
+
+.ttt__cell.is-filled {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Winning cells — stagger via CSS var */
+.ttt__cell.is-winning {
+  animation: win-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: var(--win-delay, 0ms);
+  border-color: rgba(255, 184, 140, 0.75);
+  box-shadow:
+    0 0 0.5rem rgba(255, 184, 140, 0.5),
+    0 0 1.2rem rgba(255, 184, 140, 0.3),
+    inset 0 0 0.5rem rgba(255, 184, 140, 0.05);
+  z-index: 1;
+}
+
+/* ── Mark SVGs ───────────────────────────────── */
 .ttt__mark {
-  width: 70%;
-  height: 70%;
+  width: 68%;
+  height: 68%;
   stroke: #e6e6eb;
   stroke-width: 10;
   fill: none;
@@ -271,126 +382,175 @@
   transform-origin: center;
 }
 
-.ttt__mark--o {
-  stroke: #6c7cff;
-}
-
-.ttt__mark--x {
-  stroke: #ffb88c;
-}
+.ttt__mark--o { stroke: #6c7cff; }
+.ttt__mark--x { stroke: #ffb88c; }
 
 .ttt__mark-line,
 .ttt__mark-circle {
   stroke-dasharray: 200;
   stroke-dashoffset: 200;
-  animation: draw 0.45s ease forwards;
+  animation: draw 0.4s ease forwards;
 }
 
 .ttt__mark-line--b {
-  animation-delay: 0.08s;
+  animation-delay: 0.07s;
 }
 
-.ttt__cell:hover {
-  transform: translateY(-3px) scale(1.02);
-  border-color: rgba(108, 124, 255, 0.55);
-  box-shadow: 0 0.7rem 1.6rem rgba(0, 0, 0, 0.35);
+/* ── Ghost / Preview Mark ────────────────────── */
+.ttt__ghost {
+  position: absolute;
+  width: 62%;
+  height: 62%;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 10;
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.ttt__cell.is-filled {
-  cursor: default;
-  background: rgba(255, 255, 255, 0.08);
+.ttt__cell.is-hovered .ttt__ghost {
+  opacity: 0.28;
+  transform: scale(var(--mark-scale, 1));
 }
 
-.ttt__cell.is-winning {
-  border-color: rgba(255, 184, 140, 0.8);
-  box-shadow:
-    0 0 0.6rem rgba(255, 184, 140, 0.6),
-    0 0 1.4rem rgba(255, 184, 140, 0.4);
-  animation: win-pop 0.6s ease both;
-}
+.ttt__ghost--x { stroke: #ffb88c; }
+.ttt__ghost--o { stroke: #6c7cff; }
 
+/* ── Medal ───────────────────────────────────── */
 .ttt__medal {
-  width: min(34rem, 100%);
+  width: min(30rem, 100%);
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  padding: 0.85rem 1rem;
+  padding: 0.8rem 1rem;
   border-radius: 1rem;
-  background: linear-gradient(
-    120deg,
-    rgba(255, 184, 140, 0.18),
-    rgba(108, 124, 255, 0.12)
-  );
-  border: 1px solid rgba(255, 184, 140, 0.5);
-  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.35);
+  background: linear-gradient(120deg, rgba(255, 184, 140, 0.18), rgba(108, 124, 255, 0.12));
+  border: 1px solid rgba(255, 184, 140, 0.45);
+  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.3);
   animation: medal-slide 0.7s ease both;
 }
 
 .ttt__medal-icon {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.3rem;
+  height: 2.3rem;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   color: #0f1117;
   background: radial-gradient(circle at 30% 30%, #fff2c6, #ffb88c);
   box-shadow: 0 0 0.5rem rgba(255, 184, 140, 0.8);
+  flex-shrink: 0;
 }
 
 .ttt__medal-title {
   font-weight: 700;
+  font-size: 0.95rem;
 }
 
 .ttt__medal-subtitle {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
+/* ── Play Again Button ───────────────────────── */
+.ttt__play-again {
+  padding: 0.65rem 1.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(108, 124, 255, 0.5);
+  background: rgba(108, 124, 255, 0.18);
+  color: #b4bcff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  animation: medal-slide 0.5s ease both;
+}
+
+.ttt__play-again:hover {
+  transform: translateY(-2px) scale(1.03);
+  background: rgba(108, 124, 255, 0.28);
+  box-shadow: 0 0.6rem 1.4rem rgba(108, 124, 255, 0.2);
+}
+
+.ttt__play-again:active {
+  transform: scale(0.97);
+}
+
+/* ── Move Counter ────────────────────────────── */
+.ttt__move-count {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+  letter-spacing: 0.04em;
+  animation: fade-in 0.3s ease;
+}
+
+/* ── Responsive ──────────────────────────────── */
 @media (max-width: 640px) {
-  .ttt__header {
-    text-align: center;
+  .ttt__turn-row {
+    flex-wrap: wrap;
     justify-content: center;
+    gap: 0.5rem;
   }
 
-  .ttt__controls {
-    justify-content: center;
+  .ttt__player-chip {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.9rem;
   }
 
-  .ttt__difficulty {
-    justify-content: center;
+  .ttt__status {
+    order: -1;
+    width: 100%;
+    flex: none;
   }
 
-  .ttt__board {
-    grid-template-columns: repeat(3, minmax(3.5rem, 6rem));
+  .ttt__controls button,
+  .ttt__difficulty button,
+  .ttt__size button {
+    font-size: 0.82rem;
+    padding: 0.4rem 0.7rem;
+  }
+
+  .ttt__size-hint {
+    display: none;
+  }
+
+  .ttt__stats {
+    gap: 0.45rem;
   }
 }
 
+/* ── Keyframes ───────────────────────────────── */
 @keyframes aura-pulse {
-  0% { opacity: 0.8; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.02); }
+  0%   { opacity: 0.8; transform: scale(1); }
+  50%  { opacity: 1; transform: scale(1.02); }
   100% { opacity: 0.85; transform: scale(1); }
 }
 
 @keyframes aura-win {
-  0% { opacity: 0.7; transform: scale(1); }
+  0%   { opacity: 0.7; transform: scale(1); }
   100% { opacity: 1; transform: scale(1.08); }
 }
 
 @keyframes floaty {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+  0%   { transform: translateY(0); }
+  50%  { transform: translateY(-3px); }
   100% { transform: translateY(0); }
 }
 
 @keyframes win-pop {
-  0% { transform: scale(0.9); }
+  0%   { transform: scale(0.88); }
+  60%  { transform: scale(1.06); }
   100% { transform: scale(1); }
 }
 
 @keyframes medal-slide {
-  0% { opacity: 0; transform: translateY(10px); }
+  0%   { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 
@@ -400,4 +560,9 @@
 
 @keyframes line-draw {
   to { stroke-dashoffset: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }

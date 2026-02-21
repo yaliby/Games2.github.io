@@ -1,0 +1,1213 @@
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Chakra+Petch:wght@400;600;700&display=swap");
+
+/* ═══════════════════════════════════════════════════════════════
+   SYSTRIS  CSS  v2  — "Effect mode, zero shake"
+   ───────────────────────────────────────────────────────────────
+   Philosophy:
+   • Every effect is additive (screen / plus-lighter blend modes)
+   • No transform-translate shakes on the board — ever
+   • Line-clear dissolves from centre outward (is-clearing)
+   • Lock flash is a soft radial bloom, not a jolt
+   • All animations use cubic-bezier with strong ease-out tails
+   • will-change kept minimal and targeted
+═══════════════════════════════════════════════════════════════ */
+
+/* ── CSS custom properties ────────────────────────────────────── */
+.systris-page {
+  --bg-hue:       var(--systris-hue, 220);
+  --energy:       var(--systris-energy, 0.2);
+  --fx:           var(--systris-fx, 0);
+  --combo-energy: var(--systris-combo-energy, 0);
+  --panel-edge:   rgba(116, 170, 255, 0.28);
+
+  min-height: 100svh;
+  display: grid;
+  place-items: start center;
+  padding: 1.25rem 0.75rem 2rem;
+  font-family: "Chakra Petch", "Segoe UI", sans-serif;
+  color: #eaf3ff;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 15% 15%,
+      hsla(calc(var(--bg-hue) - 18), 90%, 62%, calc(0.16 + var(--energy) * 0.36)) 0%, transparent 45%),
+    radial-gradient(circle at 83% 11%,
+      hsla(calc(var(--bg-hue) + 35), 100%, 66%, calc(0.13 + var(--energy) * 0.24)) 0%, transparent 47%),
+    radial-gradient(circle at 48% 88%,
+      hsla(calc(var(--bg-hue) + 145), 100%, 60%, calc(0.15 + var(--energy) * 0.30)) 0%, transparent 52%),
+    linear-gradient(130deg, #090d1f 0%, #111033 52%, #170f2e 100%);
+  animation: systris-page-flow 26s ease-in-out infinite alternate;
+}
+
+/* Animated ambient vignette — breathes with the beat */
+.systris-beat-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 52%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.22) 100%),
+    radial-gradient(
+      circle at 50% 42%,
+      hsla(calc(var(--bg-hue) + 36), 100%, 72%, calc(0.05 + var(--combo-energy) * 0.10)) 0%,
+      transparent 62%
+    );
+  mix-blend-mode: screen;
+  opacity: calc(0.28 + var(--energy) * 0.22 + var(--combo-energy) * 0.14);
+  animation: systris-beat-pulse var(--systris-beat-ms, 520ms) ease-in-out infinite;
+}
+
+/* Diagonal scan lines */
+.systris-page::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  background: repeating-linear-gradient(
+    115deg,
+    rgba(255,255,255,0.032) 0px,
+    rgba(255,255,255,0.032) 1px,
+    transparent 1px,
+    transparent 52px
+  );
+  opacity: calc(0.14 + var(--energy) * 0.18);
+  animation: systris-scan 18s linear infinite;
+  pointer-events: none;
+}
+
+/* Rotating aurora halo behind everything */
+.systris-page::after {
+  content: "";
+  position: absolute;
+  width: 180vmax;
+  height: 180vmax;
+  top: 50%; left: 50%;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    hsla(calc(var(--bg-hue) - 20), 100%, 65%, 0.10),
+    hsla(calc(var(--bg-hue) + 40), 100%, 65%, 0.05),
+    hsla(calc(var(--bg-hue) + 120), 100%, 65%, 0.07),
+    hsla(calc(var(--bg-hue) - 20), 100%, 65%, 0.10)
+  );
+  filter: blur(52px);
+  opacity: calc(0.30 + var(--energy) * 0.26 + var(--fx) * 0.16);
+  animation: systris-spin 24s linear infinite;
+  pointer-events: none;
+}
+
+/* ── Line-clear background burst ─────────────────────────────── */
+.systris-bg-shift {
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 24%, hsla(var(--shift-hue), 100%, 70%, 0.34) 0%, transparent 48%),
+    radial-gradient(circle at 78% 74%, hsla(calc(var(--shift-hue) + 62), 100%, 68%, 0.30) 0%, transparent 53%),
+    conic-gradient(
+      from 10deg at 50% 50%,
+      hsla(calc(var(--shift-hue) - 26), 100%, 64%, 0.14),
+      hsla(calc(var(--shift-hue) + 40), 100%, 66%, 0.20),
+      hsla(calc(var(--shift-hue) + 110), 100%, 63%, 0.14),
+      hsla(calc(var(--shift-hue) - 26), 100%, 64%, 0.14)
+    );
+  filter: blur(28px) saturate(1.12);
+  mix-blend-mode: screen;
+  animation: systris-bg-shift 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.systris-bg-shift--2 { animation-duration: 1450ms; filter: blur(32px) saturate(1.18); }
+.systris-bg-shift--3 { animation-duration: 1650ms; filter: blur(36px) saturate(1.22); }
+.systris-bg-shift--4 { animation-duration: 1900ms; filter: blur(40px) saturate(1.28); }
+
+/* ── Shell (main card) ────────────────────────────────────────── */
+.systris-shell {
+  width: min(1280px, 100%);
+  border-radius: 1.5rem;
+  border: 1px solid var(--panel-edge);
+  background: linear-gradient(140deg, rgba(7,12,38,0.72) 0%, rgba(15,11,38,0.86) 100%);
+  box-shadow:
+    0 30px 80px rgba(0,0,0,0.52),
+    0 0 0 1px rgba(255,255,255,0.055) inset;
+  backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  isolation: isolate;
+  animation: systris-shell-breathe 10s ease-in-out infinite;
+}
+
+/* Inner ambient glow */
+.systris-shell::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 22%, hsla(calc(var(--bg-hue) - 28), 100%, 70%, calc(0.12 + var(--energy) * 0.18)) 0%, transparent 42%),
+    radial-gradient(circle at 84% 24%, hsla(calc(var(--bg-hue) + 54), 100%, 70%, calc(0.11 + var(--energy) * 0.16)) 0%, transparent 44%),
+    radial-gradient(circle at 45% 82%, hsla(calc(var(--bg-hue) + 125), 100%, 69%, calc(0.10 + var(--energy) * 0.16)) 0%, transparent 48%);
+  mix-blend-mode: screen;
+  filter: blur(calc(10px + var(--energy) * 18px));
+  animation: systris-shell-aurora 18s ease-in-out infinite alternate;
+}
+
+/* Sheen sweep */
+.systris-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(120deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.038) 28%, rgba(255,255,255,0) 58%),
+    repeating-linear-gradient(120deg, rgba(118,179,255,0.042) 0px, rgba(118,179,255,0.042) 1px, transparent 1px, transparent 66px);
+  opacity: calc(0.20 + var(--energy) * 0.14);
+  mix-blend-mode: screen;
+  animation: systris-shell-sheen 13s linear infinite;
+}
+
+.systris-shell > * { position: relative; z-index: 2; }
+
+/* ── Header ───────────────────────────────────────────────────── */
+.systris-header { padding: 1.1rem 1.2rem 0.7rem; }
+
+.systris-title {
+  margin: 0;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: clamp(1.35rem, 2.7vw, 2.1rem);
+  font-weight: 800;
+  line-height: 1;
+  text-shadow:
+    0 0 14px hsla(calc(var(--bg-hue) + 38), 100%, 70%, 0.48),
+    0 0 28px hsla(calc(var(--bg-hue) + 5),  100%, 68%, 0.22);
+}
+
+.systris-subtitle {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.66;
+}
+
+/* ── Layout ───────────────────────────────────────────────────── */
+.systris-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(220px, 280px);
+  grid-template-areas: "left board right";
+  align-items: start;
+  padding: 0.4rem 1.2rem 1.1rem;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+.systris-sidebar {
+  grid-area: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.systris-stat {
+  border-radius: 0.95rem;
+  border: 1px solid rgba(129,178,255,0.34);
+  background: rgba(16,20,56,0.62);
+  padding: 0.65rem 0.75rem 0.72rem;
+}
+
+.systris-stat-label {
+  display: block;
+  font-size: 0.67rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.70;
+}
+
+.systris-stat-value {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: clamp(1.15rem, 2.2vw, 1.65rem);
+  letter-spacing: 0.05em;
+}
+
+.systris-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.systris-chip {
+  border-radius: 0.8rem;
+  border: 1px solid rgba(126,163,255,0.28);
+  background: rgba(18,24,61,0.48);
+  padding: 0.45rem 0.4rem 0.5rem;
+  text-align: center;
+}
+
+.systris-chip span {
+  display: block;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.68;
+}
+
+.systris-chip strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1rem;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+}
+
+/* ── Combo energy bar ─────────────────────────────────────────── */
+.systris-combo-bar {
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+  margin-top: -0.25rem;
+}
+
+.systris-combo-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  width: calc(var(--combo-fill, 0) * 100%);
+  background: linear-gradient(
+    90deg,
+    hsla(calc(var(--bg-hue) + 20), 100%, 68%, 0.9),
+    hsla(calc(var(--bg-hue) + 80), 100%, 72%, 0.95)
+  );
+  box-shadow: 0 0 8px hsla(calc(var(--bg-hue) + 40), 100%, 70%, 0.6);
+  transition: width 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Next piece preview ───────────────────────────────────────── */
+.systris-next {
+  border-radius: 1rem;
+  border: 1px solid rgba(125,167,255,0.28);
+  background: rgba(9,16,47,0.60);
+  padding: 0.6rem 0.65rem 0.75rem;
+}
+
+.systris-next h2 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  opacity: 0.78;
+}
+
+.systris-next-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.systris-mini {
+  --mini-size: 0.52rem;
+  width: fit-content;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(132,171,255,0.20);
+  background: rgba(12,16,41,0.62);
+  padding: 0.36rem;
+}
+
+.systris-mini-row { display: flex; gap: 0.22rem; }
+.systris-mini-row + .systris-mini-row { margin-top: 0.22rem; }
+
+.systris-mini-cell {
+  width: var(--mini-size);
+  height: var(--mini-size);
+  border-radius: 0.18rem;
+  background: rgba(255,255,255,0.07);
+}
+
+.systris-mini-cell.is-on {
+  background:
+    linear-gradient(140deg, rgba(255,255,255,0.30), transparent 48%),
+    var(--mini-color);
+  box-shadow:
+    inset 0 0 5px rgba(255,255,255,0.22),
+    0 0 7px var(--mini-glow);
+}
+
+/* ── Message ──────────────────────────────────────────────────── */
+.systris-message {
+  margin: 0;
+  min-height: 2.2rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  color: rgba(233,244,255,0.90);
+}
+
+/* ── Leaderboard ──────────────────────────────────────────────── */
+.systris-leaderboard {
+  grid-area: right;
+  border-radius: 1rem;
+  border: 1px solid rgba(131,179,255,0.32);
+  background: rgba(9,15,46,0.70);
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.58rem;
+  box-shadow:
+    0 14px 28px rgba(0,0,0,0.32),
+    0 0 0 1px rgba(255,255,255,0.038) inset;
+}
+
+.systris-leaderboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.systris-leaderboard-head h2 {
+  margin: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.82;
+}
+
+.systris-leaderboard-badge {
+  border-radius: 999px;
+  border: 1px solid rgba(145,191,255,0.34);
+  background: rgba(72,124,255,0.16);
+  padding: 0.14rem 0.5rem;
+  font-size: 0.57rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(232,243,255,0.88);
+}
+
+.systris-leaderboard-best {
+  border-radius: 0.8rem;
+  border: 1px solid rgba(140,188,255,0.26);
+  background: rgba(18,25,62,0.54);
+  padding: 0.5rem 0.62rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.systris-leaderboard-best span {
+  font-size: 0.62rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.systris-leaderboard-best strong {
+  font-size: 1.18rem;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  letter-spacing: 0.06em;
+}
+
+.systris-leaderboard-list { display: grid; gap: 0.42rem; }
+
+.systris-leaderboard-row {
+  border-radius: 0.78rem;
+  border: 1px solid rgba(139,187,255,0.17);
+  background: rgba(11,18,47,0.56);
+  padding: 0.36rem 0.45rem;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.systris-leaderboard-row.is-self {
+  border-color: rgba(255,209,98,0.40);
+  box-shadow: 0 0 0 1px rgba(255,209,98,0.22) inset;
+}
+
+.systris-leaderboard-rank {
+  font-size: 0.75rem;
+  font-weight: 800;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  color: rgba(217,234,255,0.92);
+}
+
+.systris-leaderboard-user { min-width: 0; }
+
+.systris-leaderboard-user .userbox {
+  min-width: 0; width: 100%;
+  padding: 0.2rem 0.28rem;
+  border-radius: 0.55rem;
+  gap: 0.32rem; border-width: 1px;
+}
+
+.systris-leaderboard-user .userbox__avatar { width: 20px; height: 20px; font-size: 0.58rem; }
+.systris-leaderboard-user .userbox__name   { font-size: 0.62rem; max-width: 8.2rem; }
+
+.systris-leaderboard-score {
+  font-size: 0.83rem;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  letter-spacing: 0.04em;
+  color: #ffd672;
+}
+
+.systris-leaderboard-empty {
+  margin: 0;
+  font-size: 0.74rem;
+  color: rgba(225,240,255,0.70);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BOARD  — the main play area
+══════════════════════════════════════════════════════════════ */
+.systris-board-wrap {
+  --board-width: min(24rem, 56vw, calc((100svh - 13rem) / 2));
+  grid-area: board;
+  width: var(--board-width);
+  margin-inline: auto;
+  border-radius: 1.1rem;
+  border: 1px solid rgba(140,181,255,0.38);
+  background: linear-gradient(165deg, rgba(8,12,36,0.84) 0%, rgba(12,9,35,0.95) 100%);
+  padding: 0.52rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 16px 30px rgba(0,0,0,0.42),
+    0 0 0 1px rgba(255,255,255,0.055) inset;
+  /* No will-change:transform here — prevents GPU layer churn and
+     makes everything smoother on mid-range hardware */
+}
+
+/* ── NO SHAKE. The old shake-a / shake-b classes are intentionally removed. */
+
+/* ── Lock flash overlay ────────────────────────────────────────
+   A soft radial bloom that appears on every piece lock.
+   It lives INSIDE the board and uses mix-blend-mode:screen
+   so it never disturbs readability. ─────────────────────────── */
+.systris-lock-flash-overlay {
+  position: absolute;
+  inset: 0.52rem;
+  border-radius: 0.78rem;
+  pointer-events: none;
+  z-index: 5;
+  background: radial-gradient(
+    circle at 50% 72%,
+    rgba(255,255,255,0.18) 0%,
+    hsla(calc(var(--bg-hue) + 30), 100%, 72%, 0.14) 30%,
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+  animation: systris-lock-flash 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Shockwave (hard-drop / big combo) ─────────────────────────
+   Radiates from the centre — no translation, only scale + fade. */
+.systris-shockwave {
+  --sw-base: calc(0.20 + var(--shock-power) * 0.18);
+  position: absolute;
+  inset: -16%;
+  z-index: 1;
+  border-radius: 999px;
+  background:
+    radial-gradient(
+      circle at 50% 66%,
+      rgba(255,255,255,calc(var(--sw-base) + 0.20)) 0%,
+      transparent 28%
+    ),
+    conic-gradient(
+      from 0deg,
+      hsla(calc(var(--bg-hue) - 12), 100%, 70%, calc(var(--sw-base) * 0.36)),
+      hsla(calc(var(--bg-hue) + 50), 100%, 74%, calc(var(--sw-base) * 0.58)),
+      hsla(calc(var(--bg-hue) + 130), 100%, 74%, calc(var(--sw-base) * 0.38)),
+      hsla(calc(var(--bg-hue) - 12), 100%, 70%, calc(var(--sw-base) * 0.36))
+    );
+  filter: blur(calc(5px + var(--shock-power) * 9px));
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: systris-shockwave 780ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.systris-shockwave--1 { opacity: 0.50; }
+.systris-shockwave--2 { opacity: 0.64; }
+.systris-shockwave--3 { opacity: 0.80; }
+.systris-shockwave--4 { opacity: 1; }
+.systris-shockwave.is-mega { animation-duration: 1000ms; filter: blur(calc(8px + var(--shock-power) * 11px)) saturate(1.18); }
+
+/* ── Action banner (TETRIS EFFECT, DOUBLE IMPACT…) ─────────────
+   Animates in from below, drifts upward, fades out.
+   No transform3d on the board itself — only on this label. */
+.systris-action-banner {
+  position: absolute;
+  top: 0.65rem;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 6;
+  pointer-events: none;
+  text-align: center;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: clamp(0.88rem, 2vw, 1.24rem);
+  font-weight: 900;
+  color: #f5fbff;
+  text-shadow:
+    0 0 10px rgba(255,255,255,0.56),
+    0 0 26px hsla(calc(var(--bg-hue) + 56), 100%, 72%, 0.68),
+    0 0 40px hsla(calc(var(--bg-hue) + 8),  100%, 67%, 0.52);
+  animation: systris-banner 940ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.systris-action-banner--2 { animation-duration: 1100ms; }
+.systris-action-banner--3 { animation-duration: 1260ms; font-size: clamp(1rem, 2.2vw, 1.42rem); }
+.systris-action-banner--4 { animation-duration: 1420ms; font-size: clamp(1.08rem, 2.4vw, 1.62rem); }
+
+/* ── Line flash (behind grid, colours by cleared count) ────────── */
+.systris-line-flash,
+.systris-impact-wave,
+.systris-bursts,
+.systris-effects {
+  position: absolute;
+  inset: 0.52rem;
+  border-radius: 0.78rem;
+  pointer-events: none;
+}
+
+.systris-effects { z-index: 3; overflow: hidden; }
+
+.systris-line-flash {
+  z-index: 2;
+  opacity: 0;
+  mix-blend-mode: screen;
+  animation: systris-line-flash 500ms ease-out forwards;
+}
+
+.systris-line-flash--1 { background: radial-gradient(circle at 50% 55%, rgba(104,195,255,0.44) 0%, transparent 68%); }
+.systris-line-flash--2 { background: radial-gradient(circle at 52% 50%, rgba(130,255,200,0.52) 0%, transparent 68%); }
+.systris-line-flash--3 { background: radial-gradient(circle at 49% 52%, rgba(255,202,115,0.58) 0%, transparent 70%); }
+.systris-line-flash--4 { background: radial-gradient(circle at 50% 50%, rgba(240,142,255,0.72) 0%, transparent 74%); }
+
+.systris-impact-wave {
+  z-index: 1;
+  background: radial-gradient(circle at 50% 90%, rgba(255,255,255,0.30) 0%, transparent 54%);
+  mix-blend-mode: plus-lighter;
+  animation: systris-impact 540ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: center bottom;
+}
+
+/* ── Bursts (particle jets) ────────────────────────────────────── */
+.systris-bursts { z-index: 4; overflow: hidden; }
+
+.systris-burst {
+  position: absolute;
+  left: calc(var(--burst-lane) * 100%);
+  bottom: -0.4rem;
+  width:  calc(0.18rem + var(--burst-strength) * 0.46rem);
+  height: calc(0.18rem + var(--burst-strength) * 0.46rem);
+  border-radius: 50%;
+  background: hsl(var(--burst-hue), 100%, 72%);
+  box-shadow: 0 0 calc(8px + var(--burst-strength) * 18px) hsl(var(--burst-hue), 100%, 70%);
+  animation: systris-burst calc(480ms + var(--burst-strength) * 400ms) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: var(--burst-delay, 0ms);
+}
+
+.systris-burst--clear  { filter: saturate(1.06); }
+.systris-burst--impact { animation-duration: 560ms; filter: hue-rotate(24deg) saturate(1.24); }
+
+/* ── Lock ring (piece-settle ripple) ────────────────────────────
+   Soft expanding ring at the centre of the locked piece. ─────── */
+.systris-lock-ring {
+  position: absolute;
+  left: var(--lock-x);
+  top:  var(--lock-y);
+  width: calc(14px + var(--lock-strength) * 30px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.36);
+  border: 1.5px solid hsla(calc(var(--bg-hue) + 35), 100%, 78%, calc(0.38 + var(--lock-strength) * 0.20));
+  box-shadow:
+    0 0 calc(10px + var(--lock-strength) * 14px) hsla(calc(var(--bg-hue) + 35), 100%, 74%, 0.40),
+    inset 0 0 calc(8px + var(--lock-strength) * 10px) hsla(calc(var(--bg-hue) + 62), 100%, 76%, 0.38);
+  animation: systris-lock-ring calc(280ms + var(--lock-strength) * 100ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: var(--lock-delay, 0ms);
+}
+
+/* ── Row shards (cell explosions on line clear) ─────────────── */
+.systris-row-shard {
+  position: absolute;
+  left: var(--shard-x);
+  top:  var(--shard-y);
+  width:  calc(3.8px + var(--shard-strength) * 2.0px);
+  height: calc(3.8px + var(--shard-strength) * 2.2px);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.94), hsl(var(--shard-hue), 100%, 62%));
+  box-shadow:
+    0 0 calc(7px + var(--shard-strength) * 11px) hsla(var(--shard-hue), 100%, 70%, 0.60),
+    inset 0 0 2px rgba(255,255,255,0.44);
+  mix-blend-mode: screen;
+  animation: systris-row-shard calc(380ms + var(--shard-strength) * 180ms) cubic-bezier(0.2, 0.82, 0.24, 1) forwards;
+  animation-delay: var(--shard-delay, 0ms);
+}
+
+/* ── Trail effects ─────────────────────────────────────────────── */
+.systris-trail {
+  position: absolute;
+  inset: 0;
+  animation: systris-trail-fade calc(175ms + var(--trail-strength) * 110ms) linear forwards;
+  animation-delay: var(--trail-delay, 0ms);
+}
+
+.systris-trail-cell {
+  position: absolute;
+  left: var(--trail-left);
+  top:  var(--trail-top);
+  width:  calc(100% / 10);
+  height: calc(100% / 20);
+  border-radius: 0.16rem;
+  background:
+    linear-gradient(155deg, rgba(255,255,255,0.30), transparent 46%),
+    var(--trail-color);
+  border: 1px solid rgba(225,240,255,0.22);
+  box-shadow:
+    0 0 calc(4px + var(--trail-strength) * 7px) var(--trail-glow),
+    inset 0 0 5px rgba(255,255,255,0.20);
+  opacity: calc(0.14 + var(--trail-strength) * 0.20);
+}
+
+.systris-trail--shift .systris-trail-cell {
+  animation: systris-trail-shift calc(170ms + var(--trail-strength) * 110ms) ease-out forwards;
+  animation-delay: var(--trail-delay, 0ms);
+}
+.systris-trail--fall .systris-trail-cell {
+  animation: systris-trail-fall calc(170ms + var(--trail-strength) * 120ms) ease-out forwards;
+  animation-delay: var(--trail-delay, 0ms);
+}
+.systris-trail--spin .systris-trail-cell {
+  animation: systris-trail-spin calc(215ms + var(--trail-strength) * 120ms) ease-out forwards;
+  animation-delay: var(--trail-delay, 0ms);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GRID CELLS
+══════════════════════════════════════════════════════════════ */
+.systris-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(20, minmax(0, 1fr));
+  gap: 0.15rem;
+  width: 100%;
+  aspect-ratio: 1 / 2;
+  border-radius: 0.78rem;
+  padding: 0.16rem;
+  background: linear-gradient(145deg, rgba(7,10,31,0.94), rgba(11,13,40,0.94));
+}
+
+/* Base cell */
+.systris-cell {
+  border-radius: 0.22rem;
+  border: 1px solid rgba(122,141,190,0.18);
+  background: rgba(11,17,45,0.62);
+  /* No transition on transform — it costs more than it gives here */
+  transition: box-shadow 0.18s ease;
+}
+
+/* Locked / active cell */
+.systris-cell.is-filled {
+  border-color: rgba(220,236,255,0.28);
+  background:
+    linear-gradient(155deg, rgba(255,255,255,0.30), transparent 46%),
+    var(--cell-color);
+  box-shadow:
+    inset 0 0 8px rgba(255,255,255,0.18),
+    0 0 10px var(--cell-glow),
+    0 0 20px var(--cell-glow);
+}
+
+/* Active (falling) piece — subtle lift only, NO translateY jank */
+.systris-cell.is-active {
+  animation: systris-cell-pulse 0.90s ease-in-out infinite;
+}
+
+/* Ghost piece — dashed outline with very faint fill */
+.systris-cell.is-ghost {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--cell-color) 58%, rgba(255,255,255,0.4));
+  background: rgba(22,30,64,0.30);
+  box-shadow: inset 0 0 0 1px var(--cell-glow);
+}
+
+/* ── is-clearing — the Tetris Effect dissolve ───────────────────
+   When a line is full and about to be removed, we add is-clearing
+   for CLEAR_ANIM_MS (280ms). Cells dissolve outward from centre.
+   animation-delay uses --clear-delay (set per-column in TSX). ── */
+.systris-cell.is-filled.is-clearing {
+  animation: systris-cell-dissolve 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation-delay: var(--clear-delay, 0ms);
+  /* Keep existing glow during the start of the animation */
+  will-change: opacity, transform, filter;
+}
+
+/* ── Overlay (ready / paused / gameover) ──────────────────────── */
+.systris-overlay {
+  position: absolute;
+  inset: 0.52rem;
+  border-radius: 0.78rem;
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  background: rgba(4,7,21,0.66);
+  backdrop-filter: blur(4px);
+  z-index: 8;
+}
+
+.systris-overlay h2 {
+  margin: 0;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: 1.28rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.systris-overlay p { margin: 0; font-size: 0.73rem; opacity: 0.80; }
+
+.systris-overlay button {
+  justify-self: center;
+  border: 1px solid rgba(123,195,255,0.72);
+  background: linear-gradient(145deg, #38beff 0%, #8e72ff 100%);
+  color: #050915;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  padding: 0.5rem 1.1rem;
+  cursor: pointer;
+  transition: filter 0.16s ease;
+}
+
+.systris-overlay button:hover { filter: brightness(1.12) saturate(1.08); }
+
+/* ── How to play ──────────────────────────────────────────────── */
+.systris-howto {
+  margin: 0.15rem 1.2rem 0.9rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(138,184,255,0.26);
+  background: rgba(10,16,44,0.58);
+  padding: 0.7rem 0.8rem 0.8rem;
+}
+
+.systris-howto h2 {
+  margin: 0;
+  font-size: 0.77rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.systris-howto-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.systris-howto-item {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(145,188,255,0.20);
+  background: rgba(17,22,56,0.68);
+  padding: 0.45rem 0.38rem 0.5rem;
+  text-align: center;
+}
+
+.systris-howto-icon {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.22rem;
+  border-radius: 999px;
+  border: 1px solid rgba(169,212,255,0.44);
+  background: rgba(28,52,116,0.70);
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: 0.76rem;
+  box-shadow: 0 0 10px rgba(94,187,255,0.24);
+}
+
+.systris-howto-item p { margin: 0.36rem 0 0; font-size: 0.65rem; line-height: 1.25; opacity: 0.86; }
+
+/* ── Podium ───────────────────────────────────────────────────── */
+.systris-podium-shell {
+  margin: 0 1.2rem 1.1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(142,187,255,0.26);
+  background: rgba(8,15,42,0.60);
+  padding: 0.75rem 0.85rem 0.92rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.systris-podium-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.systris-podium-head h2 { margin: 0; font-size: 0.77rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.82; }
+.systris-podium-head span {
+  border-radius: 999px;
+  border: 1px solid rgba(255,213,109,0.28);
+  background: rgba(255,213,109,0.11);
+  padding: 0.16rem 0.55rem;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255,235,179,0.88);
+}
+
+.systris-podium { display: flex; justify-content: center; align-items: end; gap: 0.7rem; flex-wrap: wrap; }
+
+.systris-podium-slot { width: min(31%, 192px); min-width: 120px; display: grid; gap: 0.46rem; }
+
+.systris-podium-user {
+  border-radius: 0.72rem;
+  border: 1px solid rgba(147,194,255,0.20);
+  background: rgba(12,19,50,0.66);
+  min-height: 2.55rem;
+  padding: 0.26rem 0.36rem;
+  display: grid;
+  align-items: center;
+}
+
+.systris-podium-user span { font-size: 0.74rem; text-align: center; color: rgba(224,239,255,0.68); }
+.systris-podium-user .userbox { width: 100%; min-width: 0; border-radius: 0.58rem; padding: 0.21rem 0.3rem; gap: 0.32rem; }
+.systris-podium-user .userbox__avatar { width: 21px; height: 21px; font-size: 0.58rem; }
+.systris-podium-user .userbox__name   { font-size: 0.62rem; max-width: 7rem; }
+
+.systris-podium-pillar {
+  border-radius: 0.84rem 0.84rem 0.62rem 0.62rem;
+  border: 1px solid rgba(142,188,255,0.32);
+  background: rgba(46,102,225,0.13);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.1rem;
+}
+
+.systris-podium-pillar strong { font-family: "Orbitron", "Chakra Petch", sans-serif; font-size: 1.12rem; line-height: 1; }
+.systris-podium-pillar span   { font-size: 0.73rem; font-family: "Orbitron", "Chakra Petch", sans-serif; }
+
+.systris-podium-slot--gold   .systris-podium-pillar { border-color: rgba(255,218,111,0.50); background: rgba(255,218,111,0.18); }
+.systris-podium-slot--gold   .systris-podium-pillar strong { color: #ffd968; }
+.systris-podium-slot--silver .systris-podium-pillar { border-color: rgba(205,220,255,0.48); background: rgba(205,220,255,0.14); }
+.systris-podium-slot--silver .systris-podium-pillar strong { color: #e2edff; }
+.systris-podium-slot--bronze .systris-podium-pillar { border-color: rgba(216,164,122,0.52); background: rgba(216,164,122,0.16); }
+.systris-podium-slot--bronze .systris-podium-pillar strong { color: #e7b188; }
+
+.systris-podium-empty { margin: 0; font-size: 0.76rem; color: rgba(223,238,255,0.72); }
+
+/* Status tints */
+.systris-shell--paused   .systris-grid { filter: saturate(0.70) brightness(0.88); }
+.systris-shell--gameover .systris-grid { filter: saturate(0.52) brightness(0.80); }
+
+/* ══════════════════════════════════════════════════════════════
+   KEYFRAMES
+══════════════════════════════════════════════════════════════ */
+
+@keyframes systris-page-flow {
+  0%   { background-position: 4% 8%,  92% 4%,  46% 94%, 50% 50%; filter: saturate(1) brightness(1); }
+  50%  { background-position: 36% 24%, 66% 14%, 54% 82%, 50% 50%; filter: saturate(calc(1.02 + var(--energy)*0.07)) brightness(calc(0.98 + var(--energy)*0.11)); }
+  100% { background-position: 12% 40%, 82% 24%, 62% 70%, 50% 50%; filter: saturate(calc(1.04 + var(--energy)*0.12)) brightness(calc(0.96 + var(--energy)*0.13)); }
+}
+
+@keyframes systris-spin { to { transform: rotate(360deg); } }
+
+@keyframes systris-scan {
+  from { transform: translate3d(-3%, -3%, 0); }
+  to   { transform: translate3d(3%,  3%,  0); }
+}
+
+@keyframes systris-shell-breathe {
+  0%, 100% {
+    border-color: rgba(116,170,255,0.28);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.52), 0 0 0 1px rgba(255,255,255,0.055) inset;
+  }
+  50% {
+    border-color: color-mix(in srgb, hsla(calc(var(--bg-hue) + 34), 100%, 72%, 0.48) 55%, rgba(116,170,255,0.28));
+    box-shadow:
+      0 30px 84px rgba(0,0,0,0.54),
+      0 0 44px hsla(calc(var(--bg-hue) + 25), 100%, 72%, 0.14),
+      0 0 0 1px rgba(255,255,255,0.075) inset;
+  }
+}
+
+@keyframes systris-shell-aurora {
+  0%   { transform: translate3d(-2%, -1%, 0) scale(1)    rotate(-2deg); opacity: 0.64; }
+  50%  { transform: translate3d(2%,  2%,  0) scale(1.05) rotate(1deg);  opacity: 0.88; }
+  100% { transform: translate3d(-1%, 3%,  0) scale(1.07) rotate(3deg);  opacity: 0.72; }
+}
+
+@keyframes systris-shell-sheen {
+  0%   { background-position: -220px 0, 0 0; }
+  100% { background-position: calc(100% + 260px) 0, 140px 120px; }
+}
+
+@keyframes systris-beat-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: calc(0.26 + var(--energy)*0.20);
+    filter: saturate(1);
+  }
+  48% {
+    transform: scale(1.018);
+    opacity: calc(0.42 + var(--energy)*0.28 + var(--combo-energy)*0.16);
+    filter: saturate(calc(1.02 + var(--combo-energy)*0.18));
+  }
+}
+
+@keyframes systris-bg-shift {
+  0%   { opacity: 0;    transform: scale(0.92) rotate(-6deg); }
+  22%  { opacity: 0.94; transform: scale(1.02) rotate(0deg);  }
+  58%  { opacity: 0.62; transform: scale(1.08) rotate(3deg);  }
+  100% { opacity: 0;    transform: scale(1.14) rotate(6deg);  }
+}
+
+/* ── Lock flash: bloom, no shake ─────────────────────────────── */
+@keyframes systris-lock-flash {
+  0%   { opacity: 0; transform: scale(0.8); }
+  22%  { opacity: 1; transform: scale(1);   }
+  100% { opacity: 0; transform: scale(1.08); }
+}
+
+/* ── Line-clear dissolve (cells) ─────────────────────────────── */
+@keyframes systris-cell-dissolve {
+  0%   {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) saturate(1);
+    box-shadow:
+      inset 0 0 8px rgba(255,255,255,0.18),
+      0 0 10px var(--cell-glow),
+      0 0 20px var(--cell-glow);
+  }
+  35%  {
+    opacity: 0.92;
+    transform: scale(1.06);
+    filter: brightness(1.55) saturate(1.4) blur(0px);
+    box-shadow:
+      inset 0 0 14px rgba(255,255,255,0.45),
+      0 0 22px var(--cell-glow),
+      0 0 44px var(--cell-glow);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+    filter: brightness(2.0) saturate(0.4) blur(2.5px);
+    box-shadow: none;
+  }
+}
+
+/* ── Cell pulse (active / falling piece) ─────────────────────── */
+@keyframes systris-cell-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 8px rgba(255,255,255,0.18),
+      0 0 10px var(--cell-glow),
+      0 0 20px var(--cell-glow);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 10px rgba(255,255,255,0.32),
+      0 0 14px var(--cell-glow),
+      0 0 28px var(--cell-glow);
+  }
+}
+
+/* ── Shockwave ──────────────────────────────────────────────── */
+@keyframes systris-shockwave {
+  0%   { transform: scale(0.42); opacity: 0;  }
+  16%  { opacity: 1;             }
+  100% { transform: scale(1.16); opacity: 0;  }
+}
+
+/* ── Lock ring ripple ────────────────────────────────────────── */
+@keyframes systris-lock-ring {
+  0%   { transform: translate(-50%, -50%) scale(0.32); opacity: 0;    }
+  18%  { opacity: 0.92;                                               }
+  100% { transform: translate(-50%, -50%) scale(1.38); opacity: 0;    }
+}
+
+/* ── Line flash (board glow) ─────────────────────────────────── */
+@keyframes systris-line-flash {
+  0%   { opacity: 0; transform: scale(0.97); }
+  22%  { opacity: 1; transform: scale(1.01); }
+  100% { opacity: 0; transform: scale(1.04); }
+}
+
+/* ── Impact wave (hard drop) ─────────────────────────────────── */
+@keyframes systris-impact {
+  0%   { opacity: 0.62; transform: scale(0.55, 0.28); }
+  100% { opacity: 0;    transform: scale(1.22, 1.58); }
+}
+
+/* ── Row shards ──────────────────────────────────────────────── */
+@keyframes systris-row-shard {
+  0%   { opacity: 0;   transform: translate(-50%, -50%) rotate(0deg)   scale(0.20); }
+  14%  { opacity: 1;   transform: translate(-50%, -50%) rotate(28deg)  scale(1.06); }
+  100% {
+    opacity: 0;
+    transform:
+      translate(
+        calc(-50% + var(--shard-drift) * 30px),
+        calc(-50% - (26px + var(--shard-strength) * 36px))
+      )
+      rotate(calc(var(--shard-drift) * 270deg))
+      scale(0.18);
+  }
+}
+
+/* ── Burst particles ─────────────────────────────────────────── */
+@keyframes systris-burst {
+  0%   { transform: translate(-50%, 0) scale(0.4); opacity: 0; }
+  14%  { opacity: 1; }
+  100% {
+    transform:
+      translate(
+        calc(-50% + (var(--burst-lane) - 0.5) * 94px),
+        calc(-128px - var(--burst-strength) * 78px)
+      )
+      scale(1.3);
+    opacity: 0;
+  }
+}
+
+/* ── Action banner ───────────────────────────────────────────── */
+@keyframes systris-banner {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.80); letter-spacing: 0.06em; filter: blur(4px); }
+  18%  { opacity: 1; transform: translateY(0)    scale(1.08); letter-spacing: 0.14em; filter: blur(0);   }
+  42%  { opacity: 1; transform: translateY(-2px) scale(1.02); }
+  100% { opacity: 0; transform: translateY(-18px) scale(1);   filter: blur(1px); }
+}
+
+/* ── Trail keyframes ─────────────────────────────────────────── */
+@keyframes systris-trail-fade {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes systris-trail-shift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(calc(var(--trail-strength) * -8px), 0, 0) scale(0.88); }
+}
+
+@keyframes systris-trail-fall {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(0, calc(var(--trail-strength) * -9px), 0) scale(0.86); }
+}
+
+@keyframes systris-trail-spin {
+  from { transform: translate3d(0, 0, 0) rotate(0deg)  scale(1); }
+  to   { transform: translate3d(0, calc(var(--trail-strength) * -7px), 0) rotate(18deg) scale(0.82); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 980px) {
+  .systris-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: "left" "board" "right";
+    gap: 0.8rem;
+  }
+
+  .systris-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .systris-message     { grid-column: 1 / -1; min-height: unset; }
+  .systris-next        { grid-column: 1 / -1; }
+  .systris-combo-bar   { grid-column: 1 / -1; }
+
+  .systris-next-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .systris-mini      { justify-self: center; }
+  .systris-leaderboard { padding: 0.62rem; }
+
+  .systris-board-wrap {
+    --board-width: min(24rem, 86vw, calc((100svh - 16rem) / 2));
+  }
+
+  .systris-podium-shell { margin-bottom: 0.9rem; }
+}
+
+@media (max-width: 620px) {
+  .systris-page { padding: 0.55rem 0 1.1rem; }
+
+  .systris-shell {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    animation-duration: 12s;
+  }
+
+  .systris-header  { padding: 0.9rem 0.85rem 0.55rem; }
+  .systris-layout  { padding: 0.3rem 0.85rem 0.8rem; }
+
+  .systris-sidebar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .systris-stat    { padding-inline: 0.5rem; }
+  .systris-stat-value { font-size: 1.06rem; }
+
+  .systris-stat-grid,
+  .systris-next,
+  .systris-message   { grid-column: 1 / -1; }
+
+  .systris-board-wrap {
+    --board-width: min(94vw, 22rem, calc((100svh - 15rem) / 2));
+    padding: 0.42rem;
+  }
+
+  .systris-howto      { margin: 0 0.85rem 0.75rem; padding-inline: 0.62rem; }
+  .systris-howto-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .systris-leaderboard { padding: 0.56rem; }
+  .systris-leaderboard-head h2 { font-size: 0.73rem; }
+  .systris-leaderboard-badge   { font-size: 0.53rem; padding-inline: 0.38rem; }
+
+  .systris-leaderboard-row {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    padding-inline: 0.32rem;
+  }
+
+  .systris-podium-shell { margin: 0 0.85rem 0.75rem; padding: 0.64rem; }
+  .systris-podium       { gap: 0.45rem; }
+
+  .systris-podium-slot {
+    min-width: 94px;
+    width: calc(33.333% - 0.32rem);
+  }
+
+  .systris-podium-head span { font-size: 0.53rem; padding-inline: 0.42rem; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .systris-page,
+  .systris-beat-vignette,
+  .systris-page::before,
+  .systris-page::after,
+  .systris-shell,
+  .systris-shell::before,
+  .systris-shell::after,
+  .systris-trail,
+  .systris-trail-cell,
+  .systris-lock-ring,
+  .systris-lock-flash-overlay,
+  .systris-row-shard,
+  .systris-bg-shift,
+  .systris-cell.is-active,
+  .systris-cell.is-clearing,
+  .systris-shockwave,
+  .systris-line-flash,
+  .systris-impact-wave,
+  .systris-burst,
+  .systris-action-banner {
+    animation: none;
+  }
+}

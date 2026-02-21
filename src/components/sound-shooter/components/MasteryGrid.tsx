@@ -24,7 +24,7 @@ export default function MasteryGrid({ entries }: MasteryGridProps) {
           {entries.map((entry) => (
             <article key={entry.sound} className={`sound-shooter__mastery-cell is-${entry.stage}`}>
               <div className="sound-shooter__mastery-main">
-                <strong>{entry.sound}</strong>
+                <strong>{formatRussianLetterPair(entry.sound)}</strong>
                 <span>{formatRussianLetterPair(entry.letter)}</span>
               </div>
               <div className="sound-shooter__mastery-meta">

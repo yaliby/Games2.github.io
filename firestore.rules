@@ -6,8 +6,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAnonymousGuest() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
     function isOwner(uid) {
       return signedIn() && request.auth.uid == uid;
+    }
+
+    // "Guest" users are usually anonymous-auth users, so they are still authenticated.
+    function canCreateOwnUser(uid) {
+      return isOwner(uid) || isAdmin() || (isAnonymousGuest() && request.auth.uid == uid);
     }
 
     // Client-only admin mode: replace placeholder with your real Firebase Auth UID.
@@ -85,21 +95,24 @@ service cloud.firestore {
 
     match /usernames/{username} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if canCreateOwnUser(request.resource.data.uid)
         && validUsername(username)
-        && hasAllKeys(['uid', 'createdAt'])
-        && onlyKeys(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid;
+        && hasAllKeys(['uid'])
+        && (onlyKeys(['uid']) || onlyKeys(['uid', 'createdAt']))
+        && request.resource.data.uid is string
+        && request.resource.data.uid == request.auth.uid
+        && (!hasKey('createdAt') || request.resource.data.createdAt == request.time);
       allow update, delete: if isAdmin();
     }
 
     match /users/{uid} {
       allow read: if true;
 
-      allow create: if (isOwner(uid) || isAdmin())
+      allow create: if canCreateOwnUser(uid)
         && hasAllKeys(['username', 'createdAt', 'bestScore', 'gamesPlayed'])
         && onlyKeys(['username', 'photoURL', 'createdAt', 'bestScore', 'gamesPlayed', 'achievements'])
         && validUsername(request.resource.data.username)
+        && request.resource.data.createdAt == request.time
         && validScore(request.resource.data.bestScore)
         && request.resource.data.gamesPlayed is int
         && request.resource.data.gamesPlayed >= 0

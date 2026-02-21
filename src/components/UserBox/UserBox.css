@@ -84,7 +84,7 @@
   position: absolute;
   left: 50%;
   bottom: 34px;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px)));
   min-width: 160px;
   max-width: 220px;
   padding: 10px 12px;
@@ -127,7 +127,26 @@
 
 .userbox__medal:hover .userbox__tooltip {
   opacity: 1;
-  transform: translateX(-50%) translateY(-4px);
+  transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(-4px);
+}
+
+.userbox__medal[data-tooltip-placement="bottom"] .userbox__tooltip {
+  top: 34px;
+  bottom: auto;
+  transform-origin: top center;
+}
+
+.userbox__medal[data-tooltip-placement="bottom"] .userbox__tooltip::after {
+  top: -6px;
+  bottom: auto;
+  border-top: 1px solid rgba(140, 170, 255, 0.2);
+  border-left: 1px solid rgba(140, 170, 255, 0.2);
+  border-right: none;
+  border-bottom: none;
+}
+
+.userbox__medal[data-tooltip-placement="bottom"]:hover .userbox__tooltip {
+  transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(4px);
 }
 
 .userbox--loading {

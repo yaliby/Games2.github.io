@@ -5,6 +5,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
 import UserBox from "../components/UserBox/UserBox";
 import { useUserProfile } from "../components/UserBox/useUserProfile";
+import { updateMedalTooltipPlacement } from "../components/UserBox/medalTooltipPlacement";
 
 type ProfileData = {
   username: string;
@@ -194,7 +195,11 @@ export default function Profile() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {medalProfile?.allMedals?.length ? (
             medalProfile.allMedals.map((m) => (
-              <div key={m.id} className="userbox__medal">
+              <div
+                key={m.id}
+                className="userbox__medal"
+                onMouseEnter={(event) => updateMedalTooltipPlacement(event.currentTarget)}
+              >
                 {m.icon ? (
                   <img src={m.icon} alt={m.title} />
                 ) : (

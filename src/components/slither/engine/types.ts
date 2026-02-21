@@ -145,6 +145,8 @@ export type World = {
 
   /** Difficulty 0.5..2, affects bot aggression & accuracy. */
   difficulty?: number;
+  /** Whether player-related head clashes open HeadBust duel mode. */
+  headBustEnabled?: boolean;
 
   /** Internal: last dt (used by AI) */
   _dtLast?: number;
@@ -173,4 +175,5 @@ export type WorldConfig = {
   botCount: number;
   difficulty?: number; // 1 = default
   playerColor?: string;
+  headBustEnabled?: boolean;
 };

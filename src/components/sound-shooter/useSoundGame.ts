@@ -3,6 +3,7 @@ import {
   allEnglishSounds,
   allRussianLetters,
   failMessages,
+  formatRussianLetterPair,
   getRandomItem,
   getSoundLesson,
   learningTips,
@@ -277,15 +278,18 @@ function getMasteryStage(hits: number): MasteryStage {
 }
 
 function buildExplainer(round: SoundRound, isCorrect: boolean, selectedOption: string): string {
+  const displaySound = formatRussianLetterPair(round.lesson.sound);
+  const displayLetter = formatRussianLetterPair(round.lesson.letter);
   const relation = round.mode === "reverse"
-    ? `${round.lesson.letter} -> ${round.lesson.sound}`
-    : `${round.lesson.sound} -> ${round.lesson.letter}`;
+    ? `${displayLetter} -> ${displaySound}`
+    : `${displaySound} -> ${displayLetter}`;
 
   if (isCorrect) {
     return `${relation}. ${round.lesson.englishAnchor}`;
   }
 
-  return `Correct pair is ${relation}. You selected ${selectedOption}. ${round.lesson.englishAnchor}`;
+  const displaySelectedOption = formatRussianLetterPair(selectedOption);
+  return `Correct pair is ${relation}. You selected ${displaySelectedOption}. ${round.lesson.englishAnchor}`;
 }
 
 function getLevelLabel(accuracy: number, bestStreak: number, bossClears: number): string {

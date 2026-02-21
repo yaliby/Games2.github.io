@@ -1,13 +1,12 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import confetti from "canvas-confetti";
-import { Heart, Play, RefreshCw, Sparkles, Timer, Trophy } from "lucide-react";
+import { Heart, Play, RefreshCw, Sparkles, Timer, Trophy, XCircle } from "lucide-react";
 import WhichCountryMap, { type MapFeedback } from "./WhichCountryMap";
 import { loadPlayableCountries, type PlayableCountry } from "./whichCountryData";
 import {
   BASE_CORRECT_POINTS,
   CORRECT_DELAY_MS,
-  HINT_PENALTY_POINTS,
   MAX_STRIKES,
   ROUND_TIME_SECONDS,
   TIME_BONUS_POINTS,
@@ -21,6 +20,7 @@ import {
 } from "./whichCountryLogic";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, onSnapshot } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 import { auth, db } from "../../services/firebase";
 import { checkWeeklyReset } from "../../services/resetService";
 import { submitWhichCountryScore } from "../../services/scoreService";
@@ -36,9 +36,11 @@ type ToastState = {
 } | null;
 type LeaderboardRow = { uid: string; score: number };
 
+const QUICK_BONUS_WINDOW_SECONDS = 10;
 const QUICK_ANSWER_BONUS = TIME_BONUS_POINTS * 5;
 
 export default function WhichCountryGame() {
+  const navigate = useNavigate();
   const [allCountries, setAllCountries] = useState<PlayableCountry[]>([]);
   const [loadError, setLoadError] = useState("");
 
@@ -59,8 +61,6 @@ export default function WhichCountryGame() {
   const [revealCorrectIso3, setRevealCorrectIso3] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [inputLocked, setInputLocked] = useState(false);
-  const [isNameHintVisible, setIsNameHintVisible] = useState(false);
-  const [nameHintUsed, setNameHintUsed] = useState(false);
 
   const [flagLoadFailed, setFlagLoadFailed] = useState(false);
   const actionTimerRef = useRef<number | null>(null);
@@ -153,8 +153,6 @@ export default function WhichCountryGame() {
     setStrikes(0);
     setTimeLeft(ROUND_TIME_SECONDS);
     setIsNewBest(false);
-    setIsNameHintVisible(false);
-    setNameHintUsed(false);
     setTargetCountry(firstTarget);
     setPhase("playing");
   }, [clearActionTimer, clearTransient, playableCountries]);
@@ -184,8 +182,6 @@ export default function WhichCountryGame() {
 
   useEffect(() => {
     setFlagLoadFailed(false);
-    setIsNameHintVisible(false);
-    setNameHintUsed(false);
   }, [targetCountry?.iso2, targetCountry?.iso3]);
 
   useEffect(() => () => clearActionTimer(), [clearActionTimer]);
@@ -339,7 +335,9 @@ export default function WhichCountryGame() {
       clearActionTimer();
 
       if (isCorrectGuess(country.iso3, targetCountry.iso3)) {
-        const quickBonus = timeLeft < ROUND_TIME_SECONDS ? QUICK_ANSWER_BONUS : 0;
+        const answeredWithinBonusWindow =
+          ROUND_TIME_SECONDS - timeLeft <= QUICK_BONUS_WINDOW_SECONDS;
+        const quickBonus = answeredWithinBonusWindow ? QUICK_ANSWER_BONUS : 0;
         const points = BASE_CORRECT_POINTS + quickBonus;
 
         setScore((prev) => prev + points);
@@ -392,16 +390,6 @@ export default function WhichCountryGame() {
     ],
   );
 
-  const handleRevealNameHint = useCallback(() => {
-    if (phase !== "playing" || !targetCountry || inputLocked || nameHintUsed) {
-      return;
-    }
-    setNameHintUsed(true);
-    setIsNameHintVisible(true);
-    setScore((prev) => Math.max(0, prev - HINT_PENALTY_POINTS));
-    setToast({ message: `Name revealed (-${HINT_PENALTY_POINTS})`, tone: "info" });
-  }, [inputLocked, nameHintUsed, phase, targetCountry]);
-
   if (loadError) {
     return (
       <main className="which-country">
@@ -446,7 +434,7 @@ export default function WhichCountryGame() {
   ] as const;
 
   return (
-    <main className={`which-country${showBoard ? " is-board" : ""}`}>
+    <main className={`which-country${showBoard ? " is-board" : ""}${phase === "ended" ? " is-ended" : ""}`}>
       <div className="which-country__backdrop" aria-hidden="true" />
       <header className="which-country__title">
         <span className="which-country__hero-pill">Geo Sprint</span>
@@ -474,7 +462,8 @@ export default function WhichCountryGame() {
                 <p className="which-country__count">{playableCountries.length} playable countries</p>
                 <div className="which-country__rules">
                   <span>{BASE_CORRECT_POINTS} base points per correct answer</span>
-                  <span>Quick answer (&lt;10s): +{QUICK_ANSWER_BONUS} bonus</span>
+                  <span>Answer in first {QUICK_BONUS_WINDOW_SECONDS}s: +{QUICK_ANSWER_BONUS}</span>
+                  <span>Round timer: {ROUND_TIME_SECONDS}s</span>
                   <span>Timer is bonus-only (no auto skip / no penalty)</span>
                   <span>{MAX_STRIKES} strikes and the run ends</span>
                 </div>
@@ -560,6 +549,7 @@ export default function WhichCountryGame() {
                 <span className="which-country__meta-label">Find this flag</span>
                 <AnimatePresence mode="wait">
                   <motion.div
+                    className="which-country__flag-display"
                     key={targetCountry?.iso3 ?? "flag-empty"}
                     initial={{ opacity: 0, y: 8, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -576,9 +566,10 @@ export default function WhichCountryGame() {
                     ) : (
                       <div className="which-country__flag-fallback">
                         <span>{getFlagFallbackText(targetCountry?.iso2)}</span>
-                        <strong>{targetCountry?.name ?? "No flag available"}</strong>
+                        <strong>No flag available</strong>
                       </div>
                     )}
+                    {targetCountry && <p className="which-country__target-name">{targetCountry.name}</p>}
                   </motion.div>
                 </AnimatePresence>
 
@@ -595,29 +586,11 @@ export default function WhichCountryGame() {
 
                 <div className="which-country__timer-track" aria-hidden="true">
                   <motion.div
-                    className={`which-country__timer-fill ${timeLeft <= 3 ? "is-danger" : ""}`}
+                    className={`which-country__timer-fill ${timeLeft <= 10 ? "is-danger" : ""}`}
                     animate={{ width: `${timerPercent}%` }}
                     transition={{ type: "spring", stiffness: 120, damping: 18 }}
                   />
                 </div>
-
-                {phase === "playing" && targetCountry && (
-                  <div className="which-country__hint-wrap">
-                    <button
-                      className="which-country__hint-btn"
-                      type="button"
-                      onClick={handleRevealNameHint}
-                      disabled={inputLocked || nameHintUsed}
-                    >
-                      {nameHintUsed
-                        ? "Name revealed"
-                        : `Reveal country name (-${HINT_PENALTY_POINTS})`}
-                    </button>
-                    {isNameHintVisible && (
-                      <p className="which-country__hint-name">{targetCountry.name}</p>
-                    )}
-                  </div>
-                )}
               </div>
 
               <div className="which-country__stats">
@@ -696,41 +669,72 @@ export default function WhichCountryGame() {
 
             <AnimatePresence>
               {phase === "ended" && (
-                <motion.section
-                  initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 12, scale: 0.98 }}
-                  transition={{ duration: 0.25 }}
-                  className="which-country__panel which-country__end"
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="which-country__end-overlay"
                 >
-                  <h3>Run complete</h3>
-                  {isNewBest && (
-                    <p className="which-country__best-badge">
-                      <Trophy size={14} />
-                      New personal best
+                  <motion.section
+                    initial={{ opacity: 0, y: 18, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.97 }}
+                    transition={{ duration: 0.24 }}
+                    className="which-country__panel which-country__end"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Run ended"
+                  >
+                    <p className="which-country__end-kicker">
+                      <XCircle size={14} />
+                      Eliminated
                     </p>
-                  )}
-                  <p>Final score: {score}</p>
-                  <p>Season: {currentSeasonId ? `#${currentSeasonId}` : "Loading..."}</p>
-                  <p>Strikes used: {strikes}/{MAX_STRIKES}</p>
-                  <div className="which-country__end-actions">
-                    <button className="which-country__primary-btn" type="button" onClick={startGame}>
-                      <RefreshCw size={16} />
-                      Play again
-                    </button>
-                    <button
-                      className="which-country__ghost-btn"
-                      type="button"
-                      onClick={() => {
-                        clearActionTimer();
-                        clearTransient();
-                        setPhase("idle");
-                      }}
-                    >
-                      Back to menu
-                    </button>
-                  </div>
-                </motion.section>
+                    <h3>Run over</h3>
+                    {isNewBest && (
+                      <p className="which-country__best-badge">
+                        <Trophy size={14} />
+                        New personal best
+                      </p>
+                    )}
+                    <p className="which-country__end-summary">
+                      You reached the strike limit and the run ended.
+                    </p>
+                    <div className="which-country__end-stats">
+                      <article className="which-country__end-stat">
+                        <span>Final score</span>
+                        <strong>{score}</strong>
+                      </article>
+                      <article className="which-country__end-stat">
+                        <span>Season</span>
+                        <strong>{currentSeasonId ? `#${currentSeasonId}` : "..."}</strong>
+                      </article>
+                      <article className="which-country__end-stat">
+                        <span>Strikes</span>
+                        <strong>
+                          {strikes}/{MAX_STRIKES}
+                        </strong>
+                      </article>
+                    </div>
+                    <div className="which-country__end-actions">
+                      <button className="which-country__primary-btn" type="button" onClick={startGame}>
+                        <RefreshCw size={16} />
+                        Play again
+                      </button>
+                      <button
+                        className="which-country__ghost-btn"
+                        type="button"
+                        onClick={() => {
+                          clearActionTimer();
+                          clearTransient();
+                          navigate("/");
+                        }}
+                      >
+                        Back home
+                      </button>
+                    </div>
+                  </motion.section>
+                </motion.div>
               )}
             </AnimatePresence>
           </motion.div>

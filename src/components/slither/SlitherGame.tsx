@@ -161,6 +161,8 @@ export default function SlitherGame() {
   const [score, setScore] = useState(0);
   const [finalScore, setFinalScore] = useState(0);
   const [playerColor, setPlayerColor] = useState('#00ff88');
+  const [headBustEnabled, setHeadBustEnabled] = useState(true);
+  const [showHeadBustInfo, setShowHeadBustInfo] = useState(false);
   const [headBust, setHeadBust] = useState<HeadBustDuel | null>(null);
   
   // --- Mutable Game State (Refs) ---
@@ -313,8 +315,9 @@ export default function SlitherGame() {
   }, [clearHeadBust]);
 
   const startGame = (difficulty: number, botCount: number) => {
-    worldRef.current = createWorld({ botCount, difficulty, playerColor });
+    worldRef.current = createWorld({ botCount, difficulty, playerColor, headBustEnabled });
     clearHeadBust();
+    setShowHeadBustInfo(false);
     
     // Reset camera to player position immediately
     const player = worldRef.current.snakes[0];
@@ -354,7 +357,7 @@ export default function SlitherGame() {
       }
       if (e.code === 'KeyX') {
         const world = worldRef.current;
-        if (!world || gameState !== 'PLAYING') return;
+        if (!world || gameState !== 'PLAYING' || !world.headBustEnabled) return;
         const player = world.snakes[0];
         const bot = world.snakes.find((s, idx) => idx > 0 && s.alive);
         if (player && bot) {
@@ -1116,7 +1119,85 @@ export default function SlitherGame() {
                         </p>
                     </div>
 
-                    <SkinPicker selected={playerColor} onSelect={setPlayerColor} />
+                    <SkinPicker
+                      selected={playerColor}
+                      onSelect={setPlayerColor}
+                      headBustEnabled={headBustEnabled}
+                    />
+
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontSize: 12, letterSpacing: 1.2, opacity: 0.72 }}>
+                          MODE: HEADBUST
+                        </div>
+
+                        <button
+                          onClick={() => setHeadBustEnabled((prev) => !prev)}
+                          aria-label="Toggle HeadBust mode"
+                          style={{
+                            width: 144,
+                            height: 42,
+                            borderRadius: 999,
+                            border: `1px solid ${headBustEnabled ? 'rgba(0,255,136,0.45)' : 'rgba(255,120,120,0.45)'}`,
+                            background: 'rgba(255,255,255,0.05)',
+                            position: 'relative',
+                            padding: 0,
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                            boxShadow: headBustEnabled
+                              ? '0 8px 24px rgba(0,255,136,0.18)'
+                              : '0 8px 24px rgba(255,90,90,0.18)'
+                          }}
+                        >
+                          <span
+                            style={{
+                              position: 'absolute',
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: '50%',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: 12,
+                              fontWeight: 800,
+                              letterSpacing: 0.8,
+                              color: headBustEnabled ? 'rgba(255,255,255,0.5)' : '#ffd6d6'
+                            }}
+                          >
+                            OFF
+                          </span>
+                          <span
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: '50%',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: 12,
+                              fontWeight: 800,
+                              letterSpacing: 0.8,
+                              color: headBustEnabled ? '#cbffe6' : 'rgba(255,255,255,0.5)'
+                            }}
+                          >
+                            ON
+                          </span>
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: 3,
+                              left: headBustEnabled ? 'calc(50% + 2px)' : 3,
+                              width: 'calc(50% - 5px)',
+                              height: 'calc(100% - 6px)',
+                              borderRadius: 999,
+                              background: headBustEnabled
+                                ? 'linear-gradient(180deg, rgba(0,255,136,0.36), rgba(0,170,105,0.36))'
+                                : 'linear-gradient(180deg, rgba(255,123,123,0.36), rgba(196,58,58,0.36))',
+                              transition: 'left 0.18s ease, background 0.18s ease',
+                            }}
+                          />
+                        </button>
+                    </div>
 
                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
                         <MenuButton 
@@ -1138,6 +1219,73 @@ export default function SlitherGame() {
                             onClick={() => startGame(2.7, 30)} 
                         />
                     </div>
+                </div>
+            </div>
+        )}
+
+        {showHeadBustInfo && (
+            <div
+                role="dialog"
+                aria-modal="true"
+                onClick={() => setShowHeadBustInfo(false)}
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'grid',
+                    placeItems: 'center',
+                    background: 'rgba(8, 12, 20, 0.72)',
+                    backdropFilter: 'blur(4px)',
+                    zIndex: 40
+                }}
+            >
+                <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                        width: 'min(92vw, 420px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 12,
+                        padding: '18px 18px 14px',
+                        borderRadius: 18,
+                        border: '1px solid rgba(140, 170, 255, 0.45)',
+                        background: 'linear-gradient(180deg, rgba(25,40,70,0.95), rgba(15,22,40,0.96))',
+                        boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#eef4ff' }}>
+                            What is HeadBust?
+                        </div>
+                        <button
+                            onClick={() => setShowHeadBustInfo(false)}
+                            aria-label="Close HeadBust info"
+                            style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 999,
+                                border: '1px solid rgba(255,255,255,0.25)',
+                                background: 'rgba(255,255,255,0.08)',
+                                color: '#fff',
+                                fontSize: 18,
+                                lineHeight: 1,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            ×
+                        </button>
+                    </div>
+
+                    <div style={{ fontSize: 13, lineHeight: 1.55, color: 'rgba(225,236,255,0.95)' }}>
+                        When two snake heads collide:
+                    </div>
+                    <ul style={{ margin: '0 0 0 18px', padding: 0, fontSize: 13, lineHeight: 1.55, color: '#dbe8ff' }}>
+                        <li>
+                            <strong>ON:</strong> starts a HeadBust duel for player vs bot.
+                        </li>
+                        <li>
+                            <strong>OFF:</strong> both snakes die instantly on head-to-head collision.
+                        </li>
+                    </ul>
                 </div>
             </div>
         )}
@@ -1246,7 +1394,15 @@ const SKINS = [
   '#00ffea', '#ffffff', '#ff66cc', '#6dff6d', '#8b7bff', '#ff7b54'
 ];
 
-function SkinPicker({ selected, onSelect }: { selected: string; onSelect: (c: string) => void }) {
+function SkinPicker({
+  selected,
+  onSelect,
+  headBustEnabled,
+}: {
+  selected: string;
+  onSelect: (c: string) => void;
+  headBustEnabled: boolean;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       <div style={{ fontSize: 12, letterSpacing: 1, opacity: 0.7 }}>CHOOSE SKIN</div>
@@ -1260,7 +1416,13 @@ function SkinPicker({ selected, onSelect }: { selected: string; onSelect: (c: st
           marginBottom: 20
         }}
       >
-        Tip: in-game press <kbd style={{ fontFamily: 'inherit' }}>X</kbd> to practice HeadBust
+        {headBustEnabled ? (
+          <>
+            Tip: in-game press <kbd style={{ fontFamily: 'inherit' }}>X</kbd> to practice HeadBust
+          </>
+        ) : (
+          <>HeadBust is OFF for this run (head-to-head means both snakes die).</>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 360 }}>
         {SKINS.map((c) => {
@@ -1288,3 +1450,4 @@ function SkinPicker({ selected, onSelect }: { selected: string; onSelect: (c: st
     </div>
   );
 }
+

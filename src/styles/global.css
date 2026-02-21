@@ -182,6 +182,11 @@ main {
   padding-top: 6vh;
 }
 
+/* Keep the landing title closer to the header without affecting game pages */
+.home .home-hero {
+  padding-top: 2.8vh;
+}
+
 .home-hero__content {
   text-align: center;
   position: relative;
@@ -673,6 +678,10 @@ footer > div {
 
   .home-hero {
     padding-top: 4vh;
+  }
+
+  .home .home-hero {
+    padding-top: 2.2vh;
   }
 
   .home-hero__title {

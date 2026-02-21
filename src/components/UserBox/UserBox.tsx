@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUserProfile } from "./useUserProfile";
+import { updateMedalTooltipPlacement } from "./medalTooltipPlacement";
 import "./UserBox.css";
 
 type UserBoxProps = {
@@ -110,7 +111,12 @@ export default function UserBox({ userId }: UserBoxProps) {
             <div className="userbox__medal userbox__medal--empty">—</div>
           ) : (
             medals.map((m) => (
-              <div key={m.id} className="userbox__medal" data-tooltip={`${m.title} — ${m.description}`}>
+              <div
+                key={m.id}
+                className="userbox__medal"
+                data-tooltip={`${m.title} — ${m.description}`}
+                onMouseEnter={(event) => updateMedalTooltipPlacement(event.currentTarget)}
+              >
                 {m.icon ? (
                   <img src={m.icon} alt={m.title} />
                 ) : (

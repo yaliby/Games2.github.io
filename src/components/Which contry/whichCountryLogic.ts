@@ -3,7 +3,7 @@ import type { PlayableCountry } from "./whichCountryData";
 export const CORRECT_DELAY_MS = 700;
 export const WRONG_DELAY_MS = 1000;
 export const MAX_STRIKES = 3;
-export const ROUND_TIME_SECONDS = 10;
+export const ROUND_TIME_SECONDS = 60;
 export const BASE_CORRECT_POINTS = 100;
 export const TIME_BONUS_POINTS = 10;
 export const STREAK_BONUS_POINTS = 50;

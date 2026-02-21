@@ -1,5 +1,5 @@
 ﻿import { Suspense, lazy, useEffect, useMemo } from "react";
-import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 
 import Header from "../components/Header";
 import Footer from "../components/Footer";
@@ -17,7 +17,11 @@ import TicTacToeGame from "../components/tic-tac-toe/TicTacToeGame";
 import WordGuessGame from "../components/word-guess/WordGuessGame";
 import ExpoCrossyRoadEmbed from "../components/ExpoCrossyRoadEmbed";
 import WhichCountryGame from "../components/Which contry/WhichCountryGame";
-import HourlyMagicPrompt, { HOURLY_MAGIC_OPEN_EVENT } from "../components/HourlyMagicPrompt";
+import BackgammonGame from "../components/Backgammon";
+import HourlyMagicPrompt from "../components/HourlyMagicPrompt";
+import CoyoteFlapyGame from "../components/CoyoteFlapy/CoyoteFlapyGame";
+import SysTrisGame from "../components/SysTris/SysTrisGame";
+import Game6767 from "../components/6767/Game6767";
 
 import Login from "../loginRegistry/Login";
 import Register from "../loginRegistry/Register";
@@ -33,15 +37,7 @@ import { isAdminUid } from "../services/admin";
 
 const SoundShooterGame = lazy(() => import("../components/sound-shooter/SoundShooter"));
 
-function isTypingTarget(el: EventTarget | null) {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName.toLowerCase();
-  if (["input", "textarea", "select"].includes(tag)) return true;
-  return el.isContentEditable;
-}
-
 export default function App() {
-  const navigate = useNavigate();
   const location = useLocation();
 
   const isSecret = location.pathname === "/secret";
@@ -62,7 +58,11 @@ export default function App() {
       "/game/word-guess",
       "/game/expo-crossy-road",
       "/game/which-country",
+      "/game/backgammon",
       "/game/sound-shooter",
+      "/game/coyote-flapy",
+      "/game/systris",
+      "/game/6767",
     ]),
     []
   );
@@ -98,29 +98,6 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
-
-      const isStarKey = e.key === "*" || e.code === "NumpadMultiply";
-
-      if (isStarKey) {
-        e.preventDefault();
-        window.dispatchEvent(new Event(HOURLY_MAGIC_OPEN_EVENT));
-        return;
-      }
-
-      if (e.code === "Space") {
-        e.preventDefault();
-        // ✅ replace כדי שלא יהיה "עמוד קודם" לחזור אליו
-        navigate("/secret", { replace: true });
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown, { passive: false });
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate]);
-
   return (
     <div className={`app-layout${isWhichCountryRoute ? " is-which-country-route" : ""}`}>
       {/* ✅ אין Header בעמוד הסודי וגם ב-NotFound */}
@@ -139,6 +116,10 @@ export default function App() {
           <Route path="/game/word-guess" element={<WordGuessGame />} />
           <Route path="/game/expo-crossy-road" element={<ExpoCrossyRoadEmbed />} />
           <Route path="/game/which-country" element={<WhichCountryGame />} />
+          <Route path="/game/backgammon" element={<BackgammonGame />} />
+          <Route path="/game/coyote-flapy" element={<CoyoteFlapyGame />} />
+          <Route path="/game/systris" element={<SysTrisGame />} />
+          <Route path="/game/6767" element={<Game6767 />} />
           <Route
             path="/game/sound-shooter"
             element={(

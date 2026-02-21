@@ -43,6 +43,8 @@ type FeedbackEntry = {
   createdAtMs: number;
 };
 
+type LetterMode = "cleanup" | "legacyAttack" | "legacyHourly";
+
 function formatFeedbackTime(createdAtMs: number) {
   if (!createdAtMs) return "עכשיו";
   return new Date(createdAtMs).toLocaleString("he-IL", {
@@ -60,6 +62,7 @@ export default function Header() {
 
   // Letter modal
   const [letterOpen, setLetterOpen] = useState(false);
+  const [letterMode, setLetterMode] = useState<LetterMode>("cleanup");
   // Updates modal
   const [updatesOpen, setUpdatesOpen] = useState(false);
   // Feedback modal
@@ -71,6 +74,16 @@ export default function Header() {
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
 
   const updatesLog: UpdateItem[] = [
+    {
+      date: "21.02.2026",
+      title: "Legacy Events",
+      desc: "האירועים ההיסטוריים נשמרו בארכיון לצפייה מהירה לפי דרישה.",
+      tag: "Legacy Events",
+      details: [
+        "כולל תיעוד של המתקפה של גל שפירו.",
+        "כולל תיעוד של מנגנון האימות השעתי הישן.",
+      ],
+    },
     {
       date: "14.02.2026",
       title: "תוקנו באגים בכל המשחקים",
@@ -266,6 +279,105 @@ export default function Header() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [letterOpen, updatesOpen, feedbackOpen]);
 
+  const isCleanupMode = letterMode === "cleanup";
+  const isLegacyAttackMode = letterMode === "legacyAttack";
+
+  const classifiedLabel = isCleanupMode ? "SYSTEM CLEAN" : "LEGACY EVENT";
+  const topHint = isCleanupMode
+    ? "DevOps IT • QA • System Recovery"
+    : "Archive • Incident Record";
+  const noticeBannerText = isCleanupMode
+    ? "המערכת נוקתה בהצלחה אחרי הרבה עבודה של צוותי DevOps, IT ו-QA."
+    : isLegacyAttackMode
+      ? "ארכיון: אירוע המתקפה של גל שפירו נשמר לצורכי תיעוד ובקרה."
+      : "ארכיון: מנגנון האימות השעתי (Legacy) נשמר לתיעוד היסטורי.";
+  const noticeDetailsTitle = isCleanupMode ? "פרטי ההודעה" : "פרטי האירוע ההיסטורי";
+  const noticeDetailsItems = isCleanupMode
+    ? [
+        "בוצע ניקוי מערכת מלא, הקשחת תצורה ואימות תקינות.",
+        "צוותי DevOps, IT ו-QA השלימו בדיקות עומס, רגרסיה ואבטחה.",
+        "נכון לעכשיו אין צורך בהפעלת אימות שעתי למשתמשים.",
+      ]
+    : isLegacyAttackMode
+      ? [
+          "אירוע אבטחה חריג טופל בזמן אמת על ידי צוותי התפעול.",
+          "בוצעה הקשחה לכל שכבות ההתחברות והסשן.",
+          "האירוע נשמר בארכיון לצורכי למידה ותחקור.",
+        ]
+      : [
+          "במהלך האירוע הופעל מנגנון אימות משתמשים אחת לשעה.",
+          "מנגנון זה נועד להפחתת סיכון בזמן טיפול בתשתיות.",
+          "המנגנון מסומן כיום כלגאסי ואינו מצב ברירת המחדל.",
+        ];
+  const paperTitle = isCleanupMode ? "הודעת תפעול רשמית" : "דוח אירוע לגאסי";
+  const paperSub = isCleanupMode
+    ? "המערכת נוקתה והוחזרה למצב יציב"
+    : isLegacyAttackMode
+      ? "תיעוד היסטורי: המתקפה של גל שפירו"
+      : "תיעוד היסטורי: מנגנון אימות שעתי";
+  const alertTitle = isCleanupMode
+    ? "מה השתנה בפועל?"
+    : isLegacyAttackMode
+      ? "מה קרה בזמן האירוע?"
+      : "איך עבד האימות השעתי?";
+  const alertItems = isCleanupMode
+    ? [
+        "תהליכי התחברות וסשנים יוצבו אחרי בדיקות QA מלאות.",
+        "נוקו התראות שווא ונוספו כללי ניטור מדויקים יותר.",
+        "המערכת חזרה לתפעול שגרתי עם ניטור רציף.",
+      ]
+    : isLegacyAttackMode
+      ? [
+          "התגלתה פעילות חריגה שדרשה הקשחה מיידית של המערכת.",
+          "בוצעו חסימות, בידוד רכיבים ותחקור מלא של הלוגים.",
+          "המערכת עברה למצב מוגן עד סיום הטיפול.",
+        ]
+      : [
+          "כל משתמש פעיל נדרש לאימות מחדש אחת לשעה.",
+          "אי השלמת אימות יכלה לגרום לניתוק סשן זמני.",
+          "כל חריגה נרשמה והועברה לטיפול מיידי.",
+        ];
+  const qaTitle = isCleanupMode ? "סטטוס תפעולי נוכחי" : "סטטוס תפעולי בארכיון";
+  const qaText = isCleanupMode
+    ? "צוותי QA, DevOps ו-IT סיימו עבודת ניקוי והתייצבות ממושכת.\nהמערכת מוגדרת נקייה ופעילה במתכונת רגילה."
+    : isLegacyAttackMode
+      ? "זהו תיעוד של אירוע המתקפה ושל מענה צוותי DevOps, IT ו-QA.\nניתן לעבור גם לתיעוד האימות השעתי מאותו פרק זמן."
+      : "זהו תיעוד של מנגנון האימות השעתי שהופעל באירוע.\nניתן להציג את מסך האימות הישן לצורכי הדגמה.";
+  const qaButtonLabel = isCleanupMode
+    ? "פתח Legacy Events"
+    : isLegacyAttackMode
+      ? "הצג אימות שעתי (לגאסי)"
+      : "פתח מסך אימות שעתי";
+  const qaButtonTitle = isCleanupMode
+    ? "פתיחת אירועי לגאסי"
+    : isLegacyAttackMode
+      ? "מעבר לתיעוד האימות השעתי"
+      : "פתיחת מסך האימות השעתי";
+  const terminalStatus = isCleanupMode
+    ? "SYSTEM_STATE=CLEAN"
+    : isLegacyAttackMode
+      ? "THREAT_LEVEL=ELEVATED (ARCHIVED)"
+      : "AUTH_MODE=HOURLY_LEGACY";
+  const bottomSecret = isCleanupMode
+    ? "המערכת נקייה ויציבה."
+    : isLegacyAttackMode
+      ? "אירוע המתקפה הועבר לארכיון."
+      : "האימות השעתי נשמר כלגאסי.";
+
+  const onLetterAction = () => {
+    if (isCleanupMode) {
+      setLetterOpen(false);
+      setUpdatesOpen(true);
+      return;
+    }
+    if (isLegacyAttackMode) {
+      setLetterMode("legacyHourly");
+      return;
+    }
+    setLetterOpen(false);
+    window.dispatchEvent(new Event(HOURLY_MAGIC_OPEN_EVENT));
+  };
+
   if (loading) {
     return (
       <header style={styles.headerWrap}>
@@ -323,10 +435,13 @@ export default function Header() {
 
             <button
               style={styles.btnLetter}
-              onClick={() => setLetterOpen(true)}
-              title="אימות משתמשים שעתי"
+              onClick={() => {
+                setLetterMode("cleanup");
+                setLetterOpen(true);
+              }}
+              title="עדכון סטטוס מערכת"
             >
-              <span style={{ fontSize: 14 }}>אימות שעתי</span>
+              <span style={{ fontSize: 14 }}>סטטוס מערכת</span>
             </button>
           </div>
 
@@ -386,8 +501,8 @@ export default function Header() {
           <div style={modalStyles.shell} role="dialog" aria-modal="true">
             <div style={modalStyles.topBar}>
               <div style={modalStyles.topLeft}>
-                <span style={modalStyles.classifiedPill}>CLASSIFIED</span>
-                <span style={modalStyles.topHint}>DevOps IT • Secure Notice</span>
+                <span style={modalStyles.classifiedPill}>{classifiedLabel}</span>
+                <span style={modalStyles.topHint}>{topHint}</span>
               </div>
 
               <button
@@ -399,16 +514,14 @@ export default function Header() {
               </button>
             </div>
 
-            <div style={modalStyles.noticeBanner}>
-              בעקבות המתקפה של גל שפירו נעשית בדיקה שעתית לאימות המשתמשים.
-            </div>
+            <div style={modalStyles.noticeBanner}>{noticeBannerText}</div>
 
             <div style={modalStyles.noticeDetails}>
-              <div style={modalStyles.noticeDetailsTitle}>פרטי המודעה</div>
+              <div style={modalStyles.noticeDetailsTitle}>{noticeDetailsTitle}</div>
               <ul style={modalStyles.noticeDetailsList}>
-                <li>אימות משתמש מתבצע אחת לשעה לכל משתמש פעיל.</li>
-                <li>משתמש שלא מאמת בזמן עשוי להיות מנותק עד התחברות מחדש.</li>
-                <li>בכל חריגה, האירוע נרשם ומועבר לבדיקה מיידית.</li>
+                {noticeDetailsItems.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
               </ul>
             </div>
 
@@ -421,32 +534,39 @@ export default function Header() {
                   </div>
 
                   <div style={modalStyles.headerMini}>
-                    <div style={modalStyles.paperTitle}>הודעת אבטחה רשמית</div>
-                    <div style={modalStyles.paperSub}>
-                      בעקבות המתקפה של גל שפירו • בדיקה שעתית לאימות משתמשים
-                    </div>
+                    <div style={modalStyles.paperTitle}>{paperTitle}</div>
+                    <div style={modalStyles.paperSub}>{paperSub}</div>
                   </div>
                 </div>
 
                 <div style={modalStyles.body}>
                   <p style={modalStyles.p}>
-                    <b>שימו לב:</b> בעקבות המתקפה של{" "}
-                    <span style={modalStyles.badName}>גל שפירו</span>{" "}
-                    נעשית בדיקה שעתית לאימות המשתמשים בכל המערכת.
+                    {isCleanupMode ? (
+                      <>
+                        <b>הודעה רשמית:</b> המערכת נוקתה והתייצבה לאחר עבודה מאומצת של{" "}
+                        <b>צוותי DevOps, IT ו-QA</b>.
+                      </>
+                    ) : isLegacyAttackMode ? (
+                      <>
+                        <b>אירוע ארכיון:</b> בעקבות המתקפה של{" "}
+                        <span style={modalStyles.badName}>גל שפירו</span> הופעלו נהלי חירום והקשחת מערכת.
+                      </>
+                    ) : (
+                      <>
+                        <b>אירוע ארכיון:</b> הופעל מנגנון{" "}
+                        <span style={modalStyles.badName}>אימות שעתי</span> לכל המשתמשים הפעילים עד לייצוב המערכת.
+                      </>
+                    )}
                   </p>
 
                   <div style={modalStyles.alertBox}>
                     <div style={modalStyles.alertIcon}>⚠️</div>
                     <div>
-                      <div style={modalStyles.alertTitle}>
-                        מה זה אומר בפועל?
-                      </div>
+                      <div style={modalStyles.alertTitle}>{alertTitle}</div>
                       <ul style={modalStyles.ul}>
-                        <li>אחת לשעה תתבקשו לבצע אימות משתמש.</li>
-                        <li>
-                          <b>משתמש שלא יאמת את עצמו עשוי להיות מנותק מהסשן.</b>
-                        </li>
-                        <li>במקרה חסימה יש להתחבר מחדש ולאמת שוב.</li>
+                        {alertItems.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
                       </ul>
                     </div>
                   </div>
@@ -456,25 +576,18 @@ export default function Header() {
   <div style={modalStyles.qaIcon}>🧪</div>
 
   <div style={{ flex: 1 }}>
-    <div style={modalStyles.qaTitle}>סטטוס תפעולי</div>
+    <div style={modalStyles.qaTitle}>{qaTitle}</div>
 
     <p style={modalStyles.qaText}>
-      צוות <b>QA</b> ו-<b>DevOps</b> מריצים בדיקה שעתית לאימות המשתמשים בזמן אמת.
-      <br />
-      <b>כל אירוע חריג נרשם ומטופל מיידית.</b>
-      ניתן להפעיל בדיקה ידנית עכשיו.
-      <br />
+      {qaText}
     </p>
 
     <button
       style={modalStyles.openScriptBtn}
-      onClick={() => {
-        setLetterOpen(false);
-        window.dispatchEvent(new Event(HOURLY_MAGIC_OPEN_EVENT));
-      }}
-      title="הפעל בדיקת אימות ידנית"
+      onClick={onLetterAction}
+      title={qaButtonTitle}
     >
-      הפעל בדיקת אימות עכשיו
+      {qaButtonLabel}
     </button>
 
   </div>
@@ -496,7 +609,7 @@ export default function Header() {
                       <span style={modalStyles.cmd}>status</span>
                     </div>
                     <div style={modalStyles.termLine}>
-                      <span style={modalStyles.bad}>THREAT_LEVEL=ELEVATED</span>
+                      <span style={modalStyles.bad}>{terminalStatus}</span>
                       <span style={modalStyles.cursor}>¦</span>
                     </div>
                   </div>
@@ -504,7 +617,7 @@ export default function Header() {
                   <div style={modalStyles.footerLine} />
 
                   <p style={modalStyles.bottomSecret}>
-                    הבדיקה השעתית פעילה עד הודעה חדשה.
+                    {bottomSecret}
                   </p>
                 </div>
               </div>
@@ -594,6 +707,28 @@ export default function Header() {
                           </li>
                         ))}
                       </ul>
+                    )}
+                    {item.tag === "Legacy Events" && (
+                      <div style={modalStyles.legacyEventsActions}>
+                        <button
+                          style={modalStyles.legacyEventsBtn}
+                          onClick={() => {
+                            setUpdatesOpen(false);
+                            navigate("/secret");
+                          }}
+                        >
+                          המתקפה של גל שפירו
+                        </button>
+                        <button
+                          style={modalStyles.legacyEventsBtn}
+                          onClick={() => {
+                            setUpdatesOpen(false);
+                            window.dispatchEvent(new Event(HOURLY_MAGIC_OPEN_EVENT));
+                          }}
+                        >
+                          האימות השעתי
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1367,6 +1502,26 @@ const modalStyles: Record<string, React.CSSProperties> = {
     lineHeight: 1.45,
   },
 
+  legacyEventsActions: {
+    marginTop: 10,
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+
+  legacyEventsBtn: {
+    border: "1px solid rgba(124,92,255,0.28)",
+    borderRadius: 12,
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 12.5,
+    color: "rgba(255,255,255,0.92)",
+    background:
+      "linear-gradient(135deg, rgba(124,92,255,0.16) 0%, rgba(255,79,216,0.10) 55%, rgba(89,248,208,0.08) 130%)",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
+  },
+
   feedbackShell: {
     width: "min(860px, 96vw)",
     borderRadius: 20,
@@ -1578,6 +1733,7 @@ qaText: {
   color: "rgba(255,255,255,0.84)",
   fontSize: 13.5,
   lineHeight: 1.5,
+  whiteSpace: "pre-line",
 },
 
 openScriptBtn: {

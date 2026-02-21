@@ -280,6 +280,114 @@ export async function submitWhichCountryScore(uid: string, score: number) {
   });
 }
 
+export async function submitSysTrisScore(uid: string, score: number) {
+  const safeScore = normalizeScore(score);
+  if (safeScore <= 0) return;
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "systris", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+    if (!snap.exists()) {
+      tx.set(scoreRef, {
+        username,
+        score: safeScore,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedScore = normalizeScore(data?.score);
+    if (safeScore <= storedScore) return;
+
+    tx.update(scoreRef, {
+      username,
+      score: safeScore,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function submit6767Score(uid: string, score: number) {
+  const safeScore = normalizeScore(score);
+  if (safeScore <= 0) return;
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "6767", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+    if (!snap.exists()) {
+      tx.set(scoreRef, {
+        username,
+        score: safeScore,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedScore = normalizeScore(data?.score);
+    if (safeScore <= storedScore) return;
+
+    tx.update(scoreRef, {
+      username,
+      score: safeScore,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function submitCoyoteFlapyScore(uid: string, score: number) {
+  const safeScore = normalizeScore(score);
+  if (safeScore <= 0) return;
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "coyote-flapy", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+    if (!snap.exists()) {
+      tx.set(scoreRef, {
+        username,
+        score: safeScore,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedScore = normalizeScore(data?.score);
+    if (safeScore <= storedScore) return;
+
+    tx.update(scoreRef, {
+      username,
+      score: safeScore,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
 export async function submitCrossyRoadScore(uid: string, score: number) {
   const safeScore = normalizeScore(score);
   if (safeScore <= 0) return;

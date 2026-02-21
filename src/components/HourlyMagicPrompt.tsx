@@ -1,83 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-const HOUR_MS = 60 * 60 * 1000;
 const MAGIC_WORD = "פליזוש";
-const STORAGE_KEY = "hourly-magic-next-at";
 export const HOURLY_MAGIC_OPEN_EVENT = "open-hourly-magic-prompt";
-
-function getStoredNextAt(): number | null {
-  try {
-    const rawValue = window.sessionStorage.getItem(STORAGE_KEY);
-    if (!rawValue) return null;
-
-    const parsedValue = Number(rawValue);
-    if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
-    return parsedValue;
-  } catch {
-    return null;
-  }
-}
-
-function storeNextAt(nextAt: number) {
-  try {
-    window.sessionStorage.setItem(STORAGE_KEY, String(nextAt));
-  } catch {
-    // Ignore storage errors (private mode, blocked storage, etc.).
-  }
-}
 
 export default function HourlyMagicPrompt() {
   const [isOpen, setIsOpen] = useState(false);
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
 
-  const timerIdRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const clearScheduledPrompt = useCallback(() => {
-    if (timerIdRef.current === null) return;
-    window.clearTimeout(timerIdRef.current);
-    timerIdRef.current = null;
-  }, []);
 
   const openPrompt = useCallback(() => {
     setAnswer("");
     setError("");
     setIsOpen(true);
   }, []);
-
-  const schedulePrompt = useCallback(
-    (nextAt: number) => {
-      clearScheduledPrompt();
-      const delay = Math.max(0, nextAt - Date.now());
-
-      timerIdRef.current = window.setTimeout(() => {
-        openPrompt();
-      }, delay);
-    },
-    [clearScheduledPrompt, openPrompt]
-  );
-
-  useEffect(() => {
-    const now = Date.now();
-    let nextAt = getStoredNextAt();
-
-    if (nextAt === null) {
-      nextAt = now + HOUR_MS;
-      storeNextAt(nextAt);
-    }
-
-    if (nextAt <= now) {
-      openPrompt();
-    } else {
-      schedulePrompt(nextAt);
-    }
-
-    return () => {
-      clearScheduledPrompt();
-    };
-  }, [clearScheduledPrompt, openPrompt, schedulePrompt]);
 
   useEffect(() => {
     const onOpenEvent = () => {
@@ -117,10 +55,6 @@ export default function HourlyMagicPrompt() {
     setIsOpen(false);
     setAnswer("");
     setError("");
-
-    const nextAt = Date.now() + HOUR_MS;
-    storeNextAt(nextAt);
-    schedulePrompt(nextAt);
   };
 
   if (!isOpen) return null;

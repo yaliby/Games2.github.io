@@ -30,6 +30,10 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.which-country.is-ended {
+  filter: none;
+}
+
 .app-layout.is-which-country-route main.which-country:not(.is-board) {
   height: auto;
   max-height: none;
@@ -490,6 +494,7 @@
   min-height: 0;
   height: 100%;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
+  position: relative;
 }
 
 .which-country__primary-btn,
@@ -541,8 +546,7 @@
 
 .which-country__primary-btn:focus-visible,
 .which-country__ghost-btn:focus-visible,
-.which-country__difficulty-btn:focus-visible,
-.which-country__hint-btn:focus-visible {
+.which-country__difficulty-btn:focus-visible {
   outline: 2px solid var(--wc-gold);
   outline-offset: 2px;
 }
@@ -567,6 +571,13 @@
   color: #a8d8ea;
 }
 
+.which-country__flag-display {
+  display: flex;
+  align-items: center;
+  gap: 0.62rem;
+  min-height: clamp(62px, 8vh, 84px);
+}
+
 .which-country__flag {
   height: clamp(56px, 7vh, 76px);
   max-width: 100%;
@@ -589,6 +600,16 @@
   place-items: center;
   gap: 0.2rem;
   background: rgba(255, 255, 255, 0.05);
+}
+
+.which-country__target-name {
+  margin: 0;
+  color: var(--wc-gold);
+  font-family: "Sora", "Outfit", sans-serif;
+  font-size: clamp(0.95rem, 1.5vw, 1.18rem);
+  font-weight: 800;
+  line-height: 1.2;
+  text-wrap: balance;
 }
 
 .which-country__chip-row {
@@ -643,39 +664,6 @@
 
 .which-country__timer-fill.is-danger::after {
   animation-duration: 1s;
-}
-
-.which-country__hint-wrap {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.which-country__hint-btn {
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 10px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
-  color: #eaf7ff;
-  padding: 0.48rem 0.74rem;
-  font-weight: 700;
-  cursor: pointer;
-  width: fit-content;
-  transition: background 120ms ease, transform 120ms ease;
-}
-
-.which-country__hint-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
-  transform: translateY(-1px);
-}
-
-.which-country__hint-btn:disabled {
-  opacity: 0.65;
-  cursor: default;
-}
-
-.which-country__hint-name {
-  margin: 0;
-  color: var(--wc-gold);
-  font-weight: 800;
 }
 
 .which-country__stats {
@@ -928,10 +916,95 @@
   background: linear-gradient(180deg, rgba(62, 138, 196, 0.95), rgba(41, 108, 158, 0.95));
 }
 
-.which-country__end {
-  padding: 1rem;
+.which-country__end-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
   display: grid;
-  gap: 0.62rem;
+  place-items: center;
+  padding: clamp(0.72rem, 2vw, 1.2rem);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 123, 143, 0.18), transparent 56%),
+    linear-gradient(180deg, rgba(4, 12, 19, 0.28), rgba(4, 12, 19, 0.7));
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.which-country__end {
+  width: min(540px, 100%);
+  padding: clamp(0.95rem, 2vw, 1.2rem);
+  display: grid;
+  gap: 0.7rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 126, 142, 0.48);
+  background:
+    linear-gradient(160deg, rgba(60, 22, 33, 0.96), rgba(22, 12, 19, 0.96)) padding-box,
+    linear-gradient(130deg, rgba(255, 142, 162, 0.7), rgba(255, 205, 132, 0.34)) border-box;
+  box-shadow:
+    0 20px 44px rgba(0, 0, 0, 0.44),
+    0 0 0 1px rgba(255, 168, 180, 0.16) inset;
+}
+
+.which-country__end-kicker {
+  margin: 0;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  border-radius: 999px;
+  padding: 0.3rem 0.62rem;
+  border: 1px solid rgba(255, 169, 182, 0.45);
+  background: rgba(255, 128, 146, 0.16);
+  color: #ffd2db;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.which-country__end h3 {
+  margin: 0;
+  font-family: "Sora", "Outfit", sans-serif;
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  letter-spacing: -0.02em;
+  color: #ffeef2;
+  text-shadow: 0 6px 16px rgba(0, 0, 0, 0.34);
+}
+
+.which-country__end-summary {
+  margin: 0;
+  color: #f4d9e0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.which-country__end-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.46rem;
+}
+
+.which-country__end-stat {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.46rem 0.52rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.which-country__end-stat span {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f3c7d0;
+  font-weight: 700;
+}
+
+.which-country__end-stat strong {
+  font-family: "Sora", "Outfit", sans-serif;
+  font-size: 1.02rem;
+  color: #fff4f7;
 }
 
 .which-country__best-badge {
@@ -949,7 +1022,6 @@
   box-shadow: 0 8px 18px rgba(255, 223, 145, 0.16);
 }
 
-.which-country__end h3,
 .which-country__end p {
   margin: 0;
 }
@@ -958,6 +1030,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.56rem;
+  margin-top: 0.18rem;
+}
+
+.which-country__end-actions .which-country__primary-btn,
+.which-country__end-actions .which-country__ghost-btn {
+  flex: 1;
+  min-width: 180px;
 }
 
 .which-country__error {
@@ -1085,8 +1164,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .which-country__hint-btn {
-    width: 100%;
+  .which-country__flag-display {
+    align-items: flex-start;
   }
 
   .which-country__title p {
@@ -1095,6 +1174,15 @@
 
   .which-country__map-stage {
     min-block-size: clamp(220px, 40vh, 360px);
+  }
+
+  .which-country__end-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .which-country__end-actions .which-country__primary-btn,
+  .which-country__end-actions .which-country__ghost-btn {
+    min-width: 100%;
   }
 }
 

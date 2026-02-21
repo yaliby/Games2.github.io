@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useCallback,
   type CSSProperties,
 } from "react";
 import "./TicTacToeGame.css";
@@ -17,9 +18,9 @@ type Difficulty = "EASY" | "MEDIUM" | "HARD";
 type BoardSize = 3 | 5 | 7;
 
 const BOARD_SETTINGS: Record<BoardSize, { winLength: number; label: string }> = {
-  3: { winLength: 3, label: "3×3 · יעד 3" },
-  5: { winLength: 4, label: "5×5 · יעד 4" },
-  7: { winLength: 5, label: "7×7 · יעד 5" },
+  3: { winLength: 3, label: "3×3" },
+  5: { winLength: 4, label: "5×5" },
+  7: { winLength: 5, label: "7×7" },
 };
 
 const TTT_MEDAL_IDS: Record<BoardSize, string> = {
@@ -501,6 +502,23 @@ function getBotMove(
   return getHeuristicMove(board, size, winLength) ?? getHeuristicPlusMove(board, size, winLength);
 }
 
+// ── Ghost Mark (hover preview) ──────────────────────────────────────────────
+function GhostMark({ player }: { player: Player }) {
+  if (player === "X") {
+    return (
+      <svg className="ttt__ghost ttt__ghost--x" viewBox="0 0 100 100" aria-hidden="true">
+        <line x1="20" y1="20" x2="80" y2="80" />
+        <line x1="80" y1="20" x2="20" y2="80" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="ttt__ghost ttt__ghost--o" viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="28" />
+    </svg>
+  );
+}
+
 export default function TicTacToeGame() {
   const [mode, setMode] = useState<Mode>("BOT");
   const [difficulty, setDifficulty] = useState<Difficulty>("MEDIUM");
@@ -510,6 +528,10 @@ export default function TicTacToeGame() {
     () => Array(boardSize * boardSize).fill(null)
   );
   const [xIsNext, setXIsNext] = useState(true);
+  const [hoveredCell, setHoveredCell] = useState<number | null>(null);
+  const [isThinking, setIsThinking] = useState(false);
+  const [moveCount, setMoveCount] = useState(0);
+
   const result = useMemo(
     () => getGameResult(board, boardSize, winLength),
     [board, boardSize, winLength]
@@ -528,13 +550,18 @@ export default function TicTacToeGame() {
   const [lastWinner, setLastWinner] = useState<Player | "DRAW" | null>(null);
 
   const currentPlayer: Player = xIsNext ? "X" : "O";
+  const isBotTurn = mode === "BOT" && !xIsNext && !winner;
 
   useEffect(() => {
     if (mode !== "BOT") return;
     if (winner) return;
     if (!xIsNext) {
+      setIsThinking(true);
       const move = getBotMove(board, boardSize, winLength, difficulty);
-      if (move === null) return;
+      if (move === null) {
+        setIsThinking(false);
+        return;
+      }
       const timer = window.setTimeout(() => {
         setBoard((prev) => {
           if (prev[move] || getGameResult(prev, boardSize, winLength).winner) return prev;
@@ -543,8 +570,13 @@ export default function TicTacToeGame() {
           return next;
         });
         setXIsNext(true);
-      }, 250);
-      return () => window.clearTimeout(timer);
+        setIsThinking(false);
+        setMoveCount((c) => c + 1);
+      }, 450);
+      return () => {
+        window.clearTimeout(timer);
+        setIsThinking(false);
+      };
     }
   }, [board, boardSize, difficulty, mode, winLength, winner, xIsNext]);
 
@@ -615,7 +647,7 @@ export default function TicTacToeGame() {
     });
   }, [boardSize, difficulty, lastWinner, mode, winner]);
 
-  function handleCellClick(index: number) {
+  const handleCellClick = useCallback((index: number) => {
     if (winner) return;
     if (board[index]) return;
     if (mode === "BOT" && !xIsNext) return;
@@ -624,12 +656,16 @@ export default function TicTacToeGame() {
     next[index] = currentPlayer;
     setBoard(next);
     setXIsNext(!xIsNext);
-  }
+    setMoveCount((c) => c + 1);
+  }, [winner, board, mode, xIsNext, currentPlayer]);
 
   function resetGame(nextSize: number = boardSize) {
     setBoard(Array(nextSize * nextSize).fill(null));
     setXIsNext(true);
     setLastWinner(null);
+    setMoveCount(0);
+    setHoveredCell(null);
+    setIsThinking(false);
   }
 
   function changeBoardSize(nextSize: BoardSize) {
@@ -667,9 +703,9 @@ export default function TicTacToeGame() {
     difficulty === "EASY" ? "קל" : difficulty === "MEDIUM" ? "בינוני" : "קשה";
 
   const boardStyle = useMemo<CSSProperties>(() => {
-    const gap = boardSize === 3 ? "0.65rem" : boardSize === 5 ? "0.5rem" : "0.4rem";
-    const padding = boardSize === 3 ? "1.2rem" : boardSize === 5 ? "0.9rem" : "0.7rem";
-    const width = boardSize === 3 ? "min(26rem, 90vw)" : boardSize === 5 ? "min(32rem, 92vw)" : "min(36rem, 94vw)";
+    const gap = boardSize === 3 ? "0.6rem" : boardSize === 5 ? "0.45rem" : "0.35rem";
+    const padding = boardSize === 3 ? "1.1rem" : boardSize === 5 ? "0.85rem" : "0.65rem";
+    const width = boardSize === 3 ? "min(24rem, 90vw)" : boardSize === 5 ? "min(31rem, 92vw)" : "min(36rem, 94vw)";
     const markScale = boardSize === 3 ? "1" : boardSize === 5 ? "0.85" : "0.7";
     const winLineWidth = boardSize === 7 ? "2.4" : boardSize === 5 ? "3" : "3.5";
 
@@ -697,113 +733,120 @@ export default function TicTacToeGame() {
         ? `ניצחת את הבוט הקשה בלוח 5×5 (${winLength} ברצף).`
         : `ניצחת את הבוט הקשה בלוח 7×7 (${winLength} ברצף).`;
 
-  const status = winner
-    ? winner === "DRAW"
-      ? "תיקו!"
-      : `המנצח: ${winner}`
-    : mode === "BOT"
-      ? xIsNext
-        ? `התור שלך (X) · רמה: ${difficultyLabel} · יעד: ${winLength} ברצף`
-        : "הבוט חושב..."
-      : `תור: ${currentPlayer} · יעד: ${winLength} ברצף`;
+  // Build status message
+  let statusText: string;
+  if (winner) {
+    statusText = winner === "DRAW" ? "תיקו! 🤝" : `${winner} ניצח! 🎉`;
+  } else if (isThinking) {
+    statusText = "הבוט חושב...";
+  } else if (mode === "BOT") {
+    statusText = `התור שלך (X) · ${difficultyLabel} · ${winLength} ברצף`;
+  } else {
+    statusText = `תור: ${currentPlayer} · יעד: ${winLength} ברצף`;
+  }
+
+  const canInteract = !winner && !isBotTurn;
 
   return (
-    <section className={`ttt ${winner ? "has-result" : ""}`}>
+    <section className={`ttt ${winner ? "has-result" : ""} ${isThinking ? "is-thinking" : ""}`}>
       <div className="ttt__aura" aria-hidden="true" />
+
+      {/* ── Header Controls ── */}
       <header className="ttt__header">
         <div className="ttt__controls">
           <button
             className={mode === "BOT" ? "is-active" : ""}
-            onClick={() => {
-              setMode("BOT");
-              resetGame();
-            }}
+            onClick={() => { setMode("BOT"); resetGame(); }}
           >
-            נגד בוט
+            🤖 נגד בוט
           </button>
           <button
             className={mode === "PVP" ? "is-active" : ""}
-            onClick={() => {
-              setMode("PVP");
-              resetGame();
-            }}
+            onClick={() => { setMode("PVP"); resetGame(); }}
           >
-            שני שחקנים
+            👥 שני שחקנים
+          </button>
+          <button className="ttt__reset" onClick={() => resetGame()} title="משחק חדש">
+            ↺ איפוס
           </button>
         </div>
+
         {mode === "BOT" && (
           <div className="ttt__difficulty">
-            <button
-              className={difficulty === "EASY" ? "is-active" : ""}
-              onClick={() => {
-                setDifficulty("EASY");
-                resetGame();
-              }}
-            >
-              קל
-            </button>
-            <button
-              className={difficulty === "MEDIUM" ? "is-active" : ""}
-              onClick={() => {
-                setDifficulty("MEDIUM");
-                resetGame();
-              }}
-            >
-              בינוני
-            </button>
-            <button
-              className={difficulty === "HARD" ? "is-active" : ""}
-              onClick={() => {
-                setDifficulty("HARD");
-                resetGame();
-              }}
-            >
-              קשה
-            </button>
+            {(["EASY", "MEDIUM", "HARD"] as Difficulty[]).map((d) => (
+              <button
+                key={d}
+                className={difficulty === d ? "is-active" : ""}
+                onClick={() => { setDifficulty(d); resetGame(); }}
+              >
+                {d === "EASY" ? "קל" : d === "MEDIUM" ? "בינוני" : "קשה"}
+              </button>
+            ))}
           </div>
         )}
+
         <div className="ttt__size">
-          <button
-            className={boardSize === 3 ? "is-active" : ""}
-            onClick={() => changeBoardSize(3)}
-          >
-            {BOARD_SETTINGS[3].label}
-          </button>
-          <button
-            className={boardSize === 5 ? "is-active" : ""}
-            onClick={() => changeBoardSize(5)}
-          >
-            {BOARD_SETTINGS[5].label}
-          </button>
-          <button
-            className={boardSize === 7 ? "is-active" : ""}
-            onClick={() => changeBoardSize(7)}
-          >
-            {BOARD_SETTINGS[7].label}
-          </button>
+          {([3, 5, 7] as BoardSize[]).map((s) => (
+            <button
+              key={s}
+              className={boardSize === s ? "is-active" : ""}
+              onClick={() => changeBoardSize(s)}
+            >
+              {BOARD_SETTINGS[s].label}
+              <span className="ttt__size-hint">יעד {BOARD_SETTINGS[s].winLength}</span>
+            </button>
+          ))}
         </div>
       </header>
 
-      <div className="ttt__status">{status}</div>
+      {/* ── Turn Indicator + Status ── */}
+      <div className="ttt__turn-row">
+        <div className={`ttt__player-chip ttt__player-chip--x ${xIsNext && !winner && !isThinking ? "is-active" : ""}`}>
+          <svg className="ttt__chip-mark ttt__chip-mark--x" viewBox="0 0 100 100" aria-hidden="true">
+            <line x1="20" y1="20" x2="80" y2="80" />
+            <line x1="80" y1="20" x2="20" y2="80" />
+          </svg>
+          <span>{stats.x}</span>
+        </div>
 
+        <div className="ttt__status" aria-live="polite" aria-atomic="true">
+          {isThinking ? (
+            <span className="ttt__thinking-dots">
+              <span>●</span><span>●</span><span>●</span>
+            </span>
+          ) : (
+            statusText
+          )}
+        </div>
+
+        <div className={`ttt__player-chip ttt__player-chip--o ${!xIsNext && !winner ? "is-active" : ""}`}>
+          <svg className="ttt__chip-mark ttt__chip-mark--o" viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="28" />
+          </svg>
+          <span>{stats.o}</span>
+        </div>
+      </div>
+
+      {/* ── Stats Bar ── */}
       <div className="ttt__stats">
         <div className="ttt__stat">
           <span className="ttt__stat-badge ttt__stat-badge--x">X</span>
           <strong>{stats.x}</strong>
           <small>נצחונות X</small>
         </div>
+        <div className="ttt__stat ttt__stat--draws">
+          <span className="ttt__stat-badge">=</span>
+          <strong>{stats.draws}</strong>
+          <small>תיקו</small>
+        </div>
         <div className="ttt__stat">
           <span className="ttt__stat-badge ttt__stat-badge--o">O</span>
           <strong>{stats.o}</strong>
           <small>נצחונות O</small>
         </div>
-        <div className="ttt__stat">
-          <span className="ttt__stat-badge">=</span>
-          <strong>{stats.draws}</strong>
-          <small>תיקו</small>
-        </div>
       </div>
 
+      {/* ── Medal ── */}
       {mode === "BOT" && difficulty === "HARD" && winner === "X" && (
         <div className="ttt__medal" role="status" aria-live="polite">
           <span className="ttt__medal-icon">★</span>
@@ -814,14 +857,12 @@ export default function TicTacToeGame() {
         </div>
       )}
 
+      {/* ── Board ── */}
       <div
         className="ttt__board"
         role="grid"
-        aria-label="Tic Tac Toe"
+        aria-label="Tic Tac Toe board"
         ref={boardRef}
-        onClick={() => {
-          if (winner) resetGame();
-        }}
         style={boardStyle}
       >
         {lineCoords && winner && winner !== "DRAW" && (
@@ -839,22 +880,55 @@ export default function TicTacToeGame() {
             />
           </svg>
         )}
-        {board.map((cell, index) => (
-          <button
-            key={index}
-            className={`ttt__cell ${cell ? "is-filled" : ""} ${
-              winningLine?.includes(index) ? "is-winning" : ""
-            }`}
-            onClick={() => handleCellClick(index)}
-            aria-label={`cell-${index}`}
-            ref={(el) => {
-              cellRefs.current[index] = el;
-            }}
-          >
-            {renderMark(cell)}
-          </button>
-        ))}
+        {board.map((cell, index) => {
+          const isWinning = winningLine?.includes(index) ?? false;
+          const winIdx = winningLine ? winningLine.indexOf(index) : -1;
+          const showGhost = !cell && hoveredCell === index && canInteract;
+
+          return (
+            <button
+              key={index}
+              className={`ttt__cell ${cell ? "is-filled" : ""} ${isWinning ? "is-winning" : ""} ${showGhost ? "is-hovered" : ""}`}
+              style={isWinning ? { "--win-delay": `${winIdx * 60}ms` } as CSSProperties : undefined}
+              onClick={() => handleCellClick(index)}
+              onMouseEnter={() => !cell && canInteract && setHoveredCell(index)}
+              onMouseLeave={() => setHoveredCell(null)}
+              disabled={!!cell || !!winner || isBotTurn}
+              aria-label={
+                cell
+                  ? `תא ${index + 1}: ${cell}`
+                  : isWinning
+                    ? `תא ${index + 1}: מנצח`
+                    : `תא ${index + 1}: ריק`
+              }
+              ref={(el) => {
+                cellRefs.current[index] = el;
+              }}
+            >
+              {renderMark(cell)}
+              {showGhost && <GhostMark player={currentPlayer} />}
+            </button>
+          );
+        })}
       </div>
+
+      {/* ── Game-over overlay prompt ── */}
+      {winner && (
+        <button
+          className="ttt__play-again"
+          onClick={() => resetGame()}
+          aria-label="משחק חדש"
+        >
+          ↺ משחק חדש
+        </button>
+      )}
+
+      {/* ── Move counter ── */}
+      {moveCount > 0 && !winner && (
+        <div className="ttt__move-count" aria-label={`מהלך ${moveCount}`}>
+          מהלך {moveCount}
+        </div>
+      )}
     </section>
   );
 }

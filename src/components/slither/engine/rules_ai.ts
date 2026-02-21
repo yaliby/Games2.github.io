@@ -1143,13 +1143,21 @@ function checkSnakeCollisions(world: World) {
         const d2Now = dist2(h1, h2);
         const d2Swept = dist2SegmentSegment(h1px, h1py, h1.x, h1.y, h2px, h2py, h2.x, h2.y);
         if (d2Now <= rSum * rSum || d2Swept <= rSum * rSum) {
+          const headBustEnabled = world.headBustEnabled !== false;
           // Player-involved head clash is resolved in the HEADBUST screen.
-          if (s1.isPlayer || s2.isPlayer) {
+          if (headBustEnabled && (s1.isPlayer || s2.isPlayer)) {
             queueHeadBust(world, s1, s2);
             return;
           }
 
-          // Bot-vs-bot clashes no longer kill both; one wins and survives.
+          // No-headbust mode: head-to-head collision kills both snakes immediately.
+          if (!headBustEnabled) {
+            killSnake(world, s1, null);
+            killSnake(world, s2, null);
+            continue;
+          }
+
+          // HeadBust mode keeps bot-vs-bot clashes decisive (one winner survives).
           resolveBotHeadBust(world, s1, s2);
         }
       }
@@ -1290,6 +1298,7 @@ export function createWorld(cfg: WorldConfig): World {
     snakes: [],
     maxPellets: 1100,
     difficulty: clamp(cfg.difficulty ?? 1, 0.55, 3.0),
+    headBustEnabled: cfg.headBustEnabled !== false,
   };
 
   const usedColors = new Set<string>();

@@ -6,6 +6,9 @@ import type { GeometryCollection, Properties, Topology } from "topojson-specific
 const WORLD_ATLAS_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const WORLD_COUNTRIES_URL =
   "https://cdn.jsdelivr.net/npm/world-countries@5.1.0/countries.json";
+const PALESTINE_ISO3 = "PSE";
+const PALESTINE_ISO2 = "ps";
+const PALESTINE_FLAG_REPLACEMENT_ISO2 = "il";
 
 export type PlayableCountry = {
   id: string;
@@ -99,8 +102,10 @@ export async function loadPlayableCountries(): Promise<PlayableCountry[]> {
     }
 
     const meta = metadataByCcn3.get(id);
-    const iso2 = meta?.cca2?.toLowerCase();
+    const rawIso2 = meta?.cca2?.toLowerCase();
     const iso3 = meta?.cca3?.toUpperCase();
+    const isPalestine = iso3 === PALESTINE_ISO3 || rawIso2 === PALESTINE_ISO2;
+    const iso2 = isPalestine ? PALESTINE_FLAG_REPLACEMENT_ISO2 : rawIso2;
     if (!iso2 || !iso3 || !/^[a-z]{2}$/.test(iso2)) {
       continue;
     }
