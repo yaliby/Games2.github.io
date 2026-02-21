@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, doc, onSnapshot } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import UserBox from "../UserBox/UserBox";
 import { auth, db } from "../../services/firebase";
 import { submitSysTrisScore } from "../../services/scoreService";
@@ -11,7 +11,17 @@ const BOARD_HEIGHT = 20;
 const PREVIEW_COUNT = 3;
 const BEST_KEY_PREFIX = "systris_best_score";
 const SAVE_KEY_PREFIX = "systris_save_v2";
+const PERF_MODE_KEY = "systris_perf_mode_v2";
 const CLEAR_ANIM_MS = 280; // duration of is-clearing dissolve before commit
+const SNAPSHOT_SAVE_DEBOUNCE_MS = 420;
+const BURST_HISTORY_LIMIT_FULL = 48;
+const BURST_HISTORY_LIMIT_PERF = 24;
+const EFFECT_HISTORY_LIMIT_FULL = 160;
+const EFFECT_HISTORY_LIMIT_PERF = 64;
+const FX_INTENSITY_SCALE = 0.68;
+const FX_COUNT_SCALE = 0.62;
+
+let runtimePerfMode = true;
 
 type PieceType = "I" | "O" | "T" | "S" | "Z" | "J" | "L";
 type Matrix = number[][];
@@ -491,6 +501,26 @@ function normalizeScore(value: unknown): number {
   return Math.floor(numeric);
 }
 
+function loadPerformanceMode(): boolean {
+  try {
+    const raw = localStorage.getItem(PERF_MODE_KEY);
+    if (raw === "0" || raw === "false") return false;
+    if (raw === "1" || raw === "true") return true;
+  } catch {
+    // Ignore storage failures.
+  }
+  // Default to full mode unless user explicitly enabled saver mode.
+  return false;
+}
+
+function savePerformanceMode(enabled: boolean): void {
+  try {
+    localStorage.setItem(PERF_MODE_KEY, enabled ? "1" : "0");
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 function getGhostRow(board: Board, piece: ActivePiece): number {
   let row = piece.row;
   while (!collides(board, piece.matrix, row + 1, piece.col)) row += 1;
@@ -593,24 +623,30 @@ function addBursts(
   current: Burst[], startSeq: number, kind: Burst["kind"],
   count: number, strength: number, baseDelayMs = 0, staggerMs = 8
 ) {
+  if (runtimePerfMode) return { bursts: current, burstSeq: startSeq };
+  const scaledCount = Math.max(1, Math.round(count * FX_COUNT_SCALE));
+  const scaledStrength = Math.max(0.24, strength * FX_INTENSITY_SCALE);
   let burstSeq = startSeq;
   const bursts = [...current];
-  for (let i = 0; i < count; i += 1) {
+  for (let i = 0; i < scaledCount; i += 1) {
     burstSeq += 1;
     bursts.push({
       id: burstSeq, kind,
       lane: Math.random(),
       hue: Math.floor(Math.random() * 360),
-      strength: Number((strength * (0.78 + Math.random() * 0.5)).toFixed(2)),
+      strength: Number((scaledStrength * (0.82 + Math.random() * 0.34)).toFixed(2)),
       delayMs: Math.max(0, Math.round(baseDelayMs + i * staggerMs)),
     });
   }
-  return { bursts: bursts.slice(-48), burstSeq };
+  const limit = runtimePerfMode ? BURST_HISTORY_LIMIT_PERF : BURST_HISTORY_LIMIT_FULL;
+  return { bursts: bursts.slice(-limit), burstSeq };
 }
 
 function addEffect(current: EffectEvent[], startSeq: number, build: (id: number) => EffectEvent) {
+  if (runtimePerfMode) return { effects: current, effectSeq: startSeq };
   const effectSeq = startSeq + 1;
-  return { effects: [...current, build(effectSeq)].slice(-160), effectSeq };
+  const limit = runtimePerfMode ? EFFECT_HISTORY_LIMIT_PERF : EFFECT_HISTORY_LIMIT_FULL;
+  return { effects: [...current, build(effectSeq)].slice(-limit), effectSeq };
 }
 
 function addTrailEffect(
@@ -618,11 +654,12 @@ function addTrailEffect(
   strength: number, motion: TrailEffect["motion"], delayMs = 0
 ) {
   if (piece.row + piece.matrix.length <= 0) return { effects: current, effectSeq: startSeq };
+  const scaledStrength = Math.max(0.28, Math.min(1.3, strength * FX_INTENSITY_SCALE));
   return addEffect(current, startSeq, (id) => ({
     id, kind: "trail", type: piece.type,
     matrix: cloneMatrix(piece.matrix),
     row: piece.row, col: piece.col,
-    strength: Math.max(0.35, Math.min(1.8, strength)),
+    strength: scaledStrength,
     motion,
     delayMs: Math.max(0, Math.round(delayMs)),
   }));
@@ -633,10 +670,11 @@ function addLockRingEffect(
 ) {
   const centerX = piece.col + piece.matrix[0].length / 2;
   const centerY = piece.row + piece.matrix.length / 2;
+  const scaledStrength = Math.max(0.32, Math.min(1.6, strength * FX_INTENSITY_SCALE));
   return addEffect(current, startSeq, (id) => ({
     id, kind: "lock-ring",
     x: centerX, y: centerY,
-    strength: Math.max(0.4, Math.min(2.2, strength)),
+    strength: scaledStrength,
     delayMs: Math.max(0, Math.round(delayMs)),
   }));
 }
@@ -653,15 +691,16 @@ function addLineClearEffects(
     const row = clearedRows[i];
     const rowCells = clearedCells[i] ?? [];
     const rowBaseDelay = i * 30;
-    const step = Math.max(1, Math.floor(rowCells.length / 7));
+    const step = Math.max(1, Math.floor(rowCells.length / 4));
     for (let cellIndex = 0; cellIndex < rowCells.length; cellIndex += step) {
       const cell = rowCells[cellIndex];
       const shardIndex = Math.floor(cellIndex / step);
+      const shardStrength = Math.max(0.38, Math.min(1.1, power * FX_INTENSITY_SCALE * (0.74 + Math.random() * 0.26)));
       const shard = addEffect(effects, effectSeq, (id) => ({
         id, kind: "row-shard",
         row, col: cell.col,
         hue: PIECE_HUES[cell.type],
-        strength: Math.max(0.55, Math.min(1.45, power * (0.6 + Math.random() * 0.4))),
+        strength: Number(shardStrength.toFixed(3)),
         drift: Number(((Math.random() * 2.6) - 1.3).toFixed(3)),
         delayMs: rowBaseDelay + 10 + shardIndex * 5 + Math.floor(Math.random() * 10),
       }));
@@ -747,20 +786,28 @@ function settlePiece(
   const nextBest = Math.max(state.best, nextScore);
 
   const actionPowerBase = getActionPower(cleared, nextCombo, impactStrength);
-  const actionPower = Math.min(2.9, actionPowerBase + (levelUp ? 0.34 : 0));
+  const actionPower = runtimePerfMode
+    ? 0
+    : Math.min(2.1, (actionPowerBase + (levelUp ? 0.22 : 0)) * FX_INTENSITY_SCALE);
   const baseLabel = getActionLabel(cleared, nextCombo, impactStrength);
-  const actionLabel = levelUp
+  const actionLabel = runtimePerfMode
+    ? ""
+    : levelUp
     ? (baseLabel ? `${baseLabel} · LEVEL ${nextLevel}` : `LEVEL ${nextLevel} SHIFT`)
     : baseLabel;
   const actionBurstBoost = Math.max(1, Math.round(actionPower * 2.2));
 
-  const nextComboEnergy = cleared > 0
-    ? Math.min(1.9,
-        state.comboEnergy * 0.56 +
-        cleared * 0.34 +
-        Math.max(0, nextCombo - 1) * 0.14 +
-        (levelUp ? 0.18 : 0))
-    : Math.max(0, state.comboEnergy - 0.18);
+  const nextComboEnergy = runtimePerfMode
+    ? 0
+    : cleared > 0
+    ? Math.min(
+        1.4,
+        state.comboEnergy * 0.5 +
+          cleared * 0.24 +
+          Math.max(0, nextCombo - 1) * 0.1 +
+          (levelUp ? 0.12 : 0)
+      )
+    : Math.max(0, state.comboEnergy - 0.22);
 
   // --- Generate all effects immediately (they fire during clear animation) ---
   let bursts = state.bursts;
@@ -778,7 +825,7 @@ function settlePiece(
   if (cleared > 0) {
     clearPulse += 1;
     // Clear bursts
-    const clearBurstCount = Math.max(4, Math.round(actionPower * 3.8 + cleared * 2));
+    const clearBurstCount = Math.max(2, Math.round(actionPower * 2.4 + cleared * 1.2));
     const cb = addBursts(bursts, burstSeq, "clear", clearBurstCount, actionPower, 0, 10);
     bursts = cb.bursts; burstSeq = cb.burstSeq;
     // Row shards (fire slightly delayed — during the is-clearing window)
@@ -786,13 +833,25 @@ function settlePiece(
     effects = rowFx.effects;
     effectSeq = rowFx.effectSeq;
   } else if (impactStrength > 0) {
-    const impactFx = addBursts(bursts, burstSeq, "impact", Math.max(1, Math.round(impactStrength * (4 + actionBurstBoost))), Math.max(0.4, impactStrength), 0, 6);
+    const impactFx = addBursts(
+      bursts,
+      burstSeq,
+      "impact",
+      Math.max(1, Math.round(impactStrength * (2 + actionBurstBoost * 0.5))),
+      Math.max(0.28, impactStrength * FX_INTENSITY_SCALE),
+      0,
+      6
+    );
     bursts = impactFx.bursts; burstSeq = impactFx.burstSeq;
     impactPulse += 1;
   }
 
-  const fxPower = Math.min(2.8, actionPower + nextComboEnergy * 0.14);
-  const fxPulse = actionPower > 0.35 || levelUp ? state.fxPulse + 1 : state.fxPulse;
+  const fxPower = runtimePerfMode ? 0 : Math.min(1.8, actionPower + nextComboEnergy * 0.08);
+  const fxPulse = runtimePerfMode
+    ? state.fxPulse
+    : actionPower > 0.56 || levelUp
+      ? state.fxPulse + 1
+      : state.fxPulse;
   const lockFlashKey = state.lockFlashKey + 1;
 
   // ── NO LINES CLEARED: commit immediately ───────────────────────────────────
@@ -1007,8 +1066,10 @@ function MiniPiece({ type }: { type: PieceType }) {
 export default function SysTrisGame() {
   const initialUid = auth.currentUser?.uid ?? null;
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
+  const [performanceMode, setPerformanceMode] = useState(() => loadPerformanceMode());
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
   const latestStateRef = useRef(state);
+  const snapshotSaveTimerRef = useRef<number | null>(null);
   const activeUidRef = useRef<string | null>(initialUid);
   const [activeUid, setActiveUid] = useState<string | null>(activeUidRef.current);
   const bestSyncReadyRef = useRef(initialUid === null);
@@ -1016,7 +1077,14 @@ export default function SysTrisGame() {
   const pendingBestScoreRef = useRef(0);
   const bestSubmitInFlightRef = useRef(false);
 
+  runtimePerfMode = performanceMode;
+
   useEffect(() => { latestStateRef.current = state; }, [state]);
+
+  useEffect(() => {
+    runtimePerfMode = performanceMode;
+    savePerformanceMode(performanceMode);
+  }, [performanceMode]);
 
   // ── Auto-commit line clear after animation ──────────────────────────────
   useEffect(() => {
@@ -1041,7 +1109,11 @@ export default function SysTrisGame() {
   }, []);
 
   useEffect(() => {
-    const scoresRef = collection(db, "scores", "systris", "users");
+    const scoresRef = query(
+      collection(db, "scores", "systris", "users"),
+      orderBy("score", "desc"),
+      limit(8)
+    );
     return onSnapshot(
       scoresRef,
       (snap) => {
@@ -1051,7 +1123,6 @@ export default function SysTrisGame() {
             return { uid: entry.id, score: normalizeScore(data?.score) };
           })
           .filter((row) => row.score > 0)
-          .sort((a, b) => b.score - a.score)
           .slice(0, 8);
         setLeaderboard(rows);
       },
@@ -1113,7 +1184,41 @@ export default function SysTrisGame() {
     try { localStorage.setItem(getBestStorageKey(activeUid), String(state.best)); } catch { /* ignore */ }
   }, [state.best, activeUid]);
 
-  useEffect(() => { persistSnapshot(state, false, activeUidRef.current); }, [state, activeUid]);
+  useEffect(() => {
+    if (snapshotSaveTimerRef.current) {
+      window.clearTimeout(snapshotSaveTimerRef.current);
+      snapshotSaveTimerRef.current = null;
+    }
+    snapshotSaveTimerRef.current = window.setTimeout(() => {
+      persistSnapshot(latestStateRef.current, false, activeUidRef.current);
+      snapshotSaveTimerRef.current = null;
+    }, SNAPSHOT_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (snapshotSaveTimerRef.current) {
+        window.clearTimeout(snapshotSaveTimerRef.current);
+        snapshotSaveTimerRef.current = null;
+      }
+    };
+  }, [
+    activeUid,
+    state.active,
+    state.bag,
+    state.best,
+    state.board,
+    state.combo,
+    state.fxLabel,
+    state.fxPower,
+    state.fxPulse,
+    state.lastClear,
+    state.level,
+    state.lines,
+    state.message,
+    state.pendingClear,
+    state.queue,
+    state.score,
+    state.status,
+  ]);
 
   useEffect(() => {
     const persistPaused = () => persistSnapshot(latestStateRef.current, true, activeUidRef.current);
@@ -1131,7 +1236,10 @@ export default function SysTrisGame() {
   // Tick interval — level controls drop speed
   useEffect(() => {
     if (state.status !== "playing") return undefined;
-    const timer = window.setInterval(() => dispatch({ type: "TICK" }), getDropDelay(state.level));
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      dispatch({ type: "TICK" });
+    }, getDropDelay(state.level));
     return () => window.clearInterval(timer);
   }, [state.level, state.status]);
 
@@ -1202,9 +1310,20 @@ export default function SysTrisGame() {
     return set;
   }, [ghostRow, state.active, displayBoard]);
 
-  const energy = Math.min(1, 0.15 + state.level * 0.06 + state.combo * 0.07 + state.comboEnergy * 0.24 + state.lastClear * 0.14 + state.fxPower * 0.24 + (state.status === "playing" ? 0.08 : 0));
+  const energy = performanceMode
+    ? 0.18
+    : Math.min(
+        1,
+        0.15 +
+          state.level * 0.06 +
+          state.combo * 0.07 +
+          state.comboEnergy * 0.16 +
+          state.lastClear * 0.1 +
+          state.fxPower * 0.14 +
+          (state.status === "playing" ? 0.08 : 0)
+      );
   const hue = (205 + state.level * 12 + state.lines * 5) % 360;
-  const beatMs = Math.max(340, 500 - Math.min(130, state.level * 8 + state.combo * 6));
+  const beatMs = performanceMode ? 9999 : Math.max(340, 500 - Math.min(130, state.level * 8 + state.combo * 6));
   const pageStyle = {
     "--systris-energy": energy.toFixed(3),
     "--systris-hue": String(hue),
@@ -1213,7 +1332,7 @@ export default function SysTrisGame() {
     "--systris-beat-ms": `${beatMs}ms`,
   } as CSSProperties;
   const bgShiftHue = (hue + 34 + state.lastClear * 28 + state.combo * 8) % 360;
-  const effectTier = Math.min(4, Math.max(1, Math.round(state.fxPower * 1.55)));
+  const effectTier = Math.min(4, Math.max(1, Math.round(state.fxPower * 1.18)));
   const topLeaderboardRows = leaderboard.slice(0, 6);
   const podiumSlots = [
     { rank: 2, row: leaderboard[1] ?? null, tone: "silver" as const, height: 94 },
@@ -1224,9 +1343,9 @@ export default function SysTrisGame() {
   const overlayButton = state.status === "paused" ? "Resume" : state.status === "gameover" ? "Restart" : "Start";
 
   return (
-    <main className="systris-page" style={pageStyle}>
+    <main className={`systris-page${performanceMode ? " systris-page--perf" : ""}`} style={pageStyle}>
       <div className="systris-beat-vignette" aria-hidden />
-      {state.clearPulse > 0 && (
+      {!performanceMode && state.clearPulse > 0 && (
         <div
           key={`bg-shift-${state.clearPulse}`}
           className={`systris-bg-shift systris-bg-shift--${Math.max(1, state.lastClear)}`}
@@ -1239,6 +1358,13 @@ export default function SysTrisGame() {
         <header className="systris-header">
           <h1 className="systris-title">SysTris</h1>
           <p className="systris-subtitle">Tetris Effect style playground</p>
+          <button
+            type="button"
+            className={`systris-perf-toggle${performanceMode ? " is-on" : ""}`}
+            onClick={() => setPerformanceMode((value) => !value)}
+          >
+            {performanceMode ? "Resource Saver: ON" : "Resource Saver: OFF"}
+          </button>
         </header>
 
         <div className="systris-layout">
@@ -1286,7 +1412,7 @@ export default function SysTrisGame() {
 
           <section className="systris-board-wrap">
             {/* Lock flash — new element per lock so animation always retriggers */}
-            {state.lockFlashKey > 0 && (
+            {!performanceMode && state.lockFlashKey > 0 && (
               <div
                 key={`lock-flash-${state.lockFlashKey}`}
                 className="systris-lock-flash-overlay"
@@ -1294,7 +1420,7 @@ export default function SysTrisGame() {
               />
             )}
 
-            {state.fxPower > 0.28 && state.lastClear === 0 && (
+            {!performanceMode && state.fxPower > 0.46 && state.lastClear === 0 && (
               <div
                 key={`shock-${state.fxPulse}`}
                 className={`systris-shockwave systris-shockwave--${effectTier}${state.lastClear >= 4 ? " is-mega" : ""}`}
@@ -1303,7 +1429,7 @@ export default function SysTrisGame() {
               />
             )}
 
-            {state.status === "playing" && state.fxLabel && state.fxPower > 0.26 && (
+            {!performanceMode && state.status === "playing" && state.fxLabel && state.fxPower > 0.42 && (
               <div
                 key={`banner-${state.fxPulse}`}
                 className={`systris-action-banner systris-action-banner--${effectTier}`}
@@ -1314,7 +1440,7 @@ export default function SysTrisGame() {
             )}
 
             {/* Line flash on clear */}
-            {state.clearPulse > 0 && (
+            {!performanceMode && state.clearPulse > 0 && (
               <div
                 key={`lflash-${state.clearPulse}`}
                 className={`systris-line-flash systris-line-flash--${Math.min(4, Math.max(1, state.lastClear))}`}
@@ -1322,8 +1448,9 @@ export default function SysTrisGame() {
               />
             )}
 
-            <div className="systris-effects" aria-hidden>
-              {state.effects.map((effect) => {
+            {!performanceMode && (
+              <div className="systris-effects" aria-hidden>
+                {state.effects.map((effect) => {
                 if (effect.kind === "lock-ring") {
                   const lockStyle = {
                     "--lock-x": `${((effect.x + 0.5) / BOARD_WIDTH) * 100}%`,
@@ -1397,26 +1524,29 @@ export default function SysTrisGame() {
                     {trailCells}
                   </span>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            )}
 
-            <div className="systris-bursts" aria-hidden>
-              {state.bursts.map((burst) => (
-                <span
-                  key={burst.id}
-                  className={`systris-burst systris-burst--${burst.kind}`}
-                  style={{
-                    "--burst-lane": burst.lane.toFixed(4),
-                    "--burst-hue": String(burst.hue),
-                    "--burst-strength": burst.strength.toFixed(2),
-                    "--burst-delay": `${burst.delayMs}ms`,
-                  } as CSSProperties}
-                  onAnimationEnd={() => dispatch({ type: "REMOVE_BURST", id: burst.id })}
-                />
-              ))}
-            </div>
+            {!performanceMode && (
+              <div className="systris-bursts" aria-hidden>
+                {state.bursts.map((burst) => (
+                  <span
+                    key={burst.id}
+                    className={`systris-burst systris-burst--${burst.kind}`}
+                    style={{
+                      "--burst-lane": burst.lane.toFixed(4),
+                      "--burst-hue": String(burst.hue),
+                      "--burst-strength": burst.strength.toFixed(2),
+                      "--burst-delay": `${burst.delayMs}ms`,
+                    } as CSSProperties}
+                    onAnimationEnd={() => dispatch({ type: "REMOVE_BURST", id: burst.id })}
+                  />
+                ))}
+              </div>
+            )}
 
-            {state.impactPulse > 0 && (
+            {!performanceMode && state.impactPulse > 0 && (
               <div key={`impact-${state.impactPulse}`} className="systris-impact-wave" aria-hidden />
             )}
 

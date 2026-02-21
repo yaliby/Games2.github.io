@@ -103,22 +103,22 @@
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 18% 24%, hsla(var(--shift-hue), 100%, 70%, 0.34) 0%, transparent 48%),
-    radial-gradient(circle at 78% 74%, hsla(calc(var(--shift-hue) + 62), 100%, 68%, 0.30) 0%, transparent 53%),
+    radial-gradient(circle at 18% 24%, hsla(var(--shift-hue), 100%, 70%, 0.22) 0%, transparent 48%),
+    radial-gradient(circle at 78% 74%, hsla(calc(var(--shift-hue) + 62), 100%, 68%, 0.2) 0%, transparent 53%),
     conic-gradient(
       from 10deg at 50% 50%,
-      hsla(calc(var(--shift-hue) - 26), 100%, 64%, 0.14),
-      hsla(calc(var(--shift-hue) + 40), 100%, 66%, 0.20),
-      hsla(calc(var(--shift-hue) + 110), 100%, 63%, 0.14),
-      hsla(calc(var(--shift-hue) - 26), 100%, 64%, 0.14)
+      hsla(calc(var(--shift-hue) - 26), 100%, 64%, 0.08),
+      hsla(calc(var(--shift-hue) + 40), 100%, 66%, 0.12),
+      hsla(calc(var(--shift-hue) + 110), 100%, 63%, 0.08),
+      hsla(calc(var(--shift-hue) - 26), 100%, 64%, 0.08)
     );
-  filter: blur(28px) saturate(1.12);
+  filter: blur(20px) saturate(1.04);
   mix-blend-mode: screen;
-  animation: systris-bg-shift 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: systris-bg-shift 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.systris-bg-shift--2 { animation-duration: 1450ms; filter: blur(32px) saturate(1.18); }
-.systris-bg-shift--3 { animation-duration: 1650ms; filter: blur(36px) saturate(1.22); }
-.systris-bg-shift--4 { animation-duration: 1900ms; filter: blur(40px) saturate(1.28); }
+.systris-bg-shift--2 { animation-duration: 1050ms; filter: blur(22px) saturate(1.08); }
+.systris-bg-shift--3 { animation-duration: 1180ms; filter: blur(24px) saturate(1.10); }
+.systris-bg-shift--4 { animation-duration: 1300ms; filter: blur(26px) saturate(1.12); }
 
 /* ── Shell (main card) ────────────────────────────────────────── */
 .systris-shell {
@@ -193,6 +193,25 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   opacity: 0.66;
+}
+
+.systris-perf-toggle {
+  margin-top: 0.5rem;
+  border: 1px solid rgba(145, 198, 255, 0.5);
+  background: rgba(16, 28, 70, 0.62);
+  color: #e7f2ff;
+  border-radius: 999px;
+  padding: 0.28rem 0.72rem;
+  font-family: "Chakra Petch", "Segoe UI", sans-serif;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.systris-perf-toggle.is-on {
+  border-color: rgba(150, 255, 181, 0.62);
+  background: rgba(22, 70, 36, 0.58);
 }
 
 /* ── Layout ───────────────────────────────────────────────────── */
@@ -494,18 +513,18 @@
   z-index: 5;
   background: radial-gradient(
     circle at 50% 72%,
-    rgba(255,255,255,0.18) 0%,
-    hsla(calc(var(--bg-hue) + 30), 100%, 72%, 0.14) 30%,
+    rgba(255,255,255,0.12) 0%,
+    hsla(calc(var(--bg-hue) + 30), 100%, 72%, 0.10) 30%,
     transparent 70%
   );
   mix-blend-mode: screen;
-  animation: systris-lock-flash 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: systris-lock-flash 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* ── Shockwave (hard-drop / big combo) ─────────────────────────
    Radiates from the centre — no translation, only scale + fade. */
 .systris-shockwave {
-  --sw-base: calc(0.20 + var(--shock-power) * 0.18);
+  --sw-base: calc(0.10 + var(--shock-power) * 0.10);
   position: absolute;
   inset: -16%;
   z-index: 1;
@@ -513,7 +532,7 @@
   background:
     radial-gradient(
       circle at 50% 66%,
-      rgba(255,255,255,calc(var(--sw-base) + 0.20)) 0%,
+      rgba(255,255,255,calc(var(--sw-base) + 0.12)) 0%,
       transparent 28%
     ),
     conic-gradient(
@@ -523,17 +542,17 @@
       hsla(calc(var(--bg-hue) + 130), 100%, 74%, calc(var(--sw-base) * 0.38)),
       hsla(calc(var(--bg-hue) - 12), 100%, 70%, calc(var(--sw-base) * 0.36))
     );
-  filter: blur(calc(5px + var(--shock-power) * 9px));
+  filter: blur(calc(4px + var(--shock-power) * 6px));
   mix-blend-mode: screen;
   pointer-events: none;
-  animation: systris-shockwave 780ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: systris-shockwave 620ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.systris-shockwave--1 { opacity: 0.50; }
-.systris-shockwave--2 { opacity: 0.64; }
-.systris-shockwave--3 { opacity: 0.80; }
-.systris-shockwave--4 { opacity: 1; }
-.systris-shockwave.is-mega { animation-duration: 1000ms; filter: blur(calc(8px + var(--shock-power) * 11px)) saturate(1.18); }
+.systris-shockwave--1 { opacity: 0.32; }
+.systris-shockwave--2 { opacity: 0.44; }
+.systris-shockwave--3 { opacity: 0.56; }
+.systris-shockwave--4 { opacity: 0.70; }
+.systris-shockwave.is-mega { animation-duration: 820ms; filter: blur(calc(6px + var(--shock-power) * 8px)) saturate(1.10); }
 
 /* ── Action banner (TETRIS EFFECT, DOUBLE IMPACT…) ─────────────
    Animates in from below, drifts upward, fades out.
@@ -553,15 +572,15 @@
   font-weight: 900;
   color: #f5fbff;
   text-shadow:
-    0 0 10px rgba(255,255,255,0.56),
-    0 0 26px hsla(calc(var(--bg-hue) + 56), 100%, 72%, 0.68),
-    0 0 40px hsla(calc(var(--bg-hue) + 8),  100%, 67%, 0.52);
-  animation: systris-banner 940ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    0 0 8px rgba(255,255,255,0.44),
+    0 0 16px hsla(calc(var(--bg-hue) + 56), 100%, 72%, 0.42),
+    0 0 24px hsla(calc(var(--bg-hue) + 8),  100%, 67%, 0.34);
+  animation: systris-banner 740ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.systris-action-banner--2 { animation-duration: 1100ms; }
-.systris-action-banner--3 { animation-duration: 1260ms; font-size: clamp(1rem, 2.2vw, 1.42rem); }
-.systris-action-banner--4 { animation-duration: 1420ms; font-size: clamp(1.08rem, 2.4vw, 1.62rem); }
+.systris-action-banner--2 { animation-duration: 860ms; }
+.systris-action-banner--3 { animation-duration: 980ms; font-size: clamp(0.98rem, 2.2vw, 1.32rem); }
+.systris-action-banner--4 { animation-duration: 1100ms; font-size: clamp(1.04rem, 2.4vw, 1.46rem); }
 
 /* ── Line flash (behind grid, colours by cleared count) ────────── */
 .systris-line-flash,
@@ -580,19 +599,19 @@
   z-index: 2;
   opacity: 0;
   mix-blend-mode: screen;
-  animation: systris-line-flash 500ms ease-out forwards;
+  animation: systris-line-flash 380ms ease-out forwards;
 }
 
-.systris-line-flash--1 { background: radial-gradient(circle at 50% 55%, rgba(104,195,255,0.44) 0%, transparent 68%); }
-.systris-line-flash--2 { background: radial-gradient(circle at 52% 50%, rgba(130,255,200,0.52) 0%, transparent 68%); }
-.systris-line-flash--3 { background: radial-gradient(circle at 49% 52%, rgba(255,202,115,0.58) 0%, transparent 70%); }
-.systris-line-flash--4 { background: radial-gradient(circle at 50% 50%, rgba(240,142,255,0.72) 0%, transparent 74%); }
+.systris-line-flash--1 { background: radial-gradient(circle at 50% 55%, rgba(104,195,255,0.28) 0%, transparent 68%); }
+.systris-line-flash--2 { background: radial-gradient(circle at 52% 50%, rgba(130,255,200,0.34) 0%, transparent 68%); }
+.systris-line-flash--3 { background: radial-gradient(circle at 49% 52%, rgba(255,202,115,0.38) 0%, transparent 70%); }
+.systris-line-flash--4 { background: radial-gradient(circle at 50% 50%, rgba(240,142,255,0.48) 0%, transparent 74%); }
 
 .systris-impact-wave {
   z-index: 1;
-  background: radial-gradient(circle at 50% 90%, rgba(255,255,255,0.30) 0%, transparent 54%);
+  background: radial-gradient(circle at 50% 90%, rgba(255,255,255,0.18) 0%, transparent 54%);
   mix-blend-mode: plus-lighter;
-  animation: systris-impact 540ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: systris-impact 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   transform-origin: center bottom;
 }
 
@@ -603,17 +622,17 @@
   position: absolute;
   left: calc(var(--burst-lane) * 100%);
   bottom: -0.4rem;
-  width:  calc(0.18rem + var(--burst-strength) * 0.46rem);
-  height: calc(0.18rem + var(--burst-strength) * 0.46rem);
+  width:  calc(0.14rem + var(--burst-strength) * 0.34rem);
+  height: calc(0.14rem + var(--burst-strength) * 0.34rem);
   border-radius: 50%;
   background: hsl(var(--burst-hue), 100%, 72%);
-  box-shadow: 0 0 calc(8px + var(--burst-strength) * 18px) hsl(var(--burst-hue), 100%, 70%);
-  animation: systris-burst calc(480ms + var(--burst-strength) * 400ms) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  box-shadow: 0 0 calc(5px + var(--burst-strength) * 10px) hsl(var(--burst-hue), 100%, 70%);
+  animation: systris-burst calc(360ms + var(--burst-strength) * 260ms) cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   animation-delay: var(--burst-delay, 0ms);
 }
 
 .systris-burst--clear  { filter: saturate(1.06); }
-.systris-burst--impact { animation-duration: 560ms; filter: hue-rotate(24deg) saturate(1.24); }
+.systris-burst--impact { animation-duration: 420ms; filter: hue-rotate(24deg) saturate(1.12); }
 
 /* ── Lock ring (piece-settle ripple) ────────────────────────────
    Soft expanding ring at the centre of the locked piece. ─────── */
@@ -621,15 +640,15 @@
   position: absolute;
   left: var(--lock-x);
   top:  var(--lock-y);
-  width: calc(14px + var(--lock-strength) * 30px);
+  width: calc(12px + var(--lock-strength) * 20px);
   aspect-ratio: 1;
   border-radius: 50%;
   transform: translate(-50%, -50%) scale(0.36);
-  border: 1.5px solid hsla(calc(var(--bg-hue) + 35), 100%, 78%, calc(0.38 + var(--lock-strength) * 0.20));
+  border: 1.4px solid hsla(calc(var(--bg-hue) + 35), 100%, 78%, calc(0.24 + var(--lock-strength) * 0.12));
   box-shadow:
-    0 0 calc(10px + var(--lock-strength) * 14px) hsla(calc(var(--bg-hue) + 35), 100%, 74%, 0.40),
-    inset 0 0 calc(8px + var(--lock-strength) * 10px) hsla(calc(var(--bg-hue) + 62), 100%, 76%, 0.38);
-  animation: systris-lock-ring calc(280ms + var(--lock-strength) * 100ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    0 0 calc(8px + var(--lock-strength) * 10px) hsla(calc(var(--bg-hue) + 35), 100%, 74%, 0.28),
+    inset 0 0 calc(6px + var(--lock-strength) * 8px) hsla(calc(var(--bg-hue) + 62), 100%, 76%, 0.24);
+  animation: systris-lock-ring calc(220ms + var(--lock-strength) * 80ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
   animation-delay: var(--lock-delay, 0ms);
 }
 
@@ -644,8 +663,8 @@
   transform: translate(-50%, -50%);
   background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.94), hsl(var(--shard-hue), 100%, 62%));
   box-shadow:
-    0 0 calc(7px + var(--shard-strength) * 11px) hsla(var(--shard-hue), 100%, 70%, 0.60),
-    inset 0 0 2px rgba(255,255,255,0.44);
+    0 0 calc(5px + var(--shard-strength) * 8px) hsla(var(--shard-hue), 100%, 70%, 0.40),
+    inset 0 0 2px rgba(255,255,255,0.30);
   mix-blend-mode: screen;
   animation: systris-row-shard calc(380ms + var(--shard-strength) * 180ms) cubic-bezier(0.2, 0.82, 0.24, 1) forwards;
   animation-delay: var(--shard-delay, 0ms);
@@ -669,11 +688,11 @@
   background:
     linear-gradient(155deg, rgba(255,255,255,0.30), transparent 46%),
     var(--trail-color);
-  border: 1px solid rgba(225,240,255,0.22);
+  border: 1px solid rgba(225,240,255,0.16);
   box-shadow:
-    0 0 calc(4px + var(--trail-strength) * 7px) var(--trail-glow),
-    inset 0 0 5px rgba(255,255,255,0.20);
-  opacity: calc(0.14 + var(--trail-strength) * 0.20);
+    0 0 calc(3px + var(--trail-strength) * 5px) var(--trail-glow),
+    inset 0 0 4px rgba(255,255,255,0.14);
+  opacity: calc(0.09 + var(--trail-strength) * 0.14);
 }
 
 .systris-trail--shift .systris-trail-cell {
@@ -907,6 +926,40 @@
 .systris-shell--paused   .systris-grid { filter: saturate(0.70) brightness(0.88); }
 .systris-shell--gameover .systris-grid { filter: saturate(0.52) brightness(0.80); }
 
+/* Performance mode: minimize GPU/paint-heavy effects. */
+.systris-page--perf {
+  animation: none;
+  background: #0b1022;
+}
+
+.systris-page--perf::before,
+.systris-page--perf::after,
+.systris-page--perf .systris-beat-vignette,
+.systris-page--perf .systris-shell,
+.systris-page--perf .systris-shell::before,
+.systris-page--perf .systris-shell::after,
+.systris-page--perf .systris-cell.is-active {
+  animation: none !important;
+}
+
+.systris-page--perf .systris-shell,
+.systris-page--perf .systris-sidebar,
+.systris-page--perf .systris-leaderboard,
+.systris-page--perf .systris-howto,
+.systris-page--perf .systris-podium-shell {
+  backdrop-filter: none;
+}
+
+.systris-page--perf .systris-cell {
+  transition: none;
+}
+
+.systris-page--perf .systris-cell.is-filled {
+  box-shadow:
+    inset 0 0 4px rgba(255,255,255,0.14),
+    0 0 6px var(--cell-glow);
+}
+
 /* ══════════════════════════════════════════════════════════════
    KEYFRAMES
 ══════════════════════════════════════════════════════════════ */
@@ -964,9 +1017,9 @@
 
 @keyframes systris-bg-shift {
   0%   { opacity: 0;    transform: scale(0.92) rotate(-6deg); }
-  22%  { opacity: 0.94; transform: scale(1.02) rotate(0deg);  }
-  58%  { opacity: 0.62; transform: scale(1.08) rotate(3deg);  }
-  100% { opacity: 0;    transform: scale(1.14) rotate(6deg);  }
+  22%  { opacity: 0.70; transform: scale(1.01) rotate(0deg);  }
+  58%  { opacity: 0.42; transform: scale(1.05) rotate(2deg);  }
+  100% { opacity: 0;    transform: scale(1.09) rotate(4deg);  }
 }
 
 /* ── Lock flash: bloom, no shake ─────────────────────────────── */
@@ -1023,57 +1076,57 @@
 /* ── Shockwave ──────────────────────────────────────────────── */
 @keyframes systris-shockwave {
   0%   { transform: scale(0.42); opacity: 0;  }
-  16%  { opacity: 1;             }
-  100% { transform: scale(1.16); opacity: 0;  }
+  16%  { opacity: 0.72;          }
+  100% { transform: scale(1.08); opacity: 0;  }
 }
 
 /* ── Lock ring ripple ────────────────────────────────────────── */
 @keyframes systris-lock-ring {
   0%   { transform: translate(-50%, -50%) scale(0.32); opacity: 0;    }
-  18%  { opacity: 0.92;                                               }
-  100% { transform: translate(-50%, -50%) scale(1.38); opacity: 0;    }
+  18%  { opacity: 0.70;                                               }
+  100% { transform: translate(-50%, -50%) scale(1.22); opacity: 0;    }
 }
 
 /* ── Line flash (board glow) ─────────────────────────────────── */
 @keyframes systris-line-flash {
   0%   { opacity: 0; transform: scale(0.97); }
-  22%  { opacity: 1; transform: scale(1.01); }
-  100% { opacity: 0; transform: scale(1.04); }
+  22%  { opacity: 0.72; transform: scale(1.005); }
+  100% { opacity: 0; transform: scale(1.025); }
 }
 
 /* ── Impact wave (hard drop) ─────────────────────────────────── */
 @keyframes systris-impact {
-  0%   { opacity: 0.62; transform: scale(0.55, 0.28); }
-  100% { opacity: 0;    transform: scale(1.22, 1.58); }
+  0%   { opacity: 0.42; transform: scale(0.55, 0.28); }
+  100% { opacity: 0;    transform: scale(1.08, 1.32); }
 }
 
 /* ── Row shards ──────────────────────────────────────────────── */
 @keyframes systris-row-shard {
   0%   { opacity: 0;   transform: translate(-50%, -50%) rotate(0deg)   scale(0.20); }
-  14%  { opacity: 1;   transform: translate(-50%, -50%) rotate(28deg)  scale(1.06); }
+  14%  { opacity: 0.78;   transform: translate(-50%, -50%) rotate(24deg)  scale(0.98); }
   100% {
     opacity: 0;
     transform:
       translate(
-        calc(-50% + var(--shard-drift) * 30px),
-        calc(-50% - (26px + var(--shard-strength) * 36px))
+        calc(-50% + var(--shard-drift) * 22px),
+        calc(-50% - (18px + var(--shard-strength) * 24px))
       )
-      rotate(calc(var(--shard-drift) * 270deg))
-      scale(0.18);
+      rotate(calc(var(--shard-drift) * 190deg))
+      scale(0.24);
   }
 }
 
 /* ── Burst particles ─────────────────────────────────────────── */
 @keyframes systris-burst {
   0%   { transform: translate(-50%, 0) scale(0.4); opacity: 0; }
-  14%  { opacity: 1; }
+  14%  { opacity: 0.84; }
   100% {
     transform:
       translate(
-        calc(-50% + (var(--burst-lane) - 0.5) * 94px),
-        calc(-128px - var(--burst-strength) * 78px)
+        calc(-50% + (var(--burst-lane) - 0.5) * 66px),
+        calc(-96px - var(--burst-strength) * 52px)
       )
-      scale(1.3);
+      scale(1.16);
     opacity: 0;
   }
 }
@@ -1081,9 +1134,9 @@
 /* ── Action banner ───────────────────────────────────────────── */
 @keyframes systris-banner {
   0%   { opacity: 0; transform: translateY(14px) scale(0.80); letter-spacing: 0.06em; filter: blur(4px); }
-  18%  { opacity: 1; transform: translateY(0)    scale(1.08); letter-spacing: 0.14em; filter: blur(0);   }
-  42%  { opacity: 1; transform: translateY(-2px) scale(1.02); }
-  100% { opacity: 0; transform: translateY(-18px) scale(1);   filter: blur(1px); }
+  18%  { opacity: 0.88; transform: translateY(0)    scale(1.04); letter-spacing: 0.12em; filter: blur(0);   }
+  42%  { opacity: 0.84; transform: translateY(-1px) scale(1.01); }
+  100% { opacity: 0; transform: translateY(-12px) scale(1);   filter: blur(1px); }
 }
 
 /* ── Trail keyframes ─────────────────────────────────────────── */
