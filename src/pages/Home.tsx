@@ -7,42 +7,109 @@ export default function Home() {
 
   useEffect(() => {
     const root = document.documentElement;
-    let pointerX = window.innerWidth / 2;
-    let pointerY = window.innerHeight / 2;
+    let targetX = 50;
+    let targetY = 50;
+    let currentX = 50;
+    let currentY = 50;
+    let speed = 0;
+    let speedTarget = 0;
+    let lastPointerX: number | null = null;
+    let lastPointerY: number | null = null;
+    let lastPointerTime = performance.now();
+    let rafId: number | null = null;
 
     const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
+    const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+    const EASE = 0.14;
+    const SPEED_EASE = 0.14;
+    const SPEED_DECAY = 0.88;
+    const EPSILON = 0.04;
 
-    const updateBackgroundPointer = () => {
-      const docWidth = Math.max(root.scrollWidth, window.innerWidth);
-      const docHeight = Math.max(root.scrollHeight, window.innerHeight);
-      const pageX = window.scrollX + pointerX;
-      const pageY = window.scrollY + pointerY;
-
-      const x = clampPercent((pageX / docWidth) * 100);
-      const y = clampPercent((pageY / docHeight) * 100);
-
-      root.style.setProperty('--mouse-x', `${x}%`);
-      root.style.setProperty('--mouse-y', `${y}%`);
+    const commit = () => {
+      root.style.setProperty('--mouse-x', `${currentX.toFixed(2)}%`);
+      root.style.setProperty('--mouse-y', `${currentY.toFixed(2)}%`);
+      root.style.setProperty('--mouse-speed', speed.toFixed(3));
     };
 
-    const onMouseMove = (event: MouseEvent) => {
-      pointerX = event.clientX;
-      pointerY = event.clientY;
-      updateBackgroundPointer();
+    const step = () => {
+      rafId = null;
+      currentX += (targetX - currentX) * EASE;
+      currentY += (targetY - currentY) * EASE;
+      speed += (speedTarget - speed) * SPEED_EASE;
+      speedTarget *= SPEED_DECAY;
+
+      if (speedTarget < 0.001) speedTarget = 0;
+      if (speed < 0.001) speed = 0;
+      commit();
+
+      const moving =
+        Math.abs(targetX - currentX) > EPSILON ||
+        Math.abs(targetY - currentY) > EPSILON;
+
+      const activeSpeed = speed > 0.004 || speedTarget > 0.004;
+
+      if (moving || activeSpeed) {
+        scheduleUpdate();
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(step);
+    };
+
+    const updateTarget = (clientX: number, clientY: number, timeStamp: number) => {
+      const width = Math.max(window.innerWidth, 1);
+      const height = Math.max(window.innerHeight, 1);
+      targetX = clampPercent((clientX / width) * 100);
+      targetY = clampPercent((clientY / height) * 100);
+
+      if (lastPointerX !== null && lastPointerY !== null) {
+        const dx = clientX - lastPointerX;
+        const dy = clientY - lastPointerY;
+        const dt = Math.max(8, timeStamp - lastPointerTime);
+        const pxPerMs = Math.hypot(dx, dy) / dt;
+        const normalizedSpeed = clamp01((pxPerMs - 0.045) * 1.45);
+        speedTarget = Math.max(speedTarget, normalizedSpeed);
+      }
+
+      lastPointerX = clientX;
+      lastPointerY = clientY;
+      lastPointerTime = timeStamp;
+      scheduleUpdate();
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      updateTarget(event.clientX, event.clientY, event.timeStamp);
+    };
+
+    const onPointerIdle = () => {
+      lastPointerX = null;
+      lastPointerY = null;
+      speedTarget = 0;
+      scheduleUpdate();
     };
 
     const onViewportChange = () => {
-      updateBackgroundPointer();
+      targetX = clampPercent(targetX);
+      targetY = clampPercent(targetY);
+      scheduleUpdate();
     };
 
-    updateBackgroundPointer();
-    window.addEventListener('mousemove', onMouseMove, { passive: true });
-    window.addEventListener('scroll', onViewportChange, { passive: true });
+    commit();
+    scheduleUpdate();
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerleave', onPointerIdle);
+    window.addEventListener('blur', onPointerIdle);
     window.addEventListener('resize', onViewportChange);
 
     return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('scroll', onViewportChange);
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerleave', onPointerIdle);
+      window.removeEventListener('blur', onPointerIdle);
       window.removeEventListener('resize', onViewportChange);
     };
   }, []);
