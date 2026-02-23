@@ -1,4 +1,4 @@
-﻿﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
@@ -18,11 +18,13 @@ import UserBox from "./UserBox/UserBox";
 import { isAdminUid } from "../services/admin";
 import { HOURLY_MAGIC_OPEN_EVENT } from "./HourlyMagicPrompt";
 
-type UserInfo = {
-  uid: string;
-  username: string;
-  isAdmin: boolean;
-} | null;
+type UserInfo =
+  | {
+      uid: string;
+      username: string;
+      isAdmin: boolean;
+    }
+  | null;
 
 type UpdateItem = {
   date: string;
@@ -124,7 +126,7 @@ export default function Header() {
     {
       date: "06.02.2026",
       title: "שדרוג בוטים",
-      desc: "בוט ארבּע‑בשורה ובוט דמקה עודכנו להתנהגות חכמה ומאתגרת יותר.",
+      desc: "בוט ארבּע-בשורה ובוט דמקה עודכנו להתנהגות חכמה ומאתגרת יותר.",
       tag: "AI",
     },
     {
@@ -170,7 +172,11 @@ export default function Header() {
           isAdmin: isAdminUid(fbUser.uid),
         });
       } else {
-        setUser({ uid: fbUser.uid, username: "Player", isAdmin: isAdminUid(fbUser.uid) });
+        setUser({
+          uid: fbUser.uid,
+          username: "Player",
+          isAdmin: isAdminUid(fbUser.uid),
+        });
       }
 
       setLoading(false);
@@ -265,6 +271,7 @@ export default function Header() {
       document.body.style.overflow = prev;
     };
   }, [letterOpen, updatesOpen, feedbackOpen]);
+
   // UX: ESC closes modals
   useEffect(() => {
     if (!letterOpen && !updatesOpen && !feedbackOpen) return;
@@ -289,8 +296,8 @@ export default function Header() {
   const noticeBannerText = isCleanupMode
     ? "המערכת נוקתה בהצלחה אחרי הרבה עבודה של צוותי DevOps, IT ו-QA."
     : isLegacyAttackMode
-      ? "ארכיון: אירוע המתקפה של גל שפירו נשמר לצורכי תיעוד ובקרה."
-      : "ארכיון: מנגנון האימות השעתי (Legacy) נשמר לתיעוד היסטורי.";
+    ? "ארכיון: אירוע המתקפה של גל שפירו נשמר לצורכי תיעוד ובקרה."
+    : "ארכיון: מנגנון האימות השעתי (Legacy) נשמר לתיעוד היסטורי.";
   const noticeDetailsTitle = isCleanupMode ? "פרטי ההודעה" : "פרטי האירוע ההיסטורי";
   const noticeDetailsItems = isCleanupMode
     ? [
@@ -299,27 +306,27 @@ export default function Header() {
         "נכון לעכשיו אין צורך בהפעלת אימות שעתי למשתמשים.",
       ]
     : isLegacyAttackMode
-      ? [
-          "אירוע אבטחה חריג טופל בזמן אמת על ידי צוותי התפעול.",
-          "בוצעה הקשחה לכל שכבות ההתחברות והסשן.",
-          "האירוע נשמר בארכיון לצורכי למידה ותחקור.",
-        ]
-      : [
-          "במהלך האירוע הופעל מנגנון אימות משתמשים אחת לשעה.",
-          "מנגנון זה נועד להפחתת סיכון בזמן טיפול בתשתיות.",
-          "המנגנון מסומן כיום כלגאסי ואינו מצב ברירת המחדל.",
-        ];
+    ? [
+        "אירוע אבטחה חריג טופל בזמן אמת על ידי צוותי התפעול.",
+        "בוצעה הקשחה לכל שכבות ההתחברות והסשן.",
+        "האירוע נשמר בארכיון לצורכי למידה ותחקור.",
+      ]
+    : [
+        "במהלך האירוע הופעל מנגנון אימות משתמשים אחת לשעה.",
+        "מנגנון זה נועד להפחתת סיכון בזמן טיפול בתשתיות.",
+        "המנגנון מסומן כיום כלגאסי ואינו מצב ברירת המחדל.",
+      ];
   const paperTitle = isCleanupMode ? "הודעת תפעול רשמית" : "דוח אירוע לגאסי";
   const paperSub = isCleanupMode
     ? "המערכת נוקתה והוחזרה למצב יציב"
     : isLegacyAttackMode
-      ? "תיעוד היסטורי: המתקפה של גל שפירו"
-      : "תיעוד היסטורי: מנגנון אימות שעתי";
+    ? "תיעוד היסטורי: המתקפה של גל שפירו"
+    : "תיעוד היסטורי: מנגנון אימות שעתי";
   const alertTitle = isCleanupMode
     ? "מה השתנה בפועל?"
     : isLegacyAttackMode
-      ? "מה קרה בזמן האירוע?"
-      : "איך עבד האימות השעתי?";
+    ? "מה קרה בזמן האירוע?"
+    : "איך עבד האימות השעתי?";
   const alertItems = isCleanupMode
     ? [
         "תהליכי התחברות וסשנים יוצבו אחרי בדיקות QA מלאות.",
@@ -327,42 +334,42 @@ export default function Header() {
         "המערכת חזרה לתפעול שגרתי עם ניטור רציף.",
       ]
     : isLegacyAttackMode
-      ? [
-          "התגלתה פעילות חריגה שדרשה הקשחה מיידית של המערכת.",
-          "בוצעו חסימות, בידוד רכיבים ותחקור מלא של הלוגים.",
-          "המערכת עברה למצב מוגן עד סיום הטיפול.",
-        ]
-      : [
-          "כל משתמש פעיל נדרש לאימות מחדש אחת לשעה.",
-          "אי השלמת אימות יכלה לגרום לניתוק סשן זמני.",
-          "כל חריגה נרשמה והועברה לטיפול מיידי.",
-        ];
+    ? [
+        "התגלתה פעילות חריגה שדרשה הקשחה מיידית של המערכת.",
+        "בוצעו חסימות, בידוד רכיבים ותחקור מלא של הלוגים.",
+        "המערכת עברה למצב מוגן עד סיום הטיפול.",
+      ]
+    : [
+        "כל משתמש פעיל נדרש לאימות מחדש אחת לשעה.",
+        "אי השלמת אימות יכלה לגרום לניתוק סשן זמני.",
+        "כל חריגה נרשמה והועברה לטיפול מיידי.",
+      ];
   const qaTitle = isCleanupMode ? "סטטוס תפעולי נוכחי" : "סטטוס תפעולי בארכיון";
   const qaText = isCleanupMode
     ? "צוותי QA, DevOps ו-IT סיימו עבודת ניקוי והתייצבות ממושכת.\nהמערכת מוגדרת נקייה ופעילה במתכונת רגילה."
     : isLegacyAttackMode
-      ? "זהו תיעוד של אירוע המתקפה ושל מענה צוותי DevOps, IT ו-QA.\nניתן לעבור גם לתיעוד האימות השעתי מאותו פרק זמן."
-      : "זהו תיעוד של מנגנון האימות השעתי שהופעל באירוע.\nניתן להציג את מסך האימות הישן לצורכי הדגמה.";
+    ? "זהו תיעוד של אירוע המתקפה ושל מענה צוותי DevOps, IT ו-QA.\nניתן לעבור גם לתיעוד האימות השעתי מאותו פרק זמן."
+    : "זהו תיעוד של מנגנון האימות השעתי שהופעל באירוע.\nניתן להציג את מסך האימות הישן לצורכי הדגמה.";
   const qaButtonLabel = isCleanupMode
     ? "פתח Legacy Events"
     : isLegacyAttackMode
-      ? "הצג אימות שעתי (לגאסי)"
-      : "פתח מסך אימות שעתי";
+    ? "הצג אימות שעתי (לגאסי)"
+    : "פתח מסך אימות שעתי";
   const qaButtonTitle = isCleanupMode
     ? "פתיחת אירועי לגאסי"
     : isLegacyAttackMode
-      ? "מעבר לתיעוד האימות השעתי"
-      : "פתיחת מסך האימות השעתי";
+    ? "מעבר לתיעוד האימות השעתי"
+    : "פתיחת מסך האימות השעתי";
   const terminalStatus = isCleanupMode
     ? "SYSTEM_STATE=CLEAN"
     : isLegacyAttackMode
-      ? "THREAT_LEVEL=ELEVATED (ARCHIVED)"
-      : "AUTH_MODE=HOURLY_LEGACY";
+    ? "THREAT_LEVEL=ELEVATED (ARCHIVED)"
+    : "AUTH_MODE=HOURLY_LEGACY";
   const bottomSecret = isCleanupMode
     ? "המערכת נקייה ויציבה."
     : isLegacyAttackMode
-      ? "אירוע המתקפה הועבר לארכיון."
-      : "האימות השעתי נשמר כלגאסי.";
+    ? "אירוע המתקפה הועבר לארכיון."
+    : "האימות השעתי נשמר כלגאסי.";
 
   const onLetterAction = () => {
     if (isCleanupMode) {
@@ -427,7 +434,10 @@ export default function Header() {
 
             <button
               style={styles.btnFeedback}
-              onClick={() => setFeedbackOpen(true)}
+              onClick={() => {
+                setFeedbackError("");
+                setFeedbackOpen(true);
+              }}
               title="דיווח תקלות והצעות"
             >
               <span style={{ fontSize: 14 }}>פידבק</span>
@@ -452,10 +462,7 @@ export default function Header() {
                 <button style={styles.btnGhost} onClick={() => navigate("/login")}>
                   Login
                 </button>
-                <button
-                  style={styles.btnPrimary}
-                  onClick={() => navigate("/register")}
-                >
+                <button style={styles.btnPrimary} onClick={() => navigate("/register")}>
                   Register
                 </button>
               </>
@@ -491,7 +498,12 @@ export default function Header() {
       {/* LETTER MODAL */}
       {letterOpen && (
         <div
-          style={{ ...modalStyles.backdrop, direction: "rtl", textAlign: "right", fontSize: 20 }}
+          style={{
+            ...modalStyles.backdrop,
+            direction: "rtl",
+            textAlign: "right",
+            fontSize: 20,
+          }}
           onMouseDown={(e) => {
             // סגירה בלחיצה על הרקע
             if (e.target === e.currentTarget) setLetterOpen(false);
@@ -549,12 +561,14 @@ export default function Header() {
                     ) : isLegacyAttackMode ? (
                       <>
                         <b>אירוע ארכיון:</b> בעקבות המתקפה של{" "}
-                        <span style={modalStyles.badName}>גל שפירו</span> הופעלו נהלי חירום והקשחת מערכת.
+                        <span style={modalStyles.badName}>גל שפירו</span> הופעלו נהלי חירום
+                        והקשחת מערכת.
                       </>
                     ) : (
                       <>
                         <b>אירוע ארכיון:</b> הופעל מנגנון{" "}
-                        <span style={modalStyles.badName}>אימות שעתי</span> לכל המשתמשים הפעילים עד לייצוב המערכת.
+                        <span style={modalStyles.badName}>אימות שעתי</span> לכל המשתמשים
+                        הפעילים עד לייצוב המערכת.
                       </>
                     )}
                   </p>
@@ -571,30 +585,23 @@ export default function Header() {
                     </div>
                   </div>
 
+                  <div style={modalStyles.qaBox}>
+                    <div style={modalStyles.qaIcon}>🧪</div>
 
-<div style={modalStyles.qaBox}>
-  <div style={modalStyles.qaIcon}>🧪</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={modalStyles.qaTitle}>{qaTitle}</div>
 
-  <div style={{ flex: 1 }}>
-    <div style={modalStyles.qaTitle}>{qaTitle}</div>
+                      <p style={modalStyles.qaText}>{qaText}</p>
 
-    <p style={modalStyles.qaText}>
-      {qaText}
-    </p>
-
-    <button
-      style={modalStyles.openScriptBtn}
-      onClick={onLetterAction}
-      title={qaButtonTitle}
-    >
-      {qaButtonLabel}
-    </button>
-
-  </div>
-</div>
-
-
-
+                      <button
+                        style={modalStyles.openScriptBtn}
+                        onClick={onLetterAction}
+                        title={qaButtonTitle}
+                      >
+                        {qaButtonLabel}
+                      </button>
+                    </div>
+                  </div>
 
                   <div style={modalStyles.terminal}>
                     <div style={modalStyles.termLine}>
@@ -616,9 +623,7 @@ export default function Header() {
 
                   <div style={modalStyles.footerLine} />
 
-                  <p style={modalStyles.bottomSecret}>
-                    {bottomSecret}
-                  </p>
+                  <p style={modalStyles.bottomSecret}>{bottomSecret}</p>
                 </div>
               </div>
             </div>
@@ -633,8 +638,6 @@ export default function Header() {
               >
                 הבנתי
               </button>
-
-              
             </div>
           </div>
         </div>
@@ -653,9 +656,7 @@ export default function Header() {
             <div style={modalStyles.updatesHeader}>
               <div>
                 <div style={modalStyles.updatesTitle}>עדכונים אחרונים</div>
-                <div style={modalStyles.updatesSubtitle}>
-                  מסודר, מפורט ומעודכן
-                </div>
+                <div style={modalStyles.updatesSubtitle}>מסודר, מפורט ומעודכן</div>
               </div>
               <button
                 style={modalStyles.closeBtn}
@@ -699,6 +700,7 @@ export default function Header() {
                     </div>
                     <div style={modalStyles.updateTitle}>{item.title}</div>
                     <div style={modalStyles.updateDesc}>{item.desc}</div>
+
                     {item.details && item.details.length > 0 && (
                       <ul style={modalStyles.updateList}>
                         {item.details.map((line) => (
@@ -708,6 +710,7 @@ export default function Header() {
                         ))}
                       </ul>
                     )}
+
                     {item.tag === "Legacy Events" && (
                       <div style={modalStyles.legacyEventsActions}>
                         <button
@@ -734,7 +737,6 @@ export default function Header() {
                 </div>
               ))}
             </div>
-
           </div>
         </div>
       )}
@@ -794,7 +796,9 @@ export default function Header() {
                 />
 
                 <div style={modalStyles.feedbackActionRow}>
-                  <span style={modalStyles.feedbackCounter}>{feedbackText.trim().length}/600</span>
+                  <span style={modalStyles.feedbackCounter}>
+                    {feedbackText.trim().length}/600
+                  </span>
                   <button
                     style={modalStyles.feedbackSendBtn}
                     onClick={submitFeedback}
@@ -803,6 +807,7 @@ export default function Header() {
                     {feedbackSending ? "שולח..." : "שלח"}
                   </button>
                 </div>
+
                 {!user && (
                   <div style={modalStyles.feedbackNotice}>יש להתחבר כדי לשלוח הודעה.</div>
                 )}
@@ -818,7 +823,11 @@ export default function Header() {
                       <div style={modalStyles.feedbackMeta}>
                         <span style={modalStyles.feedbackUser}>{entry.username}</span>
                         <span style={modalStyles.feedbackKindTag}>
-                          {entry.kind === "bug" ? "תקלה" : entry.kind === "idea" ? "הצעה" : "אחר"}
+                          {entry.kind === "bug"
+                            ? "תקלה"
+                            : entry.kind === "idea"
+                            ? "הצעה"
+                            : "אחר"}
                         </span>
                         <span style={modalStyles.feedbackTime}>
                           {formatFeedbackTime(entry.createdAtMs)}
@@ -1301,7 +1310,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.10)",
   },
 
-   bottomSecret: {
+  bottomSecret: {
     fontSize: 27,
     marginTop: 12,
     marginBottom: 2,
@@ -1309,7 +1318,8 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontWeight: 1000,
     letterSpacing: 0.2,
     color: "rgba(240, 135, 22, 0.98)",
-    textShadow: "0 0px 20px rgba(255, 50, 80, 0.6), 0 16px 35px rgba(0,0,0,0.45)",
+    textShadow:
+      "0 0px 20px rgba(255, 50, 80, 0.6), 0 16px 35px rgba(0,0,0,0.45)",
     animation: "pulse-secret 1.5s ease-in-out infinite",
   },
 
@@ -1531,6 +1541,11 @@ const modalStyles: Record<string, React.CSSProperties> = {
     boxShadow: "0 24px 90px rgba(0,0,0,0.60)",
     overflow: "hidden",
     position: "relative",
+
+    // גלילה פנימית תקינה לפיד
+    maxHeight: "88vh",
+    display: "flex",
+    flexDirection: "column",
   },
 
   feedbackHeader: {
@@ -1559,9 +1574,13 @@ const modalStyles: Record<string, React.CSSProperties> = {
   feedbackBody: {
     display: "grid",
     gridTemplateColumns: "1fr",
+    gridTemplateRows: "auto minmax(0, 1fr)",
     gap: 12,
     padding: 14,
-    maxHeight: "68vh",
+
+    // מאפשר לשורת הפיד להצטמצם ולקבל גלילה
+    minHeight: 0,
+    flex: 1,
   },
 
   feedbackComposer: {
@@ -1644,10 +1663,18 @@ const modalStyles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.10)",
     background: "rgba(255,255,255,0.02)",
     padding: 10,
-    overflow: "auto",
+
+    // גלילה פנימית לפידבק
+    overflowY: "auto",
+    overflowX: "hidden",
+    WebkitOverflowScrolling: "touch",
+
     display: "grid",
     gap: 8,
     alignContent: "start",
+
+    // קריטי בתוך Grid/Flex כדי שהגלילה תעבוד
+    minHeight: 0,
   },
 
   feedbackEmpty: {
@@ -1706,56 +1733,55 @@ const modalStyles: Record<string, React.CSSProperties> = {
   },
 
   qaBox: {
-  marginTop: 12,
-  display: "flex",
-  gap: 12,
-  alignItems: "flex-start",
-  padding: 12,
-  borderRadius: 18,
-  border: "1px solid rgba(124, 92, 255, 0.20)",
-  background:
-    "linear-gradient(180deg, rgba(124,92,255,0.12), rgba(255,79,216,0.06))",
-},
+    marginTop: 12,
+    display: "flex",
+    gap: 12,
+    alignItems: "flex-start",
+    padding: 12,
+    borderRadius: 18,
+    border: "1px solid rgba(124, 92, 255, 0.20)",
+    background:
+      "linear-gradient(180deg, rgba(124,92,255,0.12), rgba(255,79,216,0.06))",
+  },
 
-qaIcon: {
-  fontSize: 22,
-  marginTop: 2,
-},
+  qaIcon: {
+    fontSize: 22,
+    marginTop: 2,
+  },
 
-qaTitle: {
-  fontWeight: 1000,
-  marginBottom: 6,
-  color: "rgba(234,242,255,0.92)",
-},
+  qaTitle: {
+    fontWeight: 1000,
+    marginBottom: 6,
+    color: "rgba(234,242,255,0.92)",
+  },
 
-qaText: {
-  margin: 0,
-  color: "rgba(255,255,255,0.84)",
-  fontSize: 13.5,
-  lineHeight: 1.5,
-  whiteSpace: "pre-line",
-},
+  qaText: {
+    margin: 0,
+    color: "rgba(255,255,255,0.84)",
+    fontSize: 13.5,
+    lineHeight: 1.5,
+    whiteSpace: "pre-line",
+  },
 
-openScriptBtn: {
-  marginTop: 10,
-  border: "1px solid rgba(255,80,120,0.25)",
-  background:
-    "linear-gradient(135deg, rgba(255,80,120,0.16) 0%, rgba(124,92,255,0.10) 55%, rgba(89,248,208,0.08) 130%)",
-  color: "rgba(255,255,255,0.95)",
-  padding: "10px 12px",
-  borderRadius: 14,
-  cursor: "pointer",
-  fontWeight: 1000,
-  boxShadow: "0 14px 30px rgba(0,0,0,0.35)",
-},
+  openScriptBtn: {
+    marginTop: 10,
+    border: "1px solid rgba(255,80,120,0.25)",
+    background:
+      "linear-gradient(135deg, rgba(255,80,120,0.16) 0%, rgba(124,92,255,0.10) 55%, rgba(89,248,208,0.08) 130%)",
+    color: "rgba(255,255,255,0.95)",
+    padding: "10px 12px",
+    borderRadius: 14,
+    cursor: "pointer",
+    fontWeight: 1000,
+    boxShadow: "0 14px 30px rgba(0,0,0,0.35)",
+  },
 
-qaNote: {
-  marginTop: 8,
-  fontSize: 12,
-  opacity: 0.72,
-  color: "rgba(234,242,255,0.78)",
-},
-
+  qaNote: {
+    marginTop: 8,
+    fontSize: 12,
+    opacity: 0.72,
+    color: "rgba(234,242,255,0.78)",
+  },
 };
 
 const css = `
