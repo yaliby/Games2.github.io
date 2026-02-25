@@ -1675,6 +1675,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
 
     // קריטי בתוך Grid/Flex כדי שהגלילה תעבוד
     minHeight: 0,
+    height: 15%,
   },
 
   feedbackEmpty: {
@@ -1824,3 +1825,4 @@ const css = `
     filter: brightness(1.05);
   }
 `;
+
