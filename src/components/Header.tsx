@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
@@ -17,14 +17,16 @@ import { db } from "../services/firebase";
 import UserBox from "./UserBox/UserBox";
 import { isAdminUid } from "../services/admin";
 import { HOURLY_MAGIC_OPEN_EVENT } from "./HourlyMagicPrompt";
+import { compressImageFileToDataUrl, pickImageFileFromClipboard } from "../services/imagePaste";
+import ImageFontText from "./ImageFontText";
 
-type UserInfo =
-  | {
-      uid: string;
-      username: string;
-      isAdmin: boolean;
-    }
-  | null;
+const SITE_LOGO_SRC = `${import.meta.env.BASE_URL}img/logo.png`;
+
+type UserInfo = {
+  uid: string;
+  username: string;
+  isAdmin: boolean;
+} | null;
 
 type UpdateItem = {
   date: string;
@@ -42,6 +44,7 @@ type FeedbackEntry = {
   username: string;
   kind: FeedbackKind;
   text: string;
+  imageDataUrl: string | null;
   createdAtMs: number;
 };
 
@@ -71,6 +74,8 @@ export default function Header() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackKind, setFeedbackKind] = useState<FeedbackKind>("bug");
   const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackImageDataUrl, setFeedbackImageDataUrl] = useState<string | null>(null);
+  const [feedbackImageBusy, setFeedbackImageBusy] = useState(false);
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
@@ -126,7 +131,7 @@ export default function Header() {
     {
       date: "06.02.2026",
       title: "שדרוג בוטים",
-      desc: "בוט ארבּע-בשורה ובוט דמקה עודכנו להתנהגות חכמה ומאתגרת יותר.",
+      desc: "בוט ארבּע‑בשורה ובוט דמקה עודכנו להתנהגות חכמה ומאתגרת יותר.",
       tag: "AI",
     },
     {
@@ -172,11 +177,7 @@ export default function Header() {
           isAdmin: isAdminUid(fbUser.uid),
         });
       } else {
-        setUser({
-          uid: fbUser.uid,
-          username: "Player",
-          isAdmin: isAdminUid(fbUser.uid),
-        });
+        setUser({ uid: fbUser.uid, username: "Player", isAdmin: isAdminUid(fbUser.uid) });
       }
 
       setLoading(false);
@@ -203,6 +204,7 @@ export default function Header() {
             username?: string;
             kind?: FeedbackKind;
             text?: string;
+            imageDataUrl?: unknown;
             createdAt?: { toMillis?: () => number };
           };
 
@@ -217,6 +219,10 @@ export default function Header() {
             username: typeof data.username === "string" ? data.username : "Player",
             kind: data.kind === "idea" || data.kind === "other" ? data.kind : "bug",
             text: typeof data.text === "string" ? data.text : "",
+            imageDataUrl:
+              typeof data.imageDataUrl === "string" && data.imageDataUrl.startsWith("data:image/")
+                ? data.imageDataUrl
+                : null,
             createdAtMs,
           };
         });
@@ -246,19 +252,43 @@ export default function Header() {
     setFeedbackSending(true);
     setFeedbackError("");
     try {
-      await addDoc(collection(db, "feedback"), {
+      const payload: Record<string, unknown> = {
         uid: user.uid,
         username: user.username,
         kind: feedbackKind,
         text: message,
         createdAt: serverTimestamp(),
-      });
+      };
+      if (feedbackImageDataUrl) {
+        payload.imageDataUrl = feedbackImageDataUrl;
+      }
+
+      await addDoc(collection(db, "feedback"), payload);
       setFeedbackText("");
+      setFeedbackImageDataUrl(null);
     } catch (err) {
       console.warn("feedback submit failed:", err);
       setFeedbackError("שליחה נכשלה. בדוק הרשאות Firebase/חיבור ונסה שוב.");
     } finally {
       setFeedbackSending(false);
+    }
+  };
+
+  const handleFeedbackPaste = async (event: ClipboardEvent) => {
+    const imageFile = pickImageFileFromClipboard(event.clipboardData);
+    if (!imageFile) return;
+
+    event.preventDefault();
+    setFeedbackError("");
+    setFeedbackImageBusy(true);
+    try {
+      const dataUrl = await compressImageFileToDataUrl(imageFile);
+      setFeedbackImageDataUrl(dataUrl);
+    } catch (err) {
+      console.warn("feedback image paste failed:", err);
+      setFeedbackError("לא הצלחנו לעבד את התמונה. נסה תמונה קטנה יותר.");
+    } finally {
+      setFeedbackImageBusy(false);
     }
   };
 
@@ -271,7 +301,6 @@ export default function Header() {
       document.body.style.overflow = prev;
     };
   }, [letterOpen, updatesOpen, feedbackOpen]);
-
   // UX: ESC closes modals
   useEffect(() => {
     if (!letterOpen && !updatesOpen && !feedbackOpen) return;
@@ -296,8 +325,8 @@ export default function Header() {
   const noticeBannerText = isCleanupMode
     ? "המערכת נוקתה בהצלחה אחרי הרבה עבודה של צוותי DevOps, IT ו-QA."
     : isLegacyAttackMode
-    ? "ארכיון: אירוע המתקפה של גל שפירו נשמר לצורכי תיעוד ובקרה."
-    : "ארכיון: מנגנון האימות השעתי (Legacy) נשמר לתיעוד היסטורי.";
+      ? "ארכיון: אירוע המתקפה של גל שפירו נשמר לצורכי תיעוד ובקרה."
+      : "ארכיון: מנגנון האימות השעתי (Legacy) נשמר לתיעוד היסטורי.";
   const noticeDetailsTitle = isCleanupMode ? "פרטי ההודעה" : "פרטי האירוע ההיסטורי";
   const noticeDetailsItems = isCleanupMode
     ? [
@@ -306,27 +335,27 @@ export default function Header() {
         "נכון לעכשיו אין צורך בהפעלת אימות שעתי למשתמשים.",
       ]
     : isLegacyAttackMode
-    ? [
-        "אירוע אבטחה חריג טופל בזמן אמת על ידי צוותי התפעול.",
-        "בוצעה הקשחה לכל שכבות ההתחברות והסשן.",
-        "האירוע נשמר בארכיון לצורכי למידה ותחקור.",
-      ]
-    : [
-        "במהלך האירוע הופעל מנגנון אימות משתמשים אחת לשעה.",
-        "מנגנון זה נועד להפחתת סיכון בזמן טיפול בתשתיות.",
-        "המנגנון מסומן כיום כלגאסי ואינו מצב ברירת המחדל.",
-      ];
+      ? [
+          "אירוע אבטחה חריג טופל בזמן אמת על ידי צוותי התפעול.",
+          "בוצעה הקשחה לכל שכבות ההתחברות והסשן.",
+          "האירוע נשמר בארכיון לצורכי למידה ותחקור.",
+        ]
+      : [
+          "במהלך האירוע הופעל מנגנון אימות משתמשים אחת לשעה.",
+          "מנגנון זה נועד להפחתת סיכון בזמן טיפול בתשתיות.",
+          "המנגנון מסומן כיום כלגאסי ואינו מצב ברירת המחדל.",
+        ];
   const paperTitle = isCleanupMode ? "הודעת תפעול רשמית" : "דוח אירוע לגאסי";
   const paperSub = isCleanupMode
     ? "המערכת נוקתה והוחזרה למצב יציב"
     : isLegacyAttackMode
-    ? "תיעוד היסטורי: המתקפה של גל שפירו"
-    : "תיעוד היסטורי: מנגנון אימות שעתי";
+      ? "תיעוד היסטורי: המתקפה של גל שפירו"
+      : "תיעוד היסטורי: מנגנון אימות שעתי";
   const alertTitle = isCleanupMode
     ? "מה השתנה בפועל?"
     : isLegacyAttackMode
-    ? "מה קרה בזמן האירוע?"
-    : "איך עבד האימות השעתי?";
+      ? "מה קרה בזמן האירוע?"
+      : "איך עבד האימות השעתי?";
   const alertItems = isCleanupMode
     ? [
         "תהליכי התחברות וסשנים יוצבו אחרי בדיקות QA מלאות.",
@@ -334,42 +363,42 @@ export default function Header() {
         "המערכת חזרה לתפעול שגרתי עם ניטור רציף.",
       ]
     : isLegacyAttackMode
-    ? [
-        "התגלתה פעילות חריגה שדרשה הקשחה מיידית של המערכת.",
-        "בוצעו חסימות, בידוד רכיבים ותחקור מלא של הלוגים.",
-        "המערכת עברה למצב מוגן עד סיום הטיפול.",
-      ]
-    : [
-        "כל משתמש פעיל נדרש לאימות מחדש אחת לשעה.",
-        "אי השלמת אימות יכלה לגרום לניתוק סשן זמני.",
-        "כל חריגה נרשמה והועברה לטיפול מיידי.",
-      ];
+      ? [
+          "התגלתה פעילות חריגה שדרשה הקשחה מיידית של המערכת.",
+          "בוצעו חסימות, בידוד רכיבים ותחקור מלא של הלוגים.",
+          "המערכת עברה למצב מוגן עד סיום הטיפול.",
+        ]
+      : [
+          "כל משתמש פעיל נדרש לאימות מחדש אחת לשעה.",
+          "אי השלמת אימות יכלה לגרום לניתוק סשן זמני.",
+          "כל חריגה נרשמה והועברה לטיפול מיידי.",
+        ];
   const qaTitle = isCleanupMode ? "סטטוס תפעולי נוכחי" : "סטטוס תפעולי בארכיון";
   const qaText = isCleanupMode
     ? "צוותי QA, DevOps ו-IT סיימו עבודת ניקוי והתייצבות ממושכת.\nהמערכת מוגדרת נקייה ופעילה במתכונת רגילה."
     : isLegacyAttackMode
-    ? "זהו תיעוד של אירוע המתקפה ושל מענה צוותי DevOps, IT ו-QA.\nניתן לעבור גם לתיעוד האימות השעתי מאותו פרק זמן."
-    : "זהו תיעוד של מנגנון האימות השעתי שהופעל באירוע.\nניתן להציג את מסך האימות הישן לצורכי הדגמה.";
+      ? "זהו תיעוד של אירוע המתקפה ושל מענה צוותי DevOps, IT ו-QA.\nניתן לעבור גם לתיעוד האימות השעתי מאותו פרק זמן."
+      : "זהו תיעוד של מנגנון האימות השעתי שהופעל באירוע.\nניתן להציג את מסך האימות הישן לצורכי הדגמה.";
   const qaButtonLabel = isCleanupMode
     ? "פתח Legacy Events"
     : isLegacyAttackMode
-    ? "הצג אימות שעתי (לגאסי)"
-    : "פתח מסך אימות שעתי";
+      ? "הצג אימות שעתי (לגאסי)"
+      : "פתח מסך אימות שעתי";
   const qaButtonTitle = isCleanupMode
     ? "פתיחת אירועי לגאסי"
     : isLegacyAttackMode
-    ? "מעבר לתיעוד האימות השעתי"
-    : "פתיחת מסך האימות השעתי";
+      ? "מעבר לתיעוד האימות השעתי"
+      : "פתיחת מסך האימות השעתי";
   const terminalStatus = isCleanupMode
     ? "SYSTEM_STATE=CLEAN"
     : isLegacyAttackMode
-    ? "THREAT_LEVEL=ELEVATED (ARCHIVED)"
-    : "AUTH_MODE=HOURLY_LEGACY";
+      ? "THREAT_LEVEL=ELEVATED (ARCHIVED)"
+      : "AUTH_MODE=HOURLY_LEGACY";
   const bottomSecret = isCleanupMode
     ? "המערכת נקייה ויציבה."
     : isLegacyAttackMode
-    ? "אירוע המתקפה הועבר לארכיון."
-    : "האימות השעתי נשמר כלגאסי.";
+      ? "אירוע המתקפה הועבר לארכיון."
+      : "האימות השעתי נשמר כלגאסי.";
 
   const onLetterAction = () => {
     if (isCleanupMode) {
@@ -387,12 +416,14 @@ export default function Header() {
 
   if (loading) {
     return (
-      <header style={styles.headerWrap}>
+      <header data-site-header="main" style={styles.headerWrap}>
         <div style={styles.headerInner}>
           <div style={styles.leftGroup}>
             <div style={styles.brandWrap}>
-              <div style={styles.brandBadge}>Y</div>
-              <h2 style={styles.brandText}>yaliby.com</h2>
+              <img src={SITE_LOGO_SRC} alt="" style={styles.brandLogo} />
+              <h2 style={styles.brandText}>
+                <ImageFontText text="YALIBY.COM" className="header-brand-image-font" scale={0.122} gapRem={0.085} spaceRem={0.5} />
+              </h2>
             </div>
           </div>
 
@@ -407,7 +438,7 @@ export default function Header() {
 
   return (
     <>
-      <header style={styles.headerWrap}>
+      <header data-site-header="main" style={styles.headerWrap}>
         <div style={styles.headerInner}>
           {/* LEFT */}
           <div style={styles.leftGroup}>
@@ -416,8 +447,10 @@ export default function Header() {
               onClick={() => navigate("/")}
               title="Back to Home"
             >
-              <div style={styles.brandBadge}>Y</div>
-              <h2 style={styles.brandText}>yaliby.com</h2>
+              <img src={SITE_LOGO_SRC} alt="לוגו האתר" style={styles.brandLogo} />
+              <h2 style={styles.brandText}>
+                <ImageFontText text="YALIBY.COM" className="header-brand-image-font" scale={0.122} gapRem={0.085} spaceRem={0.5} />
+              </h2>
             </div>
 
             <button style={styles.btnSoft} onClick={() => navigate("/")}>
@@ -434,10 +467,7 @@ export default function Header() {
 
             <button
               style={styles.btnFeedback}
-              onClick={() => {
-                setFeedbackError("");
-                setFeedbackOpen(true);
-              }}
+              onClick={() => setFeedbackOpen((prev) => !prev)}
               title="דיווח תקלות והצעות"
             >
               <span style={{ fontSize: 14 }}>פידבק</span>
@@ -462,7 +492,10 @@ export default function Header() {
                 <button style={styles.btnGhost} onClick={() => navigate("/login")}>
                   Login
                 </button>
-                <button style={styles.btnPrimary} onClick={() => navigate("/register")}>
+                <button
+                  style={styles.btnPrimary}
+                  onClick={() => navigate("/register")}
+                >
                   Register
                 </button>
               </>
@@ -498,12 +531,7 @@ export default function Header() {
       {/* LETTER MODAL */}
       {letterOpen && (
         <div
-          style={{
-            ...modalStyles.backdrop,
-            direction: "rtl",
-            textAlign: "right",
-            fontSize: 20,
-          }}
+          style={{ ...modalStyles.backdrop, direction: "rtl", textAlign: "right", fontSize: 20 }}
           onMouseDown={(e) => {
             // סגירה בלחיצה על הרקע
             if (e.target === e.currentTarget) setLetterOpen(false);
@@ -561,14 +589,12 @@ export default function Header() {
                     ) : isLegacyAttackMode ? (
                       <>
                         <b>אירוע ארכיון:</b> בעקבות המתקפה של{" "}
-                        <span style={modalStyles.badName}>גל שפירו</span> הופעלו נהלי חירום
-                        והקשחת מערכת.
+                        <span style={modalStyles.badName}>גל שפירו</span> הופעלו נהלי חירום והקשחת מערכת.
                       </>
                     ) : (
                       <>
                         <b>אירוע ארכיון:</b> הופעל מנגנון{" "}
-                        <span style={modalStyles.badName}>אימות שעתי</span> לכל המשתמשים
-                        הפעילים עד לייצוב המערכת.
+                        <span style={modalStyles.badName}>אימות שעתי</span> לכל המשתמשים הפעילים עד לייצוב המערכת.
                       </>
                     )}
                   </p>
@@ -585,23 +611,30 @@ export default function Header() {
                     </div>
                   </div>
 
-                  <div style={modalStyles.qaBox}>
-                    <div style={modalStyles.qaIcon}>🧪</div>
 
-                    <div style={{ flex: 1 }}>
-                      <div style={modalStyles.qaTitle}>{qaTitle}</div>
+<div style={modalStyles.qaBox}>
+  <div style={modalStyles.qaIcon}>🧪</div>
 
-                      <p style={modalStyles.qaText}>{qaText}</p>
+  <div style={{ flex: 1 }}>
+    <div style={modalStyles.qaTitle}>{qaTitle}</div>
 
-                      <button
-                        style={modalStyles.openScriptBtn}
-                        onClick={onLetterAction}
-                        title={qaButtonTitle}
-                      >
-                        {qaButtonLabel}
-                      </button>
-                    </div>
-                  </div>
+    <p style={modalStyles.qaText}>
+      {qaText}
+    </p>
+
+    <button
+      style={modalStyles.openScriptBtn}
+      onClick={onLetterAction}
+      title={qaButtonTitle}
+    >
+      {qaButtonLabel}
+    </button>
+
+  </div>
+</div>
+
+
+
 
                   <div style={modalStyles.terminal}>
                     <div style={modalStyles.termLine}>
@@ -623,7 +656,9 @@ export default function Header() {
 
                   <div style={modalStyles.footerLine} />
 
-                  <p style={modalStyles.bottomSecret}>{bottomSecret}</p>
+                  <p style={modalStyles.bottomSecret}>
+                    {bottomSecret}
+                  </p>
                 </div>
               </div>
             </div>
@@ -638,6 +673,8 @@ export default function Header() {
               >
                 הבנתי
               </button>
+
+              
             </div>
           </div>
         </div>
@@ -656,7 +693,9 @@ export default function Header() {
             <div style={modalStyles.updatesHeader}>
               <div>
                 <div style={modalStyles.updatesTitle}>עדכונים אחרונים</div>
-                <div style={modalStyles.updatesSubtitle}>מסודר, מפורט ומעודכן</div>
+                <div style={modalStyles.updatesSubtitle}>
+                  מסודר, מפורט ומעודכן
+                </div>
               </div>
               <button
                 style={modalStyles.closeBtn}
@@ -700,7 +739,6 @@ export default function Header() {
                     </div>
                     <div style={modalStyles.updateTitle}>{item.title}</div>
                     <div style={modalStyles.updateDesc}>{item.desc}</div>
-
                     {item.details && item.details.length > 0 && (
                       <ul style={modalStyles.updateList}>
                         {item.details.map((line) => (
@@ -710,7 +748,6 @@ export default function Header() {
                         ))}
                       </ul>
                     )}
-
                     {item.tag === "Legacy Events" && (
                       <div style={modalStyles.legacyEventsActions}>
                         <button
@@ -737,6 +774,7 @@ export default function Header() {
                 </div>
               ))}
             </div>
+
           </div>
         </div>
       )}
@@ -792,29 +830,46 @@ export default function Header() {
                   placeholder="כתבו כאן מה לא עובד / מה כדאי להוסיף..."
                   value={feedbackText}
                   onChange={(e) => setFeedbackText(e.target.value)}
+                  onPaste={(e) => {
+                    void handleFeedbackPaste(e.nativeEvent);
+                  }}
                   maxLength={600}
                 />
 
+                {feedbackImageDataUrl && (
+                  <div style={modalStyles.feedbackImagePreviewWrap}>
+                    <img
+                      src={feedbackImageDataUrl}
+                      alt="תמונה מצורפת לפידבק"
+                      style={modalStyles.feedbackImagePreview}
+                    />
+                    <button
+                      type="button"
+                      style={modalStyles.feedbackImageRemoveBtn}
+                      onClick={() => setFeedbackImageDataUrl(null)}
+                    >
+                      הסר תמונה
+                    </button>
+                  </div>
+                )}
+
                 <div style={modalStyles.feedbackActionRow}>
-                  <span style={modalStyles.feedbackCounter}>
-                    {feedbackText.trim().length}/600
-                  </span>
+                  <span style={modalStyles.feedbackCounter}>{feedbackText.trim().length}/600</span>
                   <button
                     style={modalStyles.feedbackSendBtn}
                     onClick={submitFeedback}
-                    disabled={feedbackSending || !user}
+                    disabled={feedbackSending || feedbackImageBusy || !user}
                   >
-                    {feedbackSending ? "שולח..." : "שלח"}
+                    {feedbackSending ? "שולח..." : feedbackImageBusy ? "מעבד תמונה..." : "שלח"}
                   </button>
                 </div>
-
                 {!user && (
                   <div style={modalStyles.feedbackNotice}>יש להתחבר כדי לשלוח הודעה.</div>
                 )}
                 {feedbackError && <div style={modalStyles.feedbackError}>{feedbackError}</div>}
               </div>
 
-              <div style={modalStyles.feedbackFeed}>
+              <div className="feedback-scroll" style={modalStyles.feedbackFeed}>
                 {feedbackEntries.length === 0 ? (
                   <div style={modalStyles.feedbackEmpty}>עדיין אין הודעות.</div>
                 ) : (
@@ -823,17 +878,20 @@ export default function Header() {
                       <div style={modalStyles.feedbackMeta}>
                         <span style={modalStyles.feedbackUser}>{entry.username}</span>
                         <span style={modalStyles.feedbackKindTag}>
-                          {entry.kind === "bug"
-                            ? "תקלה"
-                            : entry.kind === "idea"
-                            ? "הצעה"
-                            : "אחר"}
+                          {entry.kind === "bug" ? "תקלה" : entry.kind === "idea" ? "הצעה" : "אחר"}
                         </span>
                         <span style={modalStyles.feedbackTime}>
                           {formatFeedbackTime(entry.createdAtMs)}
                         </span>
                       </div>
                       <p style={modalStyles.feedbackText}>{entry.text}</p>
+                      {entry.imageDataUrl && (
+                        <img
+                          src={entry.imageDataUrl}
+                          alt="תמונה מצורפת לפידבק"
+                          style={modalStyles.feedbackCardImage}
+                        />
+                      )}
                     </article>
                   ))
                 )}
@@ -913,25 +971,25 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
 
-  brandBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    display: "grid",
-    placeItems: "center",
-    fontWeight: 900,
-    color: "#0b0f1c",
-    background:
-      "radial-gradient(circle at 30% 30%, #ffd34a 0%, #ff8a4a 55%, #ff3d77 100%)",
-    boxShadow: "0 8px 24px rgba(255, 92, 92, 0.18)",
+  brandLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 0,
+    objectFit: "cover",
+    objectPosition: "center 20%",
+    transform: "scale(1.22)",
+    transformOrigin: "center",
+    display: "block",
+    border: "none",
+    background: "transparent",
+    boxShadow: "none",
   },
 
   brandText: {
     margin: 0,
-    fontSize: 18,
-    letterSpacing: 0.2,
-    color: "rgba(255,255,255,0.95)",
-    textShadow: "0 10px 20px rgba(0,0,0,0.35)",
+    lineHeight: 1,
+    display: "flex",
+    alignItems: "center",
   },
 
   btnGhost: {
@@ -1310,7 +1368,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.10)",
   },
 
-  bottomSecret: {
+   bottomSecret: {
     fontSize: 27,
     marginTop: 12,
     marginBottom: 2,
@@ -1318,8 +1376,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontWeight: 1000,
     letterSpacing: 0.2,
     color: "rgba(240, 135, 22, 0.98)",
-    textShadow:
-      "0 0px 20px rgba(255, 50, 80, 0.6), 0 16px 35px rgba(0,0,0,0.45)",
+    textShadow: "0 0px 20px rgba(255, 50, 80, 0.6), 0 16px 35px rgba(0,0,0,0.45)",
     animation: "pulse-secret 1.5s ease-in-out infinite",
   },
 
@@ -1541,9 +1598,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
     boxShadow: "0 24px 90px rgba(0,0,0,0.60)",
     overflow: "hidden",
     position: "relative",
-
-    // גלילה פנימית תקינה לפיד
-    maxHeight: "88vh",
+    height: "min(760px, 88vh)",
     display: "flex",
     flexDirection: "column",
   },
@@ -1573,14 +1628,11 @@ const modalStyles: Record<string, React.CSSProperties> = {
 
   feedbackBody: {
     display: "grid",
-    gridTemplateColumns: "1fr",
     gridTemplateRows: "auto minmax(0, 1fr)",
     gap: 12,
     padding: 14,
-
-    // מאפשר לשורת הפיד להצטמצם ולקבל גלילה
-    minHeight: 0,
     flex: 1,
+    minHeight: 0,
   },
 
   feedbackComposer: {
@@ -1619,6 +1671,33 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontFamily: "inherit",
     fontSize: 13.5,
     lineHeight: 1.45,
+  },
+
+  feedbackImagePreviewWrap: {
+    display: "grid",
+    gap: 7,
+  },
+
+  feedbackImagePreview: {
+    width: "min(100%, 280px)",
+    maxHeight: 190,
+    objectFit: "contain",
+    borderRadius: 10,
+    background: "rgba(0,0,0,0.28)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    justifySelf: "start",
+  },
+
+  feedbackImageRemoveBtn: {
+    justifySelf: "start",
+    border: "1px solid rgba(255, 141, 161, 0.40)",
+    borderRadius: 8,
+    padding: "4px 8px",
+    background: "rgba(135, 45, 64, 0.26)",
+    color: "rgba(255,219,226,0.95)",
+    cursor: "pointer",
+    fontSize: 11.5,
+    fontWeight: 800,
   },
 
   feedbackActionRow: {
@@ -1663,19 +1742,17 @@ const modalStyles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.10)",
     background: "rgba(255,255,255,0.02)",
     padding: 10,
-
-    // גלילה פנימית לפידבק
     overflowY: "auto",
     overflowX: "hidden",
-    WebkitOverflowScrolling: "touch",
-
     display: "grid",
     gap: 8,
     alignContent: "start",
-
-    // קריטי בתוך Grid/Flex כדי שהגלילה תעבוד
     minHeight: 0,
-    height: 15%,
+    scrollbarWidth: "thin",
+    scrollbarColor: "rgba(153, 170, 255, 0.45) transparent",
+    scrollBehavior: "smooth",
+    overscrollBehavior: "contain",
+    WebkitOverflowScrolling: "touch",
   },
 
   feedbackEmpty: {
@@ -1733,56 +1810,68 @@ const modalStyles: Record<string, React.CSSProperties> = {
     wordBreak: "break-word",
   },
 
+  feedbackCardImage: {
+    width: "min(100%, 260px)",
+    maxHeight: 220,
+    objectFit: "contain",
+    borderRadius: 10,
+    background: "rgba(0,0,0,0.24)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    justifySelf: "start",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.28)",
+  },
+
   qaBox: {
-    marginTop: 12,
-    display: "flex",
-    gap: 12,
-    alignItems: "flex-start",
-    padding: 12,
-    borderRadius: 18,
-    border: "1px solid rgba(124, 92, 255, 0.20)",
-    background:
-      "linear-gradient(180deg, rgba(124,92,255,0.12), rgba(255,79,216,0.06))",
-  },
+  marginTop: 12,
+  display: "flex",
+  gap: 12,
+  alignItems: "flex-start",
+  padding: 12,
+  borderRadius: 18,
+  border: "1px solid rgba(124, 92, 255, 0.20)",
+  background:
+    "linear-gradient(180deg, rgba(124,92,255,0.12), rgba(255,79,216,0.06))",
+},
 
-  qaIcon: {
-    fontSize: 22,
-    marginTop: 2,
-  },
+qaIcon: {
+  fontSize: 22,
+  marginTop: 2,
+},
 
-  qaTitle: {
-    fontWeight: 1000,
-    marginBottom: 6,
-    color: "rgba(234,242,255,0.92)",
-  },
+qaTitle: {
+  fontWeight: 1000,
+  marginBottom: 6,
+  color: "rgba(234,242,255,0.92)",
+},
 
-  qaText: {
-    margin: 0,
-    color: "rgba(255,255,255,0.84)",
-    fontSize: 13.5,
-    lineHeight: 1.5,
-    whiteSpace: "pre-line",
-  },
+qaText: {
+  margin: 0,
+  color: "rgba(255,255,255,0.84)",
+  fontSize: 13.5,
+  lineHeight: 1.5,
+  whiteSpace: "pre-line",
+},
 
-  openScriptBtn: {
-    marginTop: 10,
-    border: "1px solid rgba(255,80,120,0.25)",
-    background:
-      "linear-gradient(135deg, rgba(255,80,120,0.16) 0%, rgba(124,92,255,0.10) 55%, rgba(89,248,208,0.08) 130%)",
-    color: "rgba(255,255,255,0.95)",
-    padding: "10px 12px",
-    borderRadius: 14,
-    cursor: "pointer",
-    fontWeight: 1000,
-    boxShadow: "0 14px 30px rgba(0,0,0,0.35)",
-  },
+openScriptBtn: {
+  marginTop: 10,
+  border: "1px solid rgba(255,80,120,0.25)",
+  background:
+    "linear-gradient(135deg, rgba(255,80,120,0.16) 0%, rgba(124,92,255,0.10) 55%, rgba(89,248,208,0.08) 130%)",
+  color: "rgba(255,255,255,0.95)",
+  padding: "10px 12px",
+  borderRadius: 14,
+  cursor: "pointer",
+  fontWeight: 1000,
+  boxShadow: "0 14px 30px rgba(0,0,0,0.35)",
+},
 
-  qaNote: {
-    marginTop: 8,
-    fontSize: 12,
-    opacity: 0.72,
-    color: "rgba(234,242,255,0.78)",
-  },
+qaNote: {
+  marginTop: 8,
+  fontSize: 12,
+  opacity: 0.72,
+  color: "rgba(234,242,255,0.78)",
+},
+
 };
 
 const css = `
@@ -1824,5 +1913,29 @@ const css = `
   header button:hover {
     filter: brightness(1.05);
   }
-`;
 
+  .feedback-scroll {
+    scrollbar-gutter: stable;
+  }
+
+  .feedback-scroll::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+
+  .feedback-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .feedback-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background:
+      linear-gradient(180deg, rgba(139, 167, 255, 0.65), rgba(122, 103, 243, 0.58));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .feedback-scroll::-webkit-scrollbar-thumb:hover {
+    background:
+      linear-gradient(180deg, rgba(162, 190, 255, 0.78), rgba(144, 121, 255, 0.72));
+  }
+`;

@@ -16,6 +16,7 @@ type Props = {
   countries: PlayableCountry[];
   feedback: MapFeedback;
   revealCorrectIso3: string | null;
+  completedIso3Set?: ReadonlySet<string>;
   disabled: boolean;
   onCountryClick: (country: PlayableCountry) => void;
 };
@@ -24,12 +25,17 @@ function getCountryClassName(
   country: PlayableCountry,
   feedback: MapFeedback,
   revealCorrectIso3: string | null,
+  completedIso3Set: ReadonlySet<string> | undefined,
   disabled: boolean,
 ): string {
   const classNames = ["which-country-map__country"];
+  const isCompleted = completedIso3Set?.has(country.iso3) ?? false;
 
   if (disabled) {
     classNames.push("is-disabled");
+  }
+  if (isCompleted) {
+    classNames.push("is-completed");
   }
   if (feedback?.type === "correct" && feedback.clickedIso3 === country.iso3) {
     classNames.push("is-correct");
@@ -48,6 +54,7 @@ export default function WhichCountryMap({
   countries,
   feedback,
   revealCorrectIso3,
+  completedIso3Set,
   disabled,
   onCountryClick,
 }: Props) {
@@ -89,30 +96,34 @@ export default function WhichCountryMap({
       >
         <path className="which-country-map__ocean" d={projected.ocean} />
         <path className="which-country-map__graticule" d={projected.graticule} />
-        {projected.paths.map(({ country, d }) => (
-          <path
-            key={country.iso3}
-            className={getCountryClassName(country, feedback, revealCorrectIso3, disabled)}
-            d={d}
-            role="button"
-            tabIndex={disabled ? -1 : 0}
-            aria-label={`Select ${country.name}`}
-            onClick={() => {
-              if (!disabled) {
-                onCountryClick(country);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (disabled) {
-                return;
-              }
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                onCountryClick(country);
-              }
-            }}
-          />
-        ))}
+        {projected.paths.map(({ country, d }) => {
+          const isCompleted = completedIso3Set?.has(country.iso3) ?? false;
+          const isBlocked = disabled || isCompleted;
+          return (
+            <path
+              key={country.iso3}
+              className={getCountryClassName(country, feedback, revealCorrectIso3, completedIso3Set, disabled)}
+              d={d}
+              role="button"
+              tabIndex={isBlocked ? -1 : 0}
+              aria-label={`Select ${country.name}`}
+              onClick={() => {
+                if (!isBlocked) {
+                  onCountryClick(country);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (isBlocked) {
+                  return;
+                }
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onCountryClick(country);
+                }
+              }}
+            />
+          );
+        })}
       </svg>
     </section>
   );

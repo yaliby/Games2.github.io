@@ -63,7 +63,7 @@ export default function HourlyMagicPrompt() {
     <div className="hourly-magic-overlay" role="dialog" aria-modal="true" dir="rtl">
       <div className="hourly-magic-card">
         <img
-          src="/img/Man.png"
+          src="/img/logo.png"
           alt="דמות של אדם"
           className="hourly-magic-photo"
         />

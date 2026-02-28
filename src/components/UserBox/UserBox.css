@@ -1,9 +1,30 @@
 .userbox {
+  --ub-scale: 1;
+  --ub-avatar-base: 52px;
+  --ub-avatar-radius-base: 14px;
+  --ub-medal-base: 26px;
+  --ub-medal-radius-base: 8px;
+  --ub-gap-base: 12px;
+  --ub-pad-y-base: 10px;
+  --ub-pad-x-base: 12px;
+  --ub-name-size-base: 14px;
+  --ub-medal-gap-base: 8px;
+
+  --ub-avatar-size: clamp(18px, calc(var(--ub-avatar-base) * var(--ub-scale)), 76px);
+  --ub-avatar-radius: clamp(5px, calc(var(--ub-avatar-radius-base) * var(--ub-scale)), 16px);
+  --ub-medal-size: clamp(12px, calc(var(--ub-medal-base) * var(--ub-scale)), 30px);
+  --ub-medal-radius: clamp(4px, calc(var(--ub-medal-radius-base) * var(--ub-scale)), 10px);
+  --ub-gap: clamp(5px, calc(var(--ub-gap-base) * var(--ub-scale)), 16px);
+  --ub-pad-y: clamp(4px, calc(var(--ub-pad-y-base) * var(--ub-scale)), 13px);
+  --ub-pad-x: clamp(5px, calc(var(--ub-pad-x-base) * var(--ub-scale)), 15px);
+  --ub-name-size: clamp(11px, calc(var(--ub-name-size-base) * var(--ub-scale)), 17px);
+  --ub-medal-gap: clamp(2px, calc(var(--ub-medal-gap-base) * var(--ub-scale)), 11px);
+
   display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: 12px;
+  grid-template-columns: var(--ub-avatar-size) minmax(0, 1fr);
+  gap: var(--ub-gap);
   align-items: center;
-  padding: 10px 12px;
+  padding: var(--ub-pad-y) var(--ub-pad-x);
   border-radius: 14px;
   border: 1px solid rgba(140, 170, 255, 0.12);
   background: rgba(10, 14, 28, 0.45);
@@ -11,6 +32,8 @@
   text-decoration: none;
   cursor: pointer;
   width: 100%;
+  min-width: 0;
+  container-type: inline-size;
 }
 
 .userbox:hover {
@@ -19,17 +42,19 @@
 }
 
 .userbox__avatar {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: var(--ub-avatar-size);
+  height: var(--ub-avatar-size);
+  border-radius: var(--ub-avatar-radius);
   object-fit: cover;
   background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
 }
 
 .userbox__avatar--fallback {
   display: grid;
   place-items: center;
   font-weight: 900;
+  font-size: clamp(11px, calc(var(--ub-avatar-size) * 0.45), 22px);
   color: rgba(255, 255, 255, 0.95);
   background: linear-gradient(135deg, rgba(91, 125, 255, 0.9), rgba(255, 74, 216, 0.75));
   box-shadow: 0 12px 28px rgba(120, 140, 255, 0.2);
@@ -38,41 +63,60 @@
 .userbox__info {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .userbox__name {
   font-weight: 800;
-  font-size: 14px;
+  font-size: var(--ub-name-size);
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .userbox__medals {
   display: flex;
-  gap: 8px;
+  gap: var(--ub-medal-fit-gap, var(--ub-medal-gap));
   align-items: center;
+  min-width: 0;
+  overflow: visible;
+  flex-wrap: nowrap;
 }
 
 .userbox__medal {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  --ub-medal-render-size: var(--ub-medal-fit-size, var(--ub-medal-size));
+  width: var(--ub-medal-render-size);
+  height: var(--ub-medal-render-size);
+  border-radius: var(--ub-medal-radius);
   border: 1px solid rgba(140, 170, 255, 0.2);
   background: rgba(140, 170, 255, 0.08);
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: clamp(9px, calc(var(--ub-medal-render-size) * 0.45), 13px);
   font-weight: 800;
   color: #b9c8ff;
   position: relative;
+  flex: 0 0 auto;
 }
 
 .userbox__medal img {
-  width: 18px;
-  height: 18px;
+  width: clamp(8px, calc(var(--ub-medal-render-size) * 0.69), 20px);
+  height: clamp(8px, calc(var(--ub-medal-render-size) * 0.69), 20px);
   object-fit: contain;
+}
+
+.userbox.userbox--medals-wrap .userbox__medals {
+  gap: var(--ub-medal-gap);
+  align-items: flex-start;
+  align-content: flex-start;
+  overflow: visible;
+  flex-wrap: wrap;
+}
+
+.userbox.userbox--medals-wrap .userbox__medal {
+  --ub-medal-render-size: var(--ub-medal-size);
 }
 
 .userbox__medal--empty {
@@ -95,11 +139,12 @@
   font-size: 12px;
   line-height: 1.35;
   box-shadow: 0 18px 35px rgba(0, 0, 0, 0.45);
+  display: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease, transform 120ms ease;
   transform-origin: bottom center;
-  z-index: 10;
+  z-index: 1000;
 }
 
 .userbox__tooltip::after {
@@ -126,6 +171,7 @@
 }
 
 .userbox__medal:hover .userbox__tooltip {
+  display: block;
   opacity: 1;
   transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(-4px);
 }
@@ -146,6 +192,7 @@
 }
 
 .userbox__medal[data-tooltip-placement="bottom"]:hover .userbox__tooltip {
+  display: block;
   transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(4px);
 }
 
@@ -170,12 +217,39 @@
 
 .userbox__name.skeleton {
   height: 14px;
-  width: 140px;
+  width: min(140px, 100%);
   border-radius: 8px;
 }
 
 .userbox__medal.skeleton {
   border-radius: 8px;
+}
+
+@container (max-width: 320px) {
+  .userbox {
+    --ub-scale: 0.92;
+  }
+}
+
+@container (max-width: 250px) {
+  .userbox {
+    --ub-scale: 0.78;
+    --ub-medal-base: 14px;
+    --ub-medal-gap-base: 2px;
+  }
+}
+
+@container (max-width: 205px) {
+  .userbox {
+    --ub-scale: 0.74;
+    --ub-avatar-base: 34px;
+    --ub-medal-base: 13px;
+    --ub-medal-gap-base: 2px;
+    --ub-pad-y-base: 5px;
+    --ub-pad-x-base: 6px;
+    --ub-gap-base: 6px;
+    grid-template-columns: var(--ub-avatar-size) minmax(0, 1fr);
+  }
 }
 
 @keyframes shimmer {

@@ -45,6 +45,10 @@ service cloud.firestore {
       return request.resource.data.keys().hasAny([key]);
     }
 
+    function resourceHasKey(key) {
+      return resource.data.keys().hasAny([key]);
+    }
+
     function changedKey(key) {
       return request.resource.data.diff(resource.data).changedKeys().hasAny([key]);
     }
@@ -65,6 +69,30 @@ service cloud.firestore {
 
     function validUpdatedAtNow() {
       return request.resource.data.updatedAt == request.time;
+    }
+
+    function validImageDataUrl(dataUrl) {
+      return dataUrl is string
+        && dataUrl.size() >= 40
+        && dataUrl.size() <= 620000
+        && dataUrl.matches('^data:image\\/(png|jpeg|jpg|webp);base64,.*$');
+    }
+
+    function validOptionalImageDataUrl() {
+      return !hasKey('imageDataUrl') || validImageDataUrl(request.resource.data.imageDataUrl);
+    }
+
+    function validRemotePhotoUrl(url) {
+      return url is string
+        && url.size() >= 8
+        && url.size() <= 2048
+        && url.matches('^https?://[^\\s]+$');
+    }
+
+    function validProfilePhotoValue(value) {
+      return value == ''
+        || validRemotePhotoUrl(value)
+        || validImageDataUrl(value);
     }
 
     function validSeasonalScoreCreate() {
@@ -116,7 +144,7 @@ service cloud.firestore {
         && validScore(request.resource.data.bestScore)
         && request.resource.data.gamesPlayed is int
         && request.resource.data.gamesPlayed >= 0
-        && (!hasKey('photoURL') || request.resource.data.photoURL is string || request.resource.data.photoURL == "")
+        && (!hasKey('photoURL') || validProfilePhotoValue(request.resource.data.photoURL))
         && (!hasKey('achievements') || request.resource.data.achievements is list);
 
       allow update: if (isOwner(uid) || isAdmin())
@@ -130,7 +158,7 @@ service cloud.firestore {
               request.resource.data.gamesPlayed is int
               && request.resource.data.gamesPlayed >= resource.data.gamesPlayed
             ))
-        && (!changedKey('photoURL') || request.resource.data.photoURL is string || request.resource.data.photoURL == "")
+        && (!changedKey('photoURL') || validProfilePhotoValue(request.resource.data.photoURL))
         && (!changedKey('achievements') || request.resource.data.achievements is list);
 
       allow delete: if isOwner(uid) || isAdmin();
@@ -162,12 +190,62 @@ service cloud.firestore {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    match /scores/which-country-speedrun/users/{uid} {
+      allow read: if true;
+      allow create: if (isOwner(uid) || isAdmin())
+        && hasAllKeys(['username', 'timeMs', 'updatedAt'])
+        && onlyKeys(['username', 'timeMs', 'countriesFound', 'countriesTotal', 'updatedAt'])
+        && validUsername(request.resource.data.username)
+        && validScore(request.resource.data.timeMs)
+        && request.resource.data.updatedAt == request.time
+        && (!hasKey('countriesFound') || (
+              request.resource.data.countriesFound is int
+              && request.resource.data.countriesFound >= 0
+              && request.resource.data.countriesFound <= 1000
+            ))
+        && (!hasKey('countriesTotal') || (
+              request.resource.data.countriesTotal is int
+              && request.resource.data.countriesTotal > 0
+              && request.resource.data.countriesTotal <= 1000
+            ))
+        && (
+              (!hasKey('countriesFound') && !hasKey('countriesTotal'))
+              || (hasKey('countriesFound') && hasKey('countriesTotal')
+                && request.resource.data.countriesFound <= request.resource.data.countriesTotal)
+            );
+
+      allow update: if (isOwner(uid) || isAdmin())
+        && hasAllKeys(['username', 'timeMs', 'updatedAt'])
+        && onlyKeys(['username', 'timeMs', 'countriesFound', 'countriesTotal', 'updatedAt'])
+        && validUsername(request.resource.data.username)
+        && validScore(request.resource.data.timeMs)
+        && request.resource.data.updatedAt == request.time
+        && (!hasKey('countriesFound') || (
+              request.resource.data.countriesFound is int
+              && request.resource.data.countriesFound >= 0
+              && request.resource.data.countriesFound <= 1000
+            ))
+        && (!hasKey('countriesTotal') || (
+              request.resource.data.countriesTotal is int
+              && request.resource.data.countriesTotal > 0
+              && request.resource.data.countriesTotal <= 1000
+            ))
+        && (
+              (!hasKey('countriesFound') && !hasKey('countriesTotal'))
+              || (hasKey('countriesFound') && hasKey('countriesTotal')
+                && request.resource.data.countriesFound <= request.resource.data.countriesTotal)
+            );
+
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
     match /scores/{game}/users/{uid} {
       allow read: if true;
       allow create, update: if (isOwner(uid) || isAdmin())
         && game != 'block-blast'
         && game != 'word-guess'
         && game != 'which-country'
+        && game != 'which-country-speedrun'
         && hasAllKeys(['username', 'score'])
         && onlyKeys(['username', 'score', 'updatedAt'])
         && validUsername(request.resource.data.username)
@@ -176,7 +254,8 @@ service cloud.firestore {
       allow delete: if (isOwner(uid) || isAdmin())
         && game != 'block-blast'
         && game != 'word-guess'
-        && game != 'which-country';
+        && game != 'which-country'
+        && game != 'which-country-speedrun';
     }
 
     match /feedback/{messageId} {
@@ -184,7 +263,7 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && hasAllKeys(['uid', 'username', 'kind', 'text', 'createdAt'])
-        && onlyKeys(['uid', 'username', 'kind', 'text', 'createdAt'])
+        && onlyKeys(['uid', 'username', 'kind', 'text', 'imageDataUrl', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.username is string
         && request.resource.data.username.size() >= 1
@@ -193,9 +272,59 @@ service cloud.firestore {
         && request.resource.data.text is string
         && request.resource.data.text.size() >= 4
         && request.resource.data.text.size() <= 600
+        && validOptionalImageDataUrl()
         && request.resource.data.createdAt == request.time;
 
       allow update, delete: if isAdmin();
+    }
+
+    match /suggestions/{suggestionId} {
+      allow read: if true;
+
+      allow create: if signedIn()
+        && hasAllKeys(['uid', 'username', 'text', 'votesCount', 'voters', 'createdAt', 'updatedAt'])
+        && onlyKeys(['uid', 'username', 'text', 'imageDataUrl', 'votesCount', 'voters', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == request.auth.uid
+        && validUsername(request.resource.data.username)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 4
+        && request.resource.data.text.size() <= 600
+        && validOptionalImageDataUrl()
+        && request.resource.data.votesCount == 0
+        && request.resource.data.voters is list
+        && request.resource.data.voters.size() == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedIn()
+        && hasAllKeys(['uid', 'username', 'text', 'votesCount', 'voters', 'createdAt', 'updatedAt'])
+        && onlyKeys(['uid', 'username', 'text', 'imageDataUrl', 'votesCount', 'voters', 'createdAt', 'updatedAt'])
+        && resource.data.uid is string
+        && resource.data.username is string
+        && resource.data.text is string
+        && resource.data.votesCount is int
+        && resource.data.voters is list
+        && resource.data.createdAt is timestamp
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.text == resource.data.text
+        && (
+              (!resourceHasKey('imageDataUrl') && !hasKey('imageDataUrl'))
+              || (resourceHasKey('imageDataUrl')
+                && request.resource.data.imageDataUrl is string
+                && request.resource.data.imageDataUrl == resource.data.imageDataUrl)
+            )
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.votesCount is int
+        && request.resource.data.votesCount == resource.data.votesCount + 1
+        && request.resource.data.voters is list
+        && request.resource.data.voters.size() == resource.data.voters.size() + 1
+        && request.resource.data.voters.hasAll(resource.data.voters)
+        && !(request.auth.uid in resource.data.voters)
+        && request.auth.uid in request.resource.data.voters
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if (resource.data.uid is string && isOwner(resource.data.uid)) || isAdmin();
     }
 
     match /system/weekly {

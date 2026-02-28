@@ -1,0 +1,729 @@
+@import url("https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&display=swap");
+
+.raid-hero-page {
+  min-height: 100%;
+  width: 100%;
+  display: grid;
+  place-items: start center;
+  padding: 1.1rem 0.72rem 2rem;
+  background:
+    radial-gradient(130% 70% at 12% -10%, rgba(103, 255, 190, 0.18), transparent 56%),
+    radial-gradient(88% 58% at 86% 108%, rgba(255, 122, 95, 0.17), transparent 61%),
+    linear-gradient(180deg, #0a0f17 0%, #06090e 100%);
+  color: #f2f8ff;
+  font-family: "Teko", "Segoe UI", sans-serif;
+}
+
+.raid-hero-shell {
+  width: min(1180px, 100%);
+  border-radius: 24px;
+  border: 1px solid rgba(128, 192, 255, 0.28);
+  padding: 0.85rem;
+  background:
+    linear-gradient(150deg, rgba(10, 20, 33, 0.96), rgba(7, 12, 20, 0.95)),
+    radial-gradient(100% 150% at 70% 0%, rgba(111, 210, 255, 0.08), transparent 60%);
+  box-shadow:
+    0 24px 68px rgba(0, 0, 0, 0.57),
+    inset 0 1px 0 rgba(208, 233, 255, 0.18);
+  display: grid;
+  gap: 0.72rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.raid-start-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(4, 8, 14, 0.88), rgba(4, 8, 14, 0.92)),
+    radial-gradient(100% 90% at 20% 0%, rgba(113, 231, 182, 0.1), transparent 65%);
+  backdrop-filter: blur(2px);
+}
+
+.raid-start-card {
+  width: min(820px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(131, 191, 246, 0.32);
+  background: rgba(8, 18, 30, 0.95);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.52);
+  padding: 0.78rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.raid-start-card h2 {
+  margin: 0;
+  font-size: 1.44rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.raid-start-card p {
+  margin: 0.2rem 0 0;
+  color: rgba(199, 223, 246, 0.78);
+  font-size: 0.94rem;
+}
+
+.raid-disclaimer-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: 0.95rem;
+  background:
+    linear-gradient(180deg, rgba(4, 8, 14, 0.9), rgba(4, 8, 14, 0.94)),
+    radial-gradient(110% 90% at 16% 0%, rgba(255, 142, 96, 0.18), transparent 62%);
+  backdrop-filter: blur(2px);
+}
+
+.raid-disclaimer-card {
+  width: min(620px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 185, 130, 0.58);
+  background: linear-gradient(155deg, rgba(24, 13, 9, 0.96), rgba(42, 20, 12, 0.95));
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.56);
+  padding: 0.96rem 1rem 0.9rem;
+  display: grid;
+  gap: 0.58rem;
+  animation: raid-disclaimer-in 0.24s ease-out;
+}
+
+.raid-disclaimer-card h3 {
+  margin: 0;
+  font-size: 1.22rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 217, 184, 0.98);
+  line-height: 1;
+}
+
+.raid-disclaimer-card p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.25;
+  color: rgba(255, 230, 206, 0.92);
+}
+
+.raid-disclaimer-btn {
+  justify-self: end;
+  border: 1px solid rgba(255, 194, 144, 0.74);
+  border-radius: 999px;
+  background: linear-gradient(150deg, rgba(255, 170, 110, 0.96), rgba(245, 126, 75, 0.96));
+  color: #251006;
+  padding: 0.36rem 0.9rem 0.4rem;
+  font: 700 0.88rem/1 "Teko", "Segoe UI", sans-serif;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3);
+  transition: filter 0.14s ease, transform 0.1s ease;
+}
+
+.raid-disclaimer-btn:hover {
+  filter: brightness(1.08);
+}
+
+.raid-disclaimer-btn:active {
+  transform: translateY(1px);
+}
+
+.raid-start-group {
+  display: grid;
+  gap: 0.36rem;
+}
+
+.raid-start-group h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(180, 211, 244, 0.86);
+}
+
+.raid-song-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.44rem;
+}
+
+.raid-song-option,
+.raid-difficulty-option {
+  border-radius: 12px;
+  border: 1px solid rgba(125, 184, 238, 0.28);
+  background: rgba(10, 22, 37, 0.88);
+  color: #ebf6ff;
+  display: grid;
+  gap: 0.06rem;
+  padding: 0.46rem 0.54rem 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, filter 0.14s ease, transform 0.08s ease;
+}
+
+.raid-song-option strong,
+.raid-difficulty-option strong {
+  font-size: 1.02rem;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
+.raid-song-option span,
+.raid-difficulty-option span {
+  font-size: 0.83rem;
+  color: rgba(199, 225, 249, 0.8);
+  line-height: 1.15;
+}
+
+.raid-song-option small {
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(152, 199, 244, 0.78);
+}
+
+.raid-difficulty-option small {
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: rgba(164, 205, 244, 0.78);
+}
+
+.raid-song-option:hover,
+.raid-difficulty-option:hover {
+  filter: brightness(1.06);
+}
+
+.raid-song-option:active,
+.raid-difficulty-option:active {
+  transform: translateY(1px);
+}
+
+.raid-song-option.is-active,
+.raid-difficulty-option.is-active {
+  border-color: rgba(113, 243, 190, 0.84);
+  background: linear-gradient(155deg, rgba(18, 53, 44, 0.9), rgba(12, 40, 34, 0.9));
+  box-shadow: inset 0 0 0 1px rgba(151, 245, 209, 0.25);
+}
+
+.raid-difficulty-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.44rem;
+}
+
+.raid-start-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.raid-hero-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.raid-hero-header h1 {
+  margin: 0;
+  font-size: 1.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.raid-hero-header p {
+  margin: 0.3rem 0 0;
+  color: rgba(209, 227, 248, 0.78);
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.raid-hero-header p strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.raid-hero-stage-meta {
+  margin-top: 0.26rem;
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+  letter-spacing: 0.05em;
+  color: rgba(182, 214, 247, 0.84);
+}
+
+.raid-hero-stage-meta span {
+  border-radius: 999px;
+  border: 1px solid rgba(125, 188, 243, 0.24);
+  background: rgba(8, 20, 33, 0.6);
+  padding: 0.14rem 0.54rem 0.18rem;
+}
+
+.raid-stage-pill {
+  border-radius: 999px;
+  border: 1px solid rgba(111, 239, 198, 0.56);
+  background: rgba(13, 45, 34, 0.6);
+  color: #b6f2d8;
+  padding: 0.16rem 0.62rem 0.2rem;
+}
+
+.raid-hero-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.raid-hero-clock {
+  min-width: 72px;
+  border-radius: 999px;
+  border: 1px solid rgba(136, 224, 190, 0.4);
+  background: rgba(7, 20, 17, 0.74);
+  text-align: center;
+  padding: 0.2rem 0.58rem 0.22rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+}
+
+.raid-hero-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 0.33rem 0.86rem 0.36rem;
+  font: 700 0.88rem/1 "Teko", "Segoe UI", sans-serif;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+  transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.18s ease;
+}
+
+.raid-hero-btn--primary {
+  background: linear-gradient(145deg, #67f8b8, #4be39f);
+  color: #082114;
+}
+
+.raid-hero-btn--reset {
+  background: linear-gradient(155deg, #ffc090, #ff9768);
+  color: #2d1308;
+}
+
+.raid-hero-btn--menu {
+  background: linear-gradient(155deg, #8bc7ff, #6ba9e8);
+  color: #061c2e;
+}
+
+.raid-hero-btn:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.34);
+}
+
+.raid-hero-btn:active {
+  transform: translateY(1px);
+}
+
+.raid-hero-btn:focus-visible {
+  outline: 2px solid rgba(199, 239, 255, 0.86);
+  outline-offset: 2px;
+}
+
+.raid-song-progress {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(124, 185, 243, 0.24);
+  background: rgba(7, 15, 24, 0.82);
+  overflow: hidden;
+}
+
+.raid-song-progress__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #69f8bd, #64d3ff);
+  box-shadow: 0 0 14px rgba(112, 226, 255, 0.46);
+  transition: width 0.08s linear;
+}
+
+.raid-song-progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -22%;
+  width: 20%;
+  background: linear-gradient(90deg, transparent, rgba(218, 252, 255, 0.65), transparent);
+  animation: raid-progress-sheen 1.8s linear infinite;
+  pointer-events: none;
+}
+
+.raid-hero-status {
+  margin: 0;
+  font-size: 0.92rem;
+  letter-spacing: 0.03em;
+  color: rgba(198, 223, 248, 0.86);
+}
+
+.raid-hero-hud {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.44rem;
+}
+
+.raid-hud-card {
+  border-radius: 14px;
+  border: 1px solid rgba(126, 189, 246, 0.28);
+  background:
+    linear-gradient(170deg, rgba(11, 26, 41, 0.88), rgba(8, 18, 30, 0.84)),
+    radial-gradient(100% 140% at 0% 0%, rgba(125, 222, 255, 0.1), transparent 60%);
+  padding: 0.45rem 0.52rem 0.5rem;
+  display: grid;
+  gap: 0.2rem;
+  box-shadow: inset 0 1px 0 rgba(216, 240, 255, 0.08);
+}
+
+.raid-hud-title {
+  font-size: 0.68rem;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(171, 211, 246, 0.86);
+}
+
+.raid-hud-value {
+  font-size: 1.22rem;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: #f3fbff;
+}
+
+.raid-hud-sub {
+  font-size: 0.74rem;
+  line-height: 1.05;
+  color: rgba(183, 215, 245, 0.8);
+}
+
+.raid-hud-meter {
+  height: 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(129, 190, 244, 0.22);
+  background: rgba(7, 14, 23, 0.72);
+  overflow: hidden;
+}
+
+.raid-hud-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+.raid-hud-fill--energy {
+  background: linear-gradient(90deg, #74f7be, #6ae2ff);
+  box-shadow: 0 0 12px rgba(102, 233, 255, 0.36);
+}
+
+.raid-hud-fill--flow {
+  background: linear-gradient(90deg, #86d4ff, #5af7c5);
+  box-shadow: 0 0 12px rgba(93, 208, 255, 0.35);
+}
+
+.raid-hero-config {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+
+.raid-hero-player {
+  border-radius: 16px;
+  border: 1px solid rgba(127, 187, 245, 0.26);
+  background: rgba(9, 18, 30, 0.68);
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.46rem;
+}
+
+.raid-hero-player h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.raid-hero-player--p1 {
+  box-shadow: inset 0 0 0 1px rgba(95, 206, 255, 0.16);
+}
+
+.raid-hero-keys {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.34rem;
+}
+
+.raid-hero-key-btn {
+  border: 1px solid rgba(132, 196, 255, 0.34);
+  border-radius: 12px;
+  background: rgba(12, 25, 40, 0.82);
+  color: #eaf4ff;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.33rem 0.3rem 0.37rem;
+  cursor: pointer;
+}
+
+.raid-hero-key-btn span {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(171, 207, 244, 0.8);
+}
+
+.raid-hero-key-btn strong {
+  font-size: 0.95rem;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
+.raid-hero-key-btn.is-capture {
+  border-color: rgba(140, 255, 204, 0.84);
+  background: linear-gradient(150deg, rgba(31, 107, 84, 0.86), rgba(21, 80, 66, 0.85));
+}
+
+.raid-hero-stats {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.26rem;
+}
+
+.raid-hero-stats div {
+  border-radius: 9px;
+  border: 1px solid rgba(131, 189, 244, 0.22);
+  background: rgba(7, 15, 24, 0.8);
+  text-align: center;
+  padding: 0.23rem 0.25rem 0.27rem;
+}
+
+.raid-hero-stats dt {
+  font-size: 0.65rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(176, 208, 238, 0.74);
+  line-height: 1;
+}
+
+.raid-hero-stats dd {
+  margin: 0.08rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.raid-hero-capture-hint {
+  margin: 0;
+  border-radius: 10px;
+  border: 1px dashed rgba(145, 239, 204, 0.56);
+  background: rgba(8, 30, 22, 0.52);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+}
+
+.raid-hero-stage {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+
+.raid-track {
+  border-radius: 14px;
+  border: 1px solid rgba(117, 179, 236, 0.24);
+  background: linear-gradient(180deg, rgba(10, 18, 31, 0.96), rgba(8, 12, 21, 0.95));
+  padding: 0.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.raid-track-header {
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.88rem;
+  color: rgba(181, 213, 244, 0.9);
+}
+
+.raid-track-lanes {
+  position: relative;
+  height: var(--track-height);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(112, 171, 228, 0.2);
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(124, 180, 233, 0.06) 0px,
+      rgba(124, 180, 233, 0.06) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    linear-gradient(180deg, rgba(10, 20, 33, 0.92), rgba(6, 12, 20, 0.95)),
+    radial-gradient(90% 80% at 50% -8%, rgba(104, 182, 255, 0.08), transparent 70%);
+}
+
+.raid-lane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(100% / 4);
+  border-left: 1px solid rgba(119, 176, 232, 0.2);
+  border-right: 1px solid rgba(119, 176, 232, 0.2);
+  background: linear-gradient(180deg, rgba(9, 17, 30, 0.18), rgba(7, 12, 21, 0.45));
+}
+
+.raid-lane.is-active {
+  background: linear-gradient(180deg, rgba(149, 239, 202, 0.25), rgba(48, 110, 91, 0.4));
+}
+
+.raid-note {
+  position: absolute;
+  width: 52px;
+  height: 24px;
+  border-radius: 999px;
+  box-shadow: 0 0 14px rgba(77, 175, 255, 0.45);
+  overflow: hidden;
+  transform-origin: center bottom;
+  will-change: transform;
+}
+
+.raid-note--p1 {
+  background:
+    radial-gradient(90% 130% at 50% 35%, rgba(219, 249, 255, 0.75), rgba(219, 249, 255, 0) 60%),
+    linear-gradient(130deg, #58c9ff, #2eaef0);
+  border: 1px solid rgba(217, 245, 255, 0.62);
+  animation: raid-note-pulse 0.95s ease-in-out infinite;
+}
+
+.raid-note.is-sustain {
+  border-radius: 12px 12px 16px 16px;
+  background:
+    linear-gradient(180deg, rgba(98, 215, 255, 0.34), rgba(66, 188, 246, 0.62) 45%, rgba(42, 165, 233, 0.95) 100%);
+  border-color: rgba(203, 242, 255, 0.68);
+}
+
+.raid-hit-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(225, 247, 255, 0.95);
+  box-shadow:
+    0 0 14px rgba(173, 231, 255, 0.85),
+    0 0 34px rgba(107, 186, 255, 0.45);
+}
+
+.raid-hit-line--perfect {
+  background: rgba(178, 255, 208, 0.98);
+  box-shadow:
+    0 0 18px rgba(164, 255, 214, 0.95),
+    0 0 40px rgba(138, 247, 204, 0.7);
+}
+
+.raid-hit-line--great {
+  background: rgba(156, 233, 255, 0.98);
+  box-shadow:
+    0 0 16px rgba(142, 220, 255, 0.9),
+    0 0 34px rgba(116, 204, 255, 0.65);
+}
+
+.raid-hit-line--good {
+  background: rgba(255, 238, 180, 0.96);
+  box-shadow:
+    0 0 14px rgba(255, 232, 164, 0.9),
+    0 0 30px rgba(255, 210, 120, 0.6);
+}
+
+.raid-hit-line--miss {
+  background: rgba(255, 116, 116, 0.98);
+  box-shadow:
+    0 0 16px rgba(255, 124, 124, 0.9),
+    0 0 36px rgba(255, 80, 80, 0.72);
+}
+
+@keyframes raid-note-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 14px rgba(77, 175, 255, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(100, 208, 255, 0.62);
+  }
+}
+
+@keyframes raid-progress-sheen {
+  0% {
+    left: -22%;
+  }
+  100% {
+    left: 102%;
+  }
+}
+
+@keyframes raid-disclaimer-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 560px) {
+  .raid-disclaimer-card {
+    padding: 0.8rem 0.82rem 0.78rem;
+  }
+
+  .raid-disclaimer-btn {
+    justify-self: stretch;
+    text-align: center;
+  }
+
+  .raid-start-card {
+    padding: 0.64rem;
+  }
+
+  .raid-difficulty-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .raid-start-actions {
+    justify-content: stretch;
+  }
+
+  .raid-start-actions .raid-hero-btn {
+    width: 100%;
+  }
+
+  .raid-hero-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .raid-hero-shell {
+    border-radius: 18px;
+    padding: 0.68rem;
+  }
+
+  .raid-hero-hud {
+    grid-template-columns: 1fr;
+  }
+
+  .raid-hero-keys {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .raid-hero-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

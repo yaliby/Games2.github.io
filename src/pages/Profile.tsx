@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
@@ -6,6 +6,7 @@ import { auth, db } from "../services/firebase";
 import UserBox from "../components/UserBox/UserBox";
 import { useUserProfile } from "../components/UserBox/useUserProfile";
 import { updateMedalTooltipPlacement } from "../components/UserBox/medalTooltipPlacement";
+import { compressImageFileToDataUrl } from "../services/imagePaste";
 
 type ProfileData = {
   username: string;
@@ -18,6 +19,10 @@ function isValidUsername(name: string) {
   return /^[a-zA-Z0-9][a-zA-Z0-9_]{2,17}$/.test(name);
 }
 
+function clampNumber(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
 export default function Profile() {
   const { uid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
@@ -27,12 +32,26 @@ export default function Profile() {
   const [currentUid, setCurrentUid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [photoProcessing, setPhotoProcessing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editUsername, setEditUsername] = useState("");
   const [editPhotoURL, setEditPhotoURL] = useState("");
+  const medalsGridRef = useRef<HTMLDivElement | null>(null);
+  const [medalGridFit, setMedalGridFit] = useState({ size: 26, gap: 8 });
 
   const isOwner = useMemo(() => currentUid && uid && currentUid === uid, [currentUid, uid]);
   const { profile: medalProfile } = useUserProfile(uid ?? null);
+  const medalCount = medalProfile?.allMedals?.length ?? 0;
+  const medalGridStyle = useMemo(() => ({
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: `${medalGridFit.gap}px`,
+    "--ub-medal-size": `${medalGridFit.size}px`,
+    "--ub-medal-radius": `${Math.max(6, Math.round(medalGridFit.size * 0.32))}px`,
+    "--ub-medal-gap": `${medalGridFit.gap}px`,
+  } as CSSProperties), [medalGridFit.gap, medalGridFit.size]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -91,6 +110,41 @@ export default function Profile() {
     };
   }, [uid]);
 
+  useEffect(() => {
+    const el = medalsGridRef.current;
+    if (!el || medalCount <= 0) {
+      setMedalGridFit({ size: 26, gap: 8 });
+      return;
+    }
+
+    const updateFit = () => {
+      const width = el.clientWidth;
+      if (!Number.isFinite(width) || width <= 0) return;
+
+      const gap = clampNumber(Math.floor(width / 86), 5, 11);
+      const targetSize = clampNumber(Math.floor(width / 7.8), 22, 34);
+      const preferredCols = clampNumber(
+        Math.floor((width + gap) / (targetSize + gap)),
+        1,
+        Math.max(1, medalCount),
+      );
+      const nextSize = clampNumber(
+        Math.floor((width - gap * Math.max(0, preferredCols - 1)) / preferredCols),
+        18,
+        36,
+      );
+
+      setMedalGridFit((prev) => (
+        prev.size === nextSize && prev.gap === gap ? prev : { size: nextSize, gap }
+      ));
+    };
+
+    updateFit();
+    const observer = new ResizeObserver(updateFit);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [medalCount]);
+
   async function saveProfile() {
     if (!uid) return;
     setError(null);
@@ -124,6 +178,24 @@ export default function Profile() {
     }
   }
 
+  async function onPhotoFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setError(null);
+    setSaved(false);
+    setPhotoProcessing(true);
+    try {
+      const imageDataUrl = await compressImageFileToDataUrl(file);
+      setEditPhotoURL(imageDataUrl);
+    } catch (err: any) {
+      setError(err?.message ? String(err.message) : "Failed to process image file");
+    } finally {
+      setPhotoProcessing(false);
+    }
+  }
+
   if (!uid) {
     return (
       <div style={{ padding: 24, color: "#EAF0FF" }}>
@@ -150,8 +222,18 @@ export default function Profile() {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px", color: "#EAF0FF" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <UserBox userId={uid} />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div
+          style={{
+            flex: "1 1 320px",
+            minWidth: 0,
+            maxWidth: "100%",
+            "--ub-scale": 1.08,
+            "--ub-medal-base": 30,
+          } as CSSProperties}
+        >
+          <UserBox userId={uid} medalMode="wrap" />
+        </div>
         <button
           style={{
             padding: "10px 12px",
@@ -161,6 +243,7 @@ export default function Profile() {
             color: "rgba(255,255,255,0.92)",
             cursor: "pointer",
             fontWeight: 700,
+            flex: "0 0 auto",
           }}
           onClick={() => navigate(-1)}
         >
@@ -192,7 +275,7 @@ export default function Profile() {
         }}
       >
         <div style={{ fontWeight: 900, marginBottom: 8 }}>Medals</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div ref={medalsGridRef} style={medalGridStyle}>
           {medalProfile?.allMedals?.length ? (
             medalProfile.allMedals.map((m) => (
               <div
@@ -247,6 +330,63 @@ export default function Profile() {
           </label>
 
           <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.9 }}>
+            Upload profile photo
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              onChange={onPhotoFileChange}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.25)",
+                color: "rgba(255,255,255,0.92)",
+                outline: "none",
+              }}
+            />
+          </label>
+
+          {photoProcessing && (
+            <div style={{ fontSize: 12, color: "rgba(173, 214, 255, 0.95)", fontWeight: 700 }}>
+              Processing image...
+            </div>
+          )}
+
+          {editPhotoURL && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 12, opacity: 0.9 }}>Photo preview</div>
+              <img
+                src={editPhotoURL}
+                alt="Profile preview"
+                style={{
+                  width: 132,
+                  height: 132,
+                  borderRadius: 16,
+                  objectFit: "cover",
+                  border: "1px solid rgba(255,255,255,0.16)",
+                  boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setEditPhotoURL("")}
+                style={{
+                  width: "fit-content",
+                  padding: "6px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255, 127, 164, 0.35)",
+                  background: "rgba(255, 127, 164, 0.12)",
+                  color: "rgba(255, 216, 232, 0.95)",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Remove photo
+              </button>
+            </div>
+          )}
+
+          <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.9 }}>
             Photo URL
             <input
               value={editPhotoURL}
@@ -293,7 +433,7 @@ export default function Profile() {
 
           <button
             onClick={saveProfile}
-            disabled={saving}
+            disabled={saving || photoProcessing}
             style={{
               height: 40,
               borderRadius: 12,
@@ -302,10 +442,10 @@ export default function Profile() {
               color: "white",
               fontWeight: 800,
               cursor: "pointer",
-              opacity: saving ? 0.7 : 1,
+              opacity: saving || photoProcessing ? 0.7 : 1,
             }}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : photoProcessing ? "Processing image..." : "Save"}
           </button>
         </div>
       )}

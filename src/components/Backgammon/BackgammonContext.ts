@@ -3,6 +3,7 @@ import type { BackgammonState, Move, MoveSource } from "./utils/gameLogic";
 
 export type RollSource = "physics" | "fallback";
 export type HomeQuadrant = "bottom-right" | "bottom-left" | "top-right" | "top-left";
+export type BoardThemeId = "classic" | "midnight" | "emerald" | "sunset" | "coyote" | "devops";
 
 export type BackgammonContextValue = {
   state: BackgammonState;

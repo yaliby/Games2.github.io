@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { useBackgammon } from "./BackgammonContext";
 import {
   createPhysicsEngine,
+  getDiceAnimationTiming,
   type DiceFrame,
   type DicePhysicsEngine,
 } from "./utils/physicsEngine";
@@ -15,7 +16,6 @@ const CAMERA_MIN_POLAR = 0.35;
 const CAMERA_MAX_POLAR = 1.5;
 const ORBIT_SENSITIVITY = 0.0065;
 const ZOOM_SENSITIVITY = 0.01;
-const POST_SETTLE_DELAY_MS = 420;
 
 type FacePips = Record<number, Array<[number, number]>>;
 
@@ -391,7 +391,8 @@ export default function Dice() {
           applyFrameToMeshes({ dice: result.final }, meshes);
         }
 
-        await waitMs(POST_SETTLE_DELAY_MS);
+        const settleDelayMs = getDiceAnimationTiming().postSettleDelayMs;
+        await waitMs(settleDelayMs);
         if (!mountedRef.current || activeRollRef.current !== currentRollId) return;
 
         handledRollRef.current = requestToken;
@@ -405,7 +406,8 @@ export default function Dice() {
           Math.floor(Math.random() * 6) + 1,
         ];
 
-        await waitMs(POST_SETTLE_DELAY_MS);
+        const settleDelayMs = getDiceAnimationTiming().postSettleDelayMs;
+        await waitMs(settleDelayMs);
         if (!mountedRef.current || activeRollRef.current !== currentRollId) return;
 
         handledRollRef.current = requestToken;

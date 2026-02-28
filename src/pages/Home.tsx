@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import GameCard from '../components/GameCard';
+import SuggestionsPanel from '../components/Suggestions/SuggestionsPanel';
+import ImageFontText from '../components/ImageFontText';
 import { getGames } from '../services/games.service';
 
 export default function Home() {
@@ -119,7 +121,13 @@ export default function Home() {
       <section className="home-hero">
         <div className="home-hero__content">
           <h2 className="home-hero__title">
-            <span className="home-hero__title-gradient">Game Hub</span>
+            <ImageFontText
+              text="GAME HUB"
+              className="home-hero__title-image-font"
+              scale={0.33}
+              gapRem={0.14}
+              spaceRem={1}
+            />
           </h2>
         </div>
       </section>
@@ -131,6 +139,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <SuggestionsPanel />
     </main>
   );
 }

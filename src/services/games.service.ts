@@ -16,5 +16,8 @@ export function getGames(): Game[] {
     {id: '12',title: 'SysTris',image: 'Screenshot_20260221_014939.png',path: '/game/systris'},
     {id: '13',title: '6767',image: 'Screenshot_20260221_165024.png',path: '/game/6767'},
     {id: '14',title: 'BlobBlast',image: 'Screenshot_20260221_223512.png',path: '/game/blob-blast'},
+    {id: '15',title: "Don't Touch The Spikes",image: 'Screenshot_20260228_042742.png',path: '/game/dont-touch-the-spikes'},
+    {id: '16',title: 'Bits Sniper',image: 'Screenshot_20260228_171110.png',path: '/game/bits-sniper'},
+    {id: '17',title: 'Raid Hero',image: 'Screenshot_20260228_171843.png',path: '/game/raid-hero'},
   ];
 }

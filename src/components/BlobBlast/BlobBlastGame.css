@@ -242,8 +242,10 @@
 .bb-leaderboard--side {
   width: min(320px, 100%);
   min-width: 240px;
-  max-height: 820px;
-  overflow: auto;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .bb-leaderboard-head {
@@ -272,6 +274,33 @@
 .bb-leaderboard-list {
   display: grid;
   gap: 0.35rem;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(122, 194, 245, 0.18) transparent;
+  padding-right: 0.12rem;
+}
+
+.bb-leaderboard-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.bb-leaderboard-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bb-leaderboard-list::-webkit-scrollbar-thumb {
+  background: rgba(122, 194, 245, 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.bb-leaderboard-list:hover::-webkit-scrollbar-thumb {
+  background: rgba(122, 194, 245, 0.26);
 }
 
 .bb-leaderboard-row {
@@ -288,6 +317,25 @@
 .bb-leaderboard-row.is-self {
   border-color: rgba(255, 214, 120, 0.64);
   box-shadow: 0 0 16px rgba(255, 182, 90, 0.22), inset 0 0 0 1px rgba(255, 218, 144, 0.2);
+}
+
+.bb-leaderboard-userbox {
+  min-width: 0;
+}
+
+.bb-leaderboard-userbox .userbox {
+  --ub-avatar-base: 36px;
+  --ub-avatar-radius-base: 9px;
+  --ub-medal-base: 19px;
+  --ub-medal-radius-base: 6px;
+  --ub-name-size-base: 13px;
+  --ub-medal-gap-base: 4px;
+  --ub-gap-base: 8px;
+  --ub-pad-y-base: 6px;
+  --ub-pad-x-base: 8px;
+  border: 1px solid rgba(118, 196, 255, 0.16);
+  background: rgba(8, 20, 42, 0.46);
+  border-radius: 10px;
 }
 
 .bb-leaderboard-rank {

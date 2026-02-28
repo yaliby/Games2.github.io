@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { type PlayerId } from "./utils/gameLogic";
 import {
   createPhysicsEngine,
+  getDiceAnimationTiming,
   type DicePhysicsEngine,
   type DiceTransform,
 } from "./utils/physicsEngine";
@@ -260,13 +261,15 @@ function OpeningDiePanel({
         applyTransform(mesh, result.final);
       }
 
-      await waitMs(1000);
+      const resultDelayMs = getDiceAnimationTiming().openingResultDelayMs;
+      await waitMs(resultDelayMs);
       if (!mountedRef.current) return;
       onRollResult(player, result.value, result.mode);
     } catch {
       if (!mountedRef.current) return;
       const fallbackValue = Math.floor(Math.random() * 6) + 1;
-      await waitMs(1000);
+      const resultDelayMs = getDiceAnimationTiming().openingResultDelayMs;
+      await waitMs(resultDelayMs);
       if (!mountedRef.current) return;
       onRollResult(player, fallbackValue, "fallback");
     } finally {

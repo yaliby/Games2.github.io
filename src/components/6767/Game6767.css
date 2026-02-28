@@ -627,6 +627,12 @@ body {
 }
 
 .g67__leaderboard-user .userbox {
+  --ub-avatar-base: 32px;
+  --ub-medal-base: 17px;
+  --ub-name-size-base: 13px;
+  --ub-gap-base: 8px;
+  --ub-pad-y-base: 7px;
+  --ub-pad-x-base: 9px;
   width: 100%;
 }
 

@@ -1,578 +1,738 @@
-/* SysTrisGame.css — Classic (no effects)
-   - Removed: animated background, scanlines, aurora, glow, trails, bursts, shockwaves, clearing dissolve, perf mode, etc.
-   - Kept: layout, board, grid, cells, overlay, sidebar, leaderboard, howto, podium
-*/
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Chakra+Petch:wght@400;600;700&display=swap");
 
-/* Optional: keep your fonts (safe, no animation) */
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Chakra+Petch:wght@400;600;700&display=swap");
+/* ─── Custom properties ──────────────────────────────────────────────────── */
+.systris {
+  --systris-board-width: clamp(235px, min(33vw, 36svh), 350px);
+  --bg-0: #070d1e;
+  --bg-1: #0b1530;
+  --bg-2: #101d40;
+  --card-0: rgba(14, 24, 49, 0.88);
+  --card-1: rgba(18, 31, 60, 0.88);
+  --line-soft: rgba(125, 166, 236, 0.2);
+  --line-strong: rgba(146, 193, 255, 0.36);
+  --text-main: #e8f1ff;
+  --text-soft: #b5c5e6;
+  --accent-cyan: #58ecff;
+  --accent-gold: #ffd670;
+  --accent-pink: #ff88ca;
 
-:root {
-  --panel: rgba(10, 14, 24, 0.9);
-  --panel-2: rgba(14, 18, 32, 0.9);
-  --border: rgba(160, 180, 220, 0.22);
-  --text: #eaf3ff;
-  --muted: rgba(234, 243, 255, 0.7);
-}
-
-/* ── Page ───────────────────────────────────────────────────── */
-.systris-page {
-  min-height: 100svh;
+  min-height: 100%;
+  width: 100%;
   display: grid;
-  place-items: start center;
-  padding: 1.25rem 0.75rem 2rem;
-  font-family: "Chakra Petch", "Segoe UI", sans-serif;
-  color: var(--text);
-  background: #0b1022; /* flat classic background */
-}
-
-.systris-beat-vignette { display: none; }
-.systris-page::before,
-.systris-page::after { content: none; }
-
-/* ── Shell ───────────────────────────────────────────────────── */
-.systris-shell {
-  width: min(1280px, 100%);
-  border-radius: 1.25rem;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+  place-items: center;
+  padding: 16px 12px 20px;
+  box-sizing: border-box;
+  font-family: "Chakra Petch", "Segoe UI", Tahoma, sans-serif;
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(65, 116, 255, 0.24) 0%, transparent 42%),
+    radial-gradient(circle at 88% 9%,  rgba(74, 232, 255, 0.14) 0%, transparent 44%),
+    radial-gradient(circle at 50% 96%, rgba(255, 158, 84, 0.09) 0%, transparent 50%),
+    linear-gradient(145deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%);
   position: relative;
   overflow: hidden;
+}
+
+/* Decorative pseudo-elements */
+.systris::before,
+.systris::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.systris::before {
+  background: repeating-linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.022) 0px,
+    rgba(255, 255, 255, 0.022) 1px,
+    transparent 1px,
+    transparent 56px
+  );
+  opacity: 0.34;
+}
+
+.systris::after {
+  background: radial-gradient(circle at 50% 0%, rgba(69, 121, 255, 0.22) 0%, transparent 60%);
+}
+
+.systris * {
+  box-sizing: border-box;
+}
+
+/* ─── Shell ──────────────────────────────────────────────────────────────── */
+.systris-shell {
+  width: min(1120px, 98vw);
+  border-radius: 20px;
+  border: 1px solid var(--line-strong);
+  background:
+    linear-gradient(165deg, rgba(12, 21, 46, 0.94) 0%, rgba(11, 19, 41, 0.96) 100%),
+    radial-gradient(circle at 100% 0%, rgba(78, 140, 255, 0.18) 0%, transparent 48%);
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+  position: relative;
   isolation: isolate;
+  box-shadow:
+    0 24px 70px rgba(3, 9, 23, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.systris-shell::before,
-.systris-shell::after { content: none; }
-
-.systris-shell > * { position: relative; }
-
-/* ── Header ──────────────────────────────────────────────────── */
-.systris-header { padding: 1.1rem 1.2rem 0.7rem; }
-
-.systris-title {
-  margin: 0;
-  font-family: "Orbitron", "Chakra Petch", sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: clamp(1.35rem, 2.7vw, 2.1rem);
-  font-weight: 800;
-  line-height: 1;
+.systris-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 15% 0%,  rgba(84, 236, 255, 0.1) 0%, transparent 42%),
+    radial-gradient(circle at 80% 100%, rgba(255, 157, 114, 0.07) 0%, transparent 44%);
+  pointer-events: none;
+  z-index: -1;
 }
 
-.systris-subtitle {
-  margin: 0.3rem 0 0;
-  font-size: 0.8rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  opacity: 0.66;
-}
-
-/* In classic TSX we removed the perf toggle, but keep styling harmlessly */
-.systris-perf-toggle { display: none; }
-
-/* ── Layout ──────────────────────────────────────────────────── */
-.systris-layout {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(220px, 280px);
-  grid-template-areas: "left board right";
-  align-items: start;
-  padding: 0.4rem 1.2rem 1.1rem;
-}
-
-/* ── Sidebar ─────────────────────────────────────────────────── */
-.systris-sidebar {
-  grid-area: left;
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
-.systris-stat {
-  border-radius: 0.95rem;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  padding: 0.65rem 0.75rem 0.72rem;
-}
-
-.systris-stat-label {
-  display: block;
-  font-size: 0.67rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.72;
-}
-
-.systris-stat-value {
-  display: block;
-  margin-top: 0.25rem;
-  font-family: "Orbitron", "Chakra Petch", sans-serif;
-  font-size: clamp(1.15rem, 2.2vw, 1.65rem);
-  letter-spacing: 0.05em;
-}
-
-.systris-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)); /* classic TSX shows only level/lines */
-  gap: 0.5rem;
-}
-
-.systris-chip {
-  border-radius: 0.8rem;
-  border: 1px solid rgba(160, 180, 220, 0.18);
-  background: rgba(18, 22, 40, 0.7);
-  padding: 0.45rem 0.4rem 0.5rem;
-  text-align: center;
-}
-
-.systris-chip span {
-  display: block;
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  opacity: 0.7;
-}
-
-.systris-chip strong {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 1rem;
-  font-family: "Orbitron", "Chakra Petch", sans-serif;
-}
-
-/* combo bar removed in TSX, but keep safe */
-.systris-combo-bar { display: none; }
-
-/* ── Next ────────────────────────────────────────────────────── */
-.systris-next {
-  border-radius: 1rem;
-  border: 1px solid rgba(160, 180, 220, 0.18);
-  background: rgba(12, 16, 32, 0.75);
-  padding: 0.6rem 0.65rem 0.75rem;
-}
-
-.systris-next h2 {
-  margin: 0;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  opacity: 0.82;
-}
-
-.systris-next-list {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 0.55rem;
-}
-
-.systris-mini {
-  --mini-size: 0.52rem;
-  width: fit-content;
-  border-radius: 0.65rem;
-  border: 1px solid rgba(160, 180, 220, 0.14);
-  background: rgba(10, 14, 28, 0.85);
-  padding: 0.36rem;
-}
-
-.systris-mini-row { display: flex; gap: 0.22rem; }
-.systris-mini-row + .systris-mini-row { margin-top: 0.22rem; }
-
-.systris-mini-cell {
-  width: var(--mini-size);
-  height: var(--mini-size);
-  border-radius: 0.18rem;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.systris-mini-cell.is-on {
-  background: var(--mini-color);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-/* ── Message ─────────────────────────────────────────────────── */
-.systris-message {
-  margin: 0;
-  min-height: 1.4rem;
-  font-size: 0.8rem;
-  line-height: 1.25;
-  letter-spacing: 0.03em;
-  color: rgba(234, 243, 255, 0.88);
-}
-
-/* ── Leaderboard ─────────────────────────────────────────────── */
-.systris-leaderboard {
-  grid-area: right;
-  border-radius: 1rem;
-  border: 1px solid var(--border);
-  background: rgba(10, 14, 28, 0.85);
-  padding: 0.7rem;
-  display: grid;
-  gap: 0.58rem;
-  box-shadow: 0 12px 26px rgba(0,0,0,0.35);
-}
-
-.systris-leaderboard-head {
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+.systris-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 12px;
+  padding: 4px 4px 2px;
 }
 
-.systris-leaderboard-head h2 {
+.systris-head h1 {
   margin: 0;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  opacity: 0.85;
-}
-
-.systris-leaderboard-badge {
-  border-radius: 999px;
-  border: 1px solid rgba(160, 180, 220, 0.22);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.14rem 0.5rem;
-  font-size: 0.57rem;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: clamp(2rem, 4vw, 3rem);
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(232,243,255,0.88);
+  color: #e9f2ff;
+  text-shadow:
+    0 0 16px rgba(102, 170, 255, 0.38),
+    0 0 34px rgba(72, 225, 255, 0.15);
 }
 
-.systris-leaderboard-best {
-  border-radius: 0.8rem;
-  border: 1px solid rgba(160, 180, 220, 0.18);
-  background: rgba(16, 20, 36, 0.8);
-  padding: 0.5rem 0.62rem;
+.systris-head span {
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  opacity: 0.9;
+}
+
+/* ─── Main layout ────────────────────────────────────────────────────────── */
+.systris-main {
   display: grid;
-  gap: 0.16rem;
+  grid-template-columns: minmax(185px, 220px) minmax(0, 1fr) minmax(230px, 270px);
+  gap: 12px;
+  align-items: start;
 }
 
-.systris-leaderboard-best span {
-  font-size: 0.62rem;
-  letter-spacing: 0.11em;
+/* ─── Shared card base ───────────────────────────────────────────────────── */
+.systris-panel,
+.systris-board-wrap,
+.systris-strip {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: linear-gradient(162deg, var(--card-0) 0%, var(--card-1) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 10px 24px rgba(3, 9, 24, 0.32);
+}
+
+.systris-panel {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.systris-panel--leader {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  align-self: stretch;
+  overflow: hidden;
+}
+
+/* ─── Info cards ─────────────────────────────────────────────────────────── */
+.systris-card,
+.systris-mini,
+.systris-next,
+.systris-leader,
+.systris-strip-item,
+.systris-podium-card {
+  border: 1px solid rgba(126, 164, 226, 0.27);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(22, 35, 67, 0.94) 0%, rgba(19, 30, 58, 0.9) 100%);
+}
+
+.systris-card {
+  padding: 9px 11px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+}
+
+.systris-card span,
+.systris-mini span,
+.systris-next > span {
+  font-size: 0.67rem;
+  color: rgba(202, 217, 247, 0.86);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  opacity: 0.72;
 }
 
-.systris-leaderboard-best strong {
+.systris-card strong {
+  font-size: 2rem;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  line-height: 1;
+  color: #ebf5ff;
+}
+
+.systris-card--small strong {
+  font-size: 1.5rem;
+}
+
+.systris-mini-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.systris-mini {
+  padding: 9px;
+  display: grid;
+  gap: 3px;
+}
+
+.systris-mini strong {
   font-size: 1.18rem;
   font-family: "Orbitron", "Chakra Petch", sans-serif;
-  letter-spacing: 0.06em;
+  line-height: 1;
 }
 
-.systris-leaderboard-list { display: grid; gap: 0.42rem; }
-
-.systris-leaderboard-row {
-  border-radius: 0.78rem;
-  border: 1px solid rgba(160, 180, 220, 0.14);
-  background: rgba(12, 16, 32, 0.75);
-  padding: 0.36rem 0.45rem;
+/* ─── Next piece preview ─────────────────────────────────────────────────── */
+.systris-next {
+  padding: 10px;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.systris-next-grid {
+  width: fit-content;
+}
+
+.systris-next-row {
+  display: flex;
+  gap: 3px;
+}
+
+.systris-next-row + .systris-next-row {
+  margin-top: 3px;
+}
+
+.systris-next-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(49, 67, 104, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(145, 180, 244, 0.18);
+}
+
+.systris-note {
+  margin: 2px 2px 0;
+  font-size: 0.86rem;
+  color: rgba(201, 216, 244, 0.84);
+}
+
+/* ─── Pause cooldown ─────────────────────────────────────────────────────── */
+.systris-pause-lock {
+  margin-top: 2px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(137, 179, 238, 0.34);
+  background: linear-gradient(160deg, rgba(18, 31, 58, 0.84) 0%, rgba(16, 27, 50, 0.82) 100%);
+}
+
+.systris-pause-lock-head {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-.systris-leaderboard-row.is-self {
-  border-color: rgba(255, 209, 98, 0.40);
+.systris-pause-lock-head span {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(205, 221, 247, 0.82);
 }
 
-.systris-leaderboard-rank {
-  font-size: 0.75rem;
-  font-weight: 800;
+.systris-pause-lock-head strong {
   font-family: "Orbitron", "Chakra Petch", sans-serif;
-  color: rgba(217,234,255,0.92);
+  font-size: 0.72rem;
+  color: #9af6ff;
 }
 
-.systris-leaderboard-score {
-  font-size: 0.83rem;
-  font-family: "Orbitron", "Chakra Petch", sans-serif;
-  letter-spacing: 0.04em;
-  color: #ffd672;
-}
-
-.systris-leaderboard-empty {
-  margin: 0;
-  font-size: 0.74rem;
-  color: rgba(225,240,255,0.70);
-}
-
-/* ── Board ───────────────────────────────────────────────────── */
-.systris-board-wrap {
-  --board-width: min(24rem, 56vw, calc((100svh - 13rem) / 2));
-  grid-area: board;
-  width: var(--board-width);
-  margin-inline: auto;
-  border-radius: 1.05rem;
-  border: 1px solid rgba(160, 180, 220, 0.28);
-  background: rgba(10, 14, 28, 0.9);
-  padding: 0.52rem;
-  position: relative;
+.systris-pause-lock-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(32, 49, 83, 0.95);
+  border: 1px solid rgba(133, 169, 226, 0.3);
   overflow: hidden;
-  box-shadow: 0 14px 28px rgba(0,0,0,0.45);
 }
 
-/* All effect layers removed/hidden */
-.systris-lock-flash-overlay,
-.systris-shockwave,
-.systris-action-banner,
-.systris-line-flash,
-.systris-impact-wave,
-.systris-bursts,
-.systris-effects,
-.systris-bg-shift { display: none !important; }
+.systris-pause-lock-track i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  will-change: transform;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #70e9ff 0%, #89a7ff 70%, #ffbf7c 100%);
+  box-shadow: 0 0 14px rgba(112, 233, 255, 0.52);
+}
 
-/* ── Grid ────────────────────────────────────────────────────── */
+/* ─── Board wrapper ──────────────────────────────────────────────────────── */
+.systris-board-wrap {
+  position: relative;
+  padding: 12px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.systris-board-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(95, 180, 255, 0.11) 0%, transparent 52%),
+    radial-gradient(circle at 50% 90%, rgba(124, 255, 210, 0.06) 0%, transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Game grid ──────────────────────────────────────────────────────────── */
 .systris-grid {
+  width: min(100%, var(--systris-board-width));
+  aspect-ratio: 1 / 2;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
   grid-template-rows: repeat(20, minmax(0, 1fr));
-  gap: 0.15rem;
-  width: 100%;
-  aspect-ratio: 1 / 2;
-  border-radius: 0.78rem;
-  padding: 0.16rem;
-  background: rgba(6, 10, 20, 0.95);
+  gap: 2px;
+  border: 1px solid rgba(141, 192, 255, 0.28);
+  border-radius: 10px;
+  background: linear-gradient(170deg, rgba(9, 17, 34, 0.98) 0%, rgba(8, 13, 29, 0.98) 100%);
+  box-shadow:
+    0 14px 32px rgba(3, 8, 20, 0.46),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 0 26px rgba(74, 157, 255, 0.06);
+  padding: 3px;
+  position: relative;
+  z-index: 1;
+  /* GPU-composite the board for smoother repaints */
+  will-change: contents;
+  contain: strict;
 }
 
-/* Cells */
+/* ─── Cells ──────────────────────────────────────────────────────────────── */
 .systris-cell {
-  border-radius: 0.22rem;
-  border: 1px solid rgba(160, 180, 220, 0.14);
-  background: rgba(14, 18, 34, 0.9);
+  border: 1px solid rgba(32, 49, 81, 0.88);
+  border-radius: 3px;
+  background: linear-gradient(160deg, rgba(20, 34, 62, 0.9) 0%, rgba(17, 27, 52, 0.86) 100%);
+  /* Promote each cell to its own layer to avoid layout thrash on color updates */
+  will-change: background;
 }
 
-/* Filled (locked/active) — flat color, no glow */
-.systris-cell.is-filled {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: var(--cell-color);
+.systris-cell--static  { z-index: 0; }
+.systris-cell--ghost   {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--systris-ghost-color, #9fb2dc);
+  z-index: 1;
 }
+.systris-cell--active  { z-index: 2; }
 
-.systris-cell.is-active {
-  outline: 1px solid rgba(255, 255, 255, 0.22);
-  outline-offset: -1px;
-}
-
-/* Ghost removed in classic TSX; keep harmless */
-.systris-cell.is-ghost { display: none; }
-
-/* Clearing removed; keep harmless */
-.systris-cell.is-filled.is-clearing { animation: none; }
-
-/* ── Overlay ─────────────────────────────────────────────────── */
+/* ─── Overlay ────────────────────────────────────────────────────────────── */
 .systris-overlay {
   position: absolute;
-  inset: 0.52rem;
-  border-radius: 0.78rem;
+  inset: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(143, 181, 255, 0.35);
   display: grid;
   place-content: center;
-  gap: 0.5rem;
+  gap: 10px;
   text-align: center;
-  background: rgba(0, 0, 0, 0.65);
-  z-index: 8;
+  background: linear-gradient(170deg, rgba(10, 16, 34, 0.92) 0%, rgba(10, 19, 40, 0.9) 100%);
+  backdrop-filter: blur(4px);
+  z-index: 3;
 }
 
 .systris-overlay h2 {
   margin: 0;
-  font-family: "Orbitron", "Chakra Petch", sans-serif;
-  font-size: 1.28rem;
-  letter-spacing: 0.08em;
+  font-size: 2.2rem;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  color: #f0f7ff;
+  text-shadow: 0 0 18px rgba(91, 172, 255, 0.35);
 }
 
-.systris-overlay p { margin: 0; font-size: 0.73rem; opacity: 0.85; }
+.systris-overlay p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(208, 223, 248, 0.88);
+}
 
 .systris-overlay button {
   justify-self: center;
-  border: 1px solid rgba(200, 210, 235, 0.35);
-  background: #eaf3ff;
-  color: #0b1022;
+  border: none;
   border-radius: 999px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 0.74rem;
-  padding: 0.5rem 1.1rem;
+  background: linear-gradient(135deg, #78f1ff 0%, #8ba8ff 48%, #ff9b78 100%);
+  color: #0a1530;
+  padding: 9px 18px;
   cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  box-shadow: 0 10px 24px rgba(14, 22, 49, 0.48);
+  transition: opacity 0.15s;
 }
 
-/* ── How to play ─────────────────────────────────────────────── */
-.systris-howto {
-  margin: 0.15rem 1.2rem 0.9rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(160, 180, 220, 0.18);
-  background: rgba(10, 14, 28, 0.85);
-  padding: 0.7rem 0.8rem 0.8rem;
+.systris-overlay button:hover  { opacity: 0.88; }
+.systris-overlay button:active { opacity: 0.76; transform: scale(0.97); }
+
+/* ─── Panel header ───────────────────────────────────────────────────────── */
+.systris-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.systris-howto h2 {
+.systris-panel-head h2 {
   margin: 0;
-  font-size: 0.77rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.85;
-}
-
-.systris-howto-list {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-}
-
-.systris-howto-item {
-  border-radius: 0.75rem;
-  border: 1px solid rgba(160, 180, 220, 0.14);
-  background: rgba(12, 16, 32, 0.75);
-  padding: 0.45rem 0.38rem 0.5rem;
-  text-align: center;
-}
-
-.systris-howto-icon {
-  display: inline-grid;
-  place-items: center;
-  min-width: 2rem;
-  height: 2rem;
-  padding: 0 0.22rem;
-  border-radius: 999px;
-  border: 1px solid rgba(160, 180, 220, 0.22);
-  background: rgba(255, 255, 255, 0.06);
   font-family: "Orbitron", "Chakra Petch", sans-serif;
-  font-size: 0.76rem;
-}
-
-.systris-howto-item p { margin: 0.36rem 0 0; font-size: 0.65rem; line-height: 1.25; opacity: 0.9; }
-
-/* ── Podium ──────────────────────────────────────────────────── */
-.systris-podium-shell {
-  margin: 0 1.2rem 1.1rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(160, 180, 220, 0.18);
-  background: rgba(10, 14, 28, 0.85);
-  padding: 0.75rem 0.85rem 0.92rem;
-  display: grid;
-  gap: 0.7rem;
-}
-
-.systris-podium-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.systris-podium-head h2 { margin: 0; font-size: 0.77rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; }
-.systris-podium-head span {
-  border-radius: 999px;
-  border: 1px solid rgba(255, 213, 109, 0.28);
-  background: rgba(255, 213, 109, 0.10);
-  padding: 0.16rem 0.55rem;
-  font-size: 0.58rem;
+  font-size: 0.96rem;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: rgba(255,235,179,0.88);
+  color: #eaf3ff;
 }
 
-.systris-podium { display: flex; justify-content: center; align-items: end; gap: 0.7rem; flex-wrap: wrap; }
+.systris-panel-head span {
+  border: 1px solid rgba(136, 170, 228, 0.45);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.64rem;
+  color: rgba(212, 224, 245, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(17, 28, 55, 0.65);
+}
 
-.systris-podium-slot { width: min(31%, 192px); min-width: 120px; display: grid; gap: 0.46rem; }
-
-.systris-podium-user {
-  border-radius: 0.72rem;
-  border: 1px solid rgba(160, 180, 220, 0.14);
-  background: rgba(12, 16, 32, 0.75);
-  min-height: 2.55rem;
-  padding: 0.26rem 0.36rem;
+/* ─── Leaderboard ────────────────────────────────────────────────────────── */
+.systris-leaders {
   display: grid;
+  align-content: start;
+  gap: 9px;
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 2px;
+}
+
+.systris-leaders::-webkit-scrollbar       { width: 8px; }
+.systris-leaders::-webkit-scrollbar-track { background: rgba(18, 30, 57, 0.65); border-radius: 999px; }
+.systris-leaders::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(111, 173, 255, 0.72) 0%, rgba(84, 236, 255, 0.72) 100%);
+  border-radius: 999px;
+}
+
+.systris-leader {
+  padding: 8px 9px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
 }
 
-.systris-podium-user span { font-size: 0.74rem; text-align: center; color: rgba(224,239,255,0.68); }
+.systris-leader.is-self {
+  border-color: rgba(120, 214, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(98, 236, 255, 0.22);
+}
 
-.systris-podium-pillar {
-  border-radius: 0.84rem 0.84rem 0.62rem 0.62rem;
-  border: 1px solid rgba(160, 180, 220, 0.18);
-  background: rgba(255, 255, 255, 0.05);
+.systris-leader b {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
   display: grid;
-  align-content: center;
+  place-items: center;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: 0.78rem;
+  color: #dceaff;
+  border: 1px solid rgba(137, 169, 226, 0.5);
+  background: rgba(23, 38, 72, 0.9);
+}
+
+.systris-leader-user          { min-width: 0; }
+.systris-leader-user .userbox {
+  --ub-avatar-base: 24px;
+  --ub-medal-base: 15px;
+  --ub-name-size-base: 12px;
+  --ub-medal-gap-base: 3px;
+  --ub-gap-base: 6px;
+  --ub-pad-y-base: 5px;
+  --ub-pad-x-base: 7px;
+  min-width: 0;
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid rgba(128, 165, 225, 0.3);
+  background: rgba(16, 29, 56, 0.8);
+}
+
+.systris-leader strong {
+  color: var(--accent-gold);
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: 1.03rem;
+  letter-spacing: 0.01em;
+}
+
+.systris-leader-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed rgba(132, 170, 236, 0.5);
+  border-radius: 12px;
+  color: rgba(214, 226, 247, 0.78);
+  font-size: 0.76rem;
+  text-align: center;
+  background: rgba(20, 32, 62, 0.65);
+}
+
+/* ─── Help strip ─────────────────────────────────────────────────────────── */
+.systris-strip {
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.systris-strip > h2 {
+  margin: 0;
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: 0.92rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #eaf3ff;
+}
+
+.systris-strip-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 9px;
+}
+
+.systris-strip-item {
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 0.72rem;
+  color: rgba(211, 224, 248, 0.86);
+}
+
+/* ─── Podium ─────────────────────────────────────────────────────────────── */
+.systris-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.systris-podium-card {
+  padding: 10px;
+  display: grid;
   justify-items: center;
-  gap: 0.1rem;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  min-height: 170px;
 }
 
-.systris-podium-pillar strong { font-family: "Orbitron", "Chakra Petch", sans-serif; font-size: 1.12rem; line-height: 1; }
-.systris-podium-pillar span   { font-size: 0.73rem; font-family: "Orbitron", "Chakra Petch", sans-serif; }
+.systris-podium-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 58%);
+}
 
-/* Status tint (simple) */
-.systris-shell--paused .systris-grid { filter: grayscale(0.1) brightness(0.9); }
-.systris-shell--gameover .systris-grid { filter: grayscale(0.35) brightness(0.8); }
+.systris-podium-card.tone-gold   {
+  min-height: 196px;
+  border-color: rgba(255, 210, 120, 0.5);
+  background: linear-gradient(168deg, rgba(46, 41, 22, 0.85) 0%, rgba(31, 28, 49, 0.9) 100%);
+}
 
-/* ── Responsive ──────────────────────────────────────────────── */
-@media (max-width: 980px) {
-  .systris-layout {
-    grid-template-columns: 1fr;
-    grid-template-areas: "left" "board" "right";
-    gap: 0.8rem;
-  }
+.systris-podium-card.tone-silver {
+  min-height: 176px;
+  border-color: rgba(192, 214, 255, 0.46);
+}
 
-  .systris-sidebar {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
-  }
+.systris-podium-card.tone-bronze {
+  min-height: 162px;
+  border-color: rgba(255, 176, 128, 0.44);
+  background: linear-gradient(168deg, rgba(45, 33, 24, 0.84) 0%, rgba(26, 31, 56, 0.9) 100%);
+}
 
-  .systris-message { grid-column: 1 / -1; min-height: unset; }
-  .systris-next { grid-column: 1 / -1; }
+.systris-podium-card span {
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+  font-size: 1.45rem;
+  font-weight: 900;
+  color: #e5f1ff;
+}
 
-  .systris-next-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .systris-mini { justify-self: center; }
+.systris-podium-user           { width: 100%; min-width: 0; }
+.systris-podium-user .userbox  {
+  --ub-avatar-base: 26px;
+  --ub-medal-base: 15px;
+  --ub-name-size-base: 13px;
+  --ub-medal-gap-base: 3px;
+  --ub-gap-base: 6px;
+  --ub-pad-y-base: 5px;
+  --ub-pad-x-base: 7px;
+  min-width: 0;
+  width: 100%;
+  border-radius: 9px;
+  border: 1px solid rgba(131, 168, 229, 0.34);
+  background: rgba(16, 29, 56, 0.8);
+}
 
+.systris-podium-card b {
+  color: var(--accent-gold);
+  font-family: "Orbitron", "Chakra Petch", sans-serif;
+}
+
+.systris-podium-empty {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: rgba(212, 226, 250, 0.78);
+  border: 1px dashed rgba(137, 170, 228, 0.45);
+  border-radius: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  text-align: center;
+}
+
+/* ─── Responsive breakpoints ─────────────────────────────────────────────── */
+@media (min-width: 1081px) {
   .systris-board-wrap {
-    --board-width: min(24rem, 86vw, calc((100svh - 16rem) / 2));
+    height: calc(var(--systris-board-width) * 2 + 24px);
+    display: grid;
+    place-items: center;
+  }
+
+  .systris-panel--leader {
+    height: calc(var(--systris-board-width) * 2 + 24px);
   }
 }
 
-@media (max-width: 620px) {
-  .systris-page { padding: 0.55rem 0 1.1rem; }
+@media (max-width: 1200px) {
+  .systris {
+    --systris-board-width: clamp(230px, min(31vw, 34svh), 320px);
+  }
 
   .systris-shell {
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
+    width: min(1080px, 98vw);
   }
 
-  .systris-header { padding: 0.9rem 0.85rem 0.55rem; }
-  .systris-layout { padding: 0.3rem 0.85rem 0.8rem; }
-
-  .systris-sidebar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .systris-stat { padding-inline: 0.5rem; }
-  .systris-stat-value { font-size: 1.06rem; }
-
-  .systris-stat-grid,
-  .systris-next,
-  .systris-message { grid-column: 1 / -1; }
-
-  .systris-board-wrap {
-    --board-width: min(94vw, 22rem, calc((100svh - 15rem) / 2));
-    padding: 0.42rem;
+  .systris-main {
+    grid-template-columns: minmax(170px, 205px) minmax(0, 1fr) minmax(215px, 250px);
   }
-
-  .systris-howto { margin: 0 0.85rem 0.75rem; padding-inline: 0.62rem; }
-  .systris-howto-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-  .systris-leaderboard { padding: 0.56rem; }
-  .systris-leaderboard-head h2 { font-size: 0.73rem; }
-  .systris-leaderboard-badge { font-size: 0.53rem; padding-inline: 0.38rem; }
-
-  .systris-leaderboard-row {
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    padding-inline: 0.32rem;
-  }
-
-  .systris-podium-shell { margin: 0 0.85rem 0.75rem; padding: 0.64rem; }
-  .systris-podium { gap: 0.45rem; }
-
-  .systris-podium-slot {
-    min-width: 94px;
-    width: calc(33.333% - 0.32rem);
-  }
-
-  .systris-podium-head span { font-size: 0.53rem; padding-inline: 0.42rem; }
 }
 
-/* ── Reduced motion: nothing animated anyway ─────────────────── */
+@media (max-width: 1080px) {
+  .systris {
+    --systris-board-width: min(90vw, 330px);
+    padding: 12px 10px 18px;
+  }
+
+  .systris-shell {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .systris-main {
+    grid-template-columns: 1fr;
+  }
+
+  .systris-panel--leader {
+    height: auto;
+    max-height: none;
+  }
+
+  .systris-grid {
+    width: min(100%, var(--systris-board-width));
+  }
+
+  .systris-strip-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .systris {
+    --systris-board-width: min(92vw, 300px);
+  }
+
+  .systris-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .systris-head h1 {
+    font-size: clamp(1.7rem, 8.8vw, 2.3rem);
+  }
+
+  .systris-strip-row,
+  .systris-podium {
+    grid-template-columns: 1fr;
+  }
+
+  .systris-podium-card {
+    min-height: 0;
+  }
+
+  .systris-overlay h2 {
+    font-size: 1.8rem;
+  }
+}
+
+@media (max-height: 860px) and (min-width: 1081px) {
+  .systris {
+    --systris-board-width: clamp(230px, min(30vw, 31svh), 300px);
+  }
+
+  .systris-shell {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .systris-card strong {
+    font-size: 1.65rem;
+  }
+
+  .systris-card--small strong {
+    font-size: 1.35rem;
+  }
+}
+
+/* ─── Reduced-motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
+  .systris-cell,
+  .systris-overlay button {
+    transition: none;
+    will-change: auto;
+  }
 }

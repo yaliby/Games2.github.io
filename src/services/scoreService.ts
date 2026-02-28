@@ -32,6 +32,18 @@ function normalizeScore(value: unknown): number {
   return Math.min(MAX_SAFE_SCORE, Math.floor(numeric));
 }
 
+function normalizeDurationMs(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.min(MAX_SAFE_SCORE, Math.round(numeric));
+}
+
+function normalizeProgressCount(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.min(MAX_SAFE_SCORE, Math.floor(numeric));
+}
+
 function updateAllTimeBestIfHigher(tx: any, userRef: any, userSnap: any, score: number) {
   if (!userSnap.exists()) return;
 
@@ -280,6 +292,80 @@ export async function submitWhichCountryScore(uid: string, score: number) {
   });
 }
 
+export async function submitWhichCountrySpeedRunTime(
+  uid: string,
+  durationMs: number,
+  progress?: { countriesFound: number; countriesTotal: number },
+) {
+  const safeDurationMs = normalizeDurationMs(durationMs);
+  if (safeDurationMs <= 0) return;
+
+  const incomingTotal = normalizeProgressCount(progress?.countriesTotal);
+  const incomingFoundRaw = normalizeProgressCount(progress?.countriesFound);
+  const incomingFound = incomingTotal > 0 ? Math.min(incomingFoundRaw, incomingTotal) : 0;
+  const incomingIsComplete = incomingTotal > 0 ? incomingFound >= incomingTotal : true;
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "which-country-speedrun", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+    if (!snap.exists()) {
+      const payload: Record<string, unknown> = {
+        username,
+        timeMs: safeDurationMs,
+        updatedAt: serverTimestamp(),
+      };
+      if (incomingTotal > 0) {
+        payload.countriesFound = incomingFound;
+        payload.countriesTotal = incomingTotal;
+      }
+      tx.set(scoreRef, payload);
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedDurationMs = normalizeDurationMs(data?.timeMs);
+    const storedTotalRaw = normalizeProgressCount(data?.countriesTotal);
+    const storedFoundRaw = normalizeProgressCount(data?.countriesFound);
+    const storedTotal = storedTotalRaw > 0 ? storedTotalRaw : 0;
+    const storedFound = storedTotal > 0 ? Math.min(storedFoundRaw, storedTotal) : 0;
+    const storedIsComplete = storedTotal > 0 ? storedFound >= storedTotal : true;
+
+    let shouldUpdate = false;
+    if (storedDurationMs <= 0) {
+      shouldUpdate = true;
+    } else if (incomingIsComplete !== storedIsComplete) {
+      shouldUpdate = incomingIsComplete;
+    } else if (incomingIsComplete) {
+      shouldUpdate = safeDurationMs < storedDurationMs;
+    } else if (incomingFound !== storedFound) {
+      shouldUpdate = incomingFound > storedFound;
+    } else {
+      shouldUpdate = safeDurationMs < storedDurationMs;
+    }
+
+    if (!shouldUpdate) return;
+
+    const update: Record<string, unknown> = {
+      username,
+      timeMs: safeDurationMs,
+      updatedAt: serverTimestamp(),
+    };
+    if (incomingTotal > 0) {
+      update.countriesFound = incomingFound;
+      update.countriesTotal = incomingTotal;
+    }
+    tx.update(scoreRef, update);
+  });
+}
+
 export async function submitSysTrisScore(uid: string, score: number) {
   const safeScore = normalizeScore(score);
   if (safeScore <= 0) return;
@@ -364,6 +450,42 @@ export async function submitCoyoteFlapyScore(uid: string, score: number) {
   const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
 
   const scoreRef = doc(db, "scores", "coyote-flapy", "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(scoreRef);
+    if (!snap.exists()) {
+      tx.set(scoreRef, {
+        username,
+        score: safeScore,
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const data = snap.data() as any;
+    const storedScore = normalizeScore(data?.score);
+    if (safeScore <= storedScore) return;
+
+    tx.update(scoreRef, {
+      username,
+      score: safeScore,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function submitDontTouchTheSpikesScore(uid: string, score: number) {
+  const safeScore = normalizeScore(score);
+  if (safeScore <= 0) return;
+
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  const rawUsername = userSnap.exists()
+    ? String((userSnap.data() as any)?.username ?? "")
+    : "";
+  const username = isValidUsername(rawUsername) ? rawUsername : fallbackUsername(uid);
+
+  const scoreRef = doc(db, "scores", "dont-touch-the-spikes", "users", uid);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(scoreRef);

@@ -365,6 +365,16 @@
   min-width: 0;
 }
 
+.wordle__leaderboard-user .userbox {
+  --ub-avatar-base: 32px;
+  --ub-medal-base: 17px;
+  --ub-name-size-base: 13px;
+  --ub-medal-gap-base: 4px;
+  --ub-gap-base: 8px;
+  --ub-pad-y-base: 6px;
+  --ub-pad-x-base: 8px;
+}
+
 .wordle__leaderboard-score {
   font-weight: 700;
   color: #ffd38b;
@@ -444,6 +454,16 @@
   background: rgba(0, 0, 0, 0.22);
   display: grid;
   place-items: center;
+}
+
+.wordle-hof__user .userbox {
+  --ub-avatar-base: 30px;
+  --ub-medal-base: 16px;
+  --ub-name-size-base: 12px;
+  --ub-medal-gap-base: 3px;
+  --ub-gap-base: 7px;
+  --ub-pad-y-base: 5px;
+  --ub-pad-x-base: 7px;
 }
 
 .wordle-hof__user-empty {

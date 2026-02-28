@@ -111,6 +111,9 @@ const SETTLE_FRAMES_REQUIRED = 20;
 const FACE_LOCK_FRAMES_REQUIRED = 10;
 const FACE_LOCK_MIN_FRAME = 20;
 const FACE_LOCK_NEAR_BOARD_Y = FLOOR_Y + DIE_HALF_SIZE + 0.14;
+const VIEWPORT_SHORT_SIDE_BASE = 820;
+const VIEWPORT_SHORT_SIDE_MIN = 320;
+const VIEWPORT_SHORT_SIDE_MAX = 1440;
 
 const FACE_NORMALS: Array<{ value: number; normal: [number, number, number] }> = [
   { value: 1, normal: [0, 1, 0] },
@@ -120,6 +123,45 @@ const FACE_NORMALS: Array<{ value: number; normal: [number, number, number] }> =
   { value: 3, normal: [1, 0, 0] },
   { value: 4, normal: [-1, 0, 0] },
 ];
+
+export type DiceAnimationTiming = {
+  twoDiceFallbackDurationMs: number;
+  singleDieFallbackDurationMs: number;
+  postSettleDelayMs: number;
+  openingResultDelayMs: number;
+};
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getViewportShortSide(): number {
+  if (typeof window === "undefined") {
+    return VIEWPORT_SHORT_SIDE_BASE;
+  }
+
+  const doc = typeof document !== "undefined" ? document.documentElement : null;
+  const width = Math.max(window.innerWidth || 0, doc?.clientWidth || 0);
+  const height = Math.max(window.innerHeight || 0, doc?.clientHeight || 0);
+
+  if (width <= 0 || height <= 0) {
+    return VIEWPORT_SHORT_SIDE_BASE;
+  }
+
+  return clampNumber(Math.min(width, height), VIEWPORT_SHORT_SIDE_MIN, VIEWPORT_SHORT_SIDE_MAX);
+}
+
+export function getDiceAnimationTiming(): DiceAnimationTiming {
+  const shortSide = getViewportShortSide();
+  const scale = clampNumber(shortSide / VIEWPORT_SHORT_SIDE_BASE, 0.78, 1.22);
+
+  return {
+    twoDiceFallbackDurationMs: Math.round(clampNumber(1100 * scale, 850, 1450)),
+    singleDieFallbackDurationMs: Math.round(clampNumber(860 * scale, 650, 1150)),
+    postSettleDelayMs: Math.round(clampNumber(400 * scale, 260, 540)),
+    openingResultDelayMs: Math.round(clampNumber(920 * scale, 700, 1180)),
+  };
+}
 
 function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min);
@@ -241,7 +283,7 @@ function confineDieBody(body: CannonBody) {
 }
 
 async function throwWithFallback(onFrame: (frame: DiceFrame) => void): Promise<DiceRollResult> {
-  const durationMs = 1200;
+  const durationMs = getDiceAnimationTiming().twoDiceFallbackDurationMs;
   const start = performance.now();
 
   const values: [number, number] = [
@@ -323,7 +365,7 @@ async function throwWithFallback(onFrame: (frame: DiceFrame) => void): Promise<D
 async function throwSingleWithFallback(
   onFrame: (frame: SingleDiceFrame) => void
 ): Promise<SingleDieRollResult> {
-  const durationMs = 900;
+  const durationMs = getDiceAnimationTiming().singleDieFallbackDurationMs;
   const start = performance.now();
 
   const value = Math.floor(Math.random() * 6) + 1;

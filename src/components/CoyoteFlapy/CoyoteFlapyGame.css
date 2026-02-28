@@ -339,23 +339,17 @@
 }
 
 .cfp-leaderboard-user .userbox {
+  --ub-avatar-base: 22px;
+  --ub-medal-base: 14px;
+  --ub-name-size-base: 11px;
+  --ub-medal-gap-base: 3px;
+  --ub-gap-base: 6px;
+  --ub-pad-y-base: 4px;
+  --ub-pad-x-base: 5px;
   min-width: 0;
   width: 100%;
   border-radius: 8px;
-  padding: 0.2rem 0.28rem;
-  gap: 0.32rem;
   border-width: 1px;
-}
-
-.cfp-leaderboard-user .userbox__avatar {
-  width: 20px;
-  height: 20px;
-  font-size: 0.58rem;
-}
-
-.cfp-leaderboard-user .userbox__name {
-  font-size: 0.62rem;
-  max-width: 8rem;
 }
 
 .cfp-leaderboard-score {
@@ -443,22 +437,16 @@
 }
 
 .cfp-podium-user .userbox {
+  --ub-avatar-base: 22px;
+  --ub-medal-base: 14px;
+  --ub-name-size-base: 11px;
+  --ub-medal-gap-base: 3px;
+  --ub-gap-base: 6px;
+  --ub-pad-y-base: 4px;
+  --ub-pad-x-base: 5px;
   width: 100%;
   min-width: 0;
   border-radius: 8px;
-  padding: 0.2rem 0.28rem;
-  gap: 0.32rem;
-}
-
-.cfp-podium-user .userbox__avatar {
-  width: 20px;
-  height: 20px;
-  font-size: 0.56rem;
-}
-
-.cfp-podium-user .userbox__name {
-  font-size: 0.62rem;
-  max-width: 7rem;
 }
 
 .cfp-podium-pillar {

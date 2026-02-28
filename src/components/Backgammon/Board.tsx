@@ -1,14 +1,57 @@
 ﻿import { useEffect, useMemo, useRef } from "react";
-import { useBackgammon } from "./BackgammonContext";
+import { type BoardThemeId, useBackgammon } from "./BackgammonContext";
 import {
+  getMultiDieMovesForSourceTarget,
+  getMultiDieTargetsForSource,
   type BackgammonState,
   type Move,
+  type MultiDieTarget,
   type MoveSource,
   type MoveTarget,
   type PlayerId,
 } from "./utils/gameLogic";
 
 const MAX_DPR = 3;
+const COYOTE_THEME_IMAGE_SRC = `${import.meta.env.BASE_URL}img/coyoteSmerk.png`;
+const DEVOPS_TUX_IMAGE_SRC = `${import.meta.env.BASE_URL}img/babyTax.png`;
+const DEVOPS_DOCKER_IMAGE_SRC = `${import.meta.env.BASE_URL}img/babyDocker.png`;
+const DEVOPS_POST_IMAGE_SRC = `${import.meta.env.BASE_URL}img/babyPost.png`;
+const DEVOPS_KUBA_IMAGE_SRC = `${import.meta.env.BASE_URL}img/kubagiraf.png`;
+const coyoteThemeImage = typeof Image !== "undefined"
+  ? (() => {
+      const image = new Image();
+      image.src = COYOTE_THEME_IMAGE_SRC;
+      return image;
+    })()
+  : null;
+const devopsTuxImage = typeof Image !== "undefined"
+  ? (() => {
+      const image = new Image();
+      image.src = DEVOPS_TUX_IMAGE_SRC;
+      return image;
+    })()
+  : null;
+const devopsDockerImage = typeof Image !== "undefined"
+  ? (() => {
+      const image = new Image();
+      image.src = DEVOPS_DOCKER_IMAGE_SRC;
+      return image;
+    })()
+  : null;
+const devopsPostImage = typeof Image !== "undefined"
+  ? (() => {
+      const image = new Image();
+      image.src = DEVOPS_POST_IMAGE_SRC;
+      return image;
+    })()
+  : null;
+const devopsKubaImage = typeof Image !== "undefined"
+  ? (() => {
+      const image = new Image();
+      image.src = DEVOPS_KUBA_IMAGE_SRC;
+      return image;
+    })()
+  : null;
 
 type Vec2 = { x: number; y: number };
 
@@ -52,6 +95,206 @@ type SourceHandle = {
   source: MoveSource;
   moves: Move[];
   position: Vec2;
+};
+
+type BoardThemePalette = {
+  sceneBgStart: string;
+  sceneBgEnd: string;
+  pointerAuraInner: string;
+  pointerAuraMid: string;
+  frameBase: string;
+  frameGlossStart: string;
+  frameGlossEnd: string;
+  feltCenter: string;
+  feltMid: string;
+  feltEdge: string;
+  barStart: string;
+  barMid: string;
+  barEnd: string;
+  triangleWarmTop: string;
+  triangleWarmBottom: string;
+  triangleCoolTop: string;
+  triangleCoolBottom: string;
+  triangleStroke: string;
+  centerLine: string;
+  pointLabel: string;
+  sideTray: string;
+  offLabelBlack: string;
+  offLabelWhite: string;
+  barLabelBlack: string;
+  barLabelWhite: string;
+  vignetteEdge: string;
+};
+
+const BOARD_THEME_PALETTES: Record<BoardThemeId, BoardThemePalette> = {
+  classic: {
+    sceneBgStart: "#080c13",
+    sceneBgEnd: "#120c0f",
+    pointerAuraInner: "rgba(132,211,255,0.2)",
+    pointerAuraMid: "rgba(255,177,124,0.1)",
+    frameBase: "#5b3319",
+    frameGlossStart: "rgba(255,210,162,0.28)",
+    frameGlossEnd: "rgba(0,0,0,0.36)",
+    feltCenter: "#227050",
+    feltMid: "#174f3b",
+    feltEdge: "#123a2c",
+    barStart: "#3c2414",
+    barMid: "#29160c",
+    barEnd: "#3c2414",
+    triangleWarmTop: "#e7a970",
+    triangleWarmBottom: "#b95d27",
+    triangleCoolTop: "#f4d8b9",
+    triangleCoolBottom: "#c58c59",
+    triangleStroke: "rgba(57,31,18,0.42)",
+    centerLine: "rgba(255,248,235,0.28)",
+    pointLabel: "rgba(255, 234, 210, 0.76)",
+    sideTray: "rgba(18,15,13,0.28)",
+    offLabelBlack: "rgba(212, 228, 255, 0.82)",
+    offLabelWhite: "rgba(255, 241, 222, 0.82)",
+    barLabelBlack: "rgba(206, 225, 255, 0.82)",
+    barLabelWhite: "rgba(255, 240, 221, 0.82)",
+    vignetteEdge: "rgba(0,0,0,0.32)",
+  },
+  midnight: {
+    sceneBgStart: "#050b17",
+    sceneBgEnd: "#120a20",
+    pointerAuraInner: "rgba(116,208,255,0.22)",
+    pointerAuraMid: "rgba(171,118,255,0.12)",
+    frameBase: "#2b3550",
+    frameGlossStart: "rgba(201,226,255,0.2)",
+    frameGlossEnd: "rgba(0,0,0,0.4)",
+    feltCenter: "#255d8f",
+    feltMid: "#183f67",
+    feltEdge: "#0f2945",
+    barStart: "#1f2438",
+    barMid: "#121829",
+    barEnd: "#1f2438",
+    triangleWarmTop: "#8fc8ff",
+    triangleWarmBottom: "#3b79bf",
+    triangleCoolTop: "#d7ecff",
+    triangleCoolBottom: "#7fb2de",
+    triangleStroke: "rgba(18,35,64,0.45)",
+    centerLine: "rgba(213,234,255,0.27)",
+    pointLabel: "rgba(226,242,255,0.82)",
+    sideTray: "rgba(7,14,27,0.36)",
+    offLabelBlack: "rgba(202,224,255,0.84)",
+    offLabelWhite: "rgba(240,247,255,0.88)",
+    barLabelBlack: "rgba(198,223,255,0.84)",
+    barLabelWhite: "rgba(236,246,255,0.88)",
+    vignetteEdge: "rgba(0,0,0,0.36)",
+  },
+  emerald: {
+    sceneBgStart: "#07120d",
+    sceneBgEnd: "#13140e",
+    pointerAuraInner: "rgba(147,241,188,0.2)",
+    pointerAuraMid: "rgba(255,210,136,0.12)",
+    frameBase: "#5e4224",
+    frameGlossStart: "rgba(255,228,182,0.24)",
+    frameGlossEnd: "rgba(0,0,0,0.37)",
+    feltCenter: "#2f8f68",
+    feltMid: "#1f6d52",
+    feltEdge: "#154739",
+    barStart: "#3d2f1e",
+    barMid: "#281d12",
+    barEnd: "#3d2f1e",
+    triangleWarmTop: "#ffd08d",
+    triangleWarmBottom: "#d3892f",
+    triangleCoolTop: "#e9f5df",
+    triangleCoolBottom: "#8cb36a",
+    triangleStroke: "rgba(54,41,25,0.42)",
+    centerLine: "rgba(237,248,224,0.24)",
+    pointLabel: "rgba(255,238,210,0.78)",
+    sideTray: "rgba(24,17,12,0.28)",
+    offLabelBlack: "rgba(214,236,219,0.86)",
+    offLabelWhite: "rgba(255,245,229,0.88)",
+    barLabelBlack: "rgba(206,234,214,0.86)",
+    barLabelWhite: "rgba(255,244,224,0.88)",
+    vignetteEdge: "rgba(0,0,0,0.34)",
+  },
+  sunset: {
+    sceneBgStart: "#1a0906",
+    sceneBgEnd: "#2a0d12",
+    pointerAuraInner: "rgba(255,190,130,0.22)",
+    pointerAuraMid: "rgba(255,119,160,0.14)",
+    frameBase: "#73311e",
+    frameGlossStart: "rgba(255,220,166,0.24)",
+    frameGlossEnd: "rgba(0,0,0,0.38)",
+    feltCenter: "#9c3f2c",
+    feltMid: "#6f2a2c",
+    feltEdge: "#4c1f2c",
+    barStart: "#4b1f1a",
+    barMid: "#33110f",
+    barEnd: "#4b1f1a",
+    triangleWarmTop: "#ffce84",
+    triangleWarmBottom: "#e16a3e",
+    triangleCoolTop: "#ffe8c3",
+    triangleCoolBottom: "#f2a165",
+    triangleStroke: "rgba(70,28,20,0.44)",
+    centerLine: "rgba(255,232,206,0.27)",
+    pointLabel: "rgba(255,236,214,0.8)",
+    sideTray: "rgba(30,11,11,0.3)",
+    offLabelBlack: "rgba(252,223,206,0.86)",
+    offLabelWhite: "rgba(255,239,222,0.9)",
+    barLabelBlack: "rgba(247,220,207,0.84)",
+    barLabelWhite: "rgba(255,242,224,0.9)",
+    vignetteEdge: "rgba(0,0,0,0.38)",
+  },
+  coyote: {
+    sceneBgStart: "#15110b",
+    sceneBgEnd: "#2a1d14",
+    pointerAuraInner: "rgba(255,214,143,0.2)",
+    pointerAuraMid: "rgba(227,142,85,0.14)",
+    frameBase: "#7a4f2f",
+    frameGlossStart: "rgba(255,225,178,0.24)",
+    frameGlossEnd: "rgba(0,0,0,0.38)",
+    feltCenter: "#8d6a3d",
+    feltMid: "#6a4f31",
+    feltEdge: "#4b3825",
+    barStart: "#5f432a",
+    barMid: "#3f2c1c",
+    barEnd: "#5f432a",
+    triangleWarmTop: "#ffcc8f",
+    triangleWarmBottom: "#c97737",
+    triangleCoolTop: "#f2dfc0",
+    triangleCoolBottom: "#b79563",
+    triangleStroke: "rgba(68,44,24,0.44)",
+    centerLine: "rgba(255,235,205,0.24)",
+    pointLabel: "rgba(255,236,210,0.8)",
+    sideTray: "rgba(34,24,16,0.3)",
+    offLabelBlack: "rgba(236,220,194,0.84)",
+    offLabelWhite: "rgba(255,242,223,0.9)",
+    barLabelBlack: "rgba(233,216,191,0.84)",
+    barLabelWhite: "rgba(255,241,220,0.88)",
+    vignetteEdge: "rgba(0,0,0,0.37)",
+  },
+  devops: {
+    sceneBgStart: "#061018",
+    sceneBgEnd: "#0a1722",
+    pointerAuraInner: "rgba(87,255,173,0.2)",
+    pointerAuraMid: "rgba(79,190,255,0.14)",
+    frameBase: "#16424d",
+    frameGlossStart: "rgba(160,255,225,0.2)",
+    frameGlossEnd: "rgba(0,0,0,0.4)",
+    feltCenter: "#0f5d57",
+    feltMid: "#0c474a",
+    feltEdge: "#0a2f3a",
+    barStart: "#12313a",
+    barMid: "#0a1f27",
+    barEnd: "#12313a",
+    triangleWarmTop: "#61ffb2",
+    triangleWarmBottom: "#1f9f7f",
+    triangleCoolTop: "#baf2ff",
+    triangleCoolBottom: "#4bb5c9",
+    triangleStroke: "rgba(13,60,70,0.46)",
+    centerLine: "rgba(199,255,246,0.26)",
+    pointLabel: "rgba(215,255,244,0.82)",
+    sideTray: "rgba(4,22,28,0.33)",
+    offLabelBlack: "rgba(189,255,236,0.85)",
+    offLabelWhite: "rgba(224,255,249,0.9)",
+    barLabelBlack: "rgba(176,255,231,0.84)",
+    barLabelWhite: "rgba(217,255,247,0.9)",
+    vignetteEdge: "rgba(0,0,0,0.4)",
+  },
 };
 
 function clamp(v: number, min: number, max: number): number {
@@ -453,6 +696,298 @@ function drawRing(
   ctx.restore();
 }
 
+function drawCoyoteThemeImage(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number,
+  mirrored = false
+) {
+  const image = coyoteThemeImage;
+  if (!image || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
+
+  const cropX = 0;
+  const cropY = image.naturalHeight * 0.18;
+  const cropW = image.naturalWidth;
+  const cropH = image.naturalHeight * 0.64;
+  const cropAspect = cropW / cropH;
+  const preferredW = Math.max(58, maxWidth);
+  const constrainedW = Math.min(preferredW, Math.max(58, maxHeight * cropAspect));
+  const drawW = constrainedW;
+  const drawH = drawW / cropAspect;
+
+  ctx.save();
+  ctx.translate(x, y);
+  if (mirrored) {
+    ctx.scale(-1, 1);
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
+  ctx.shadowBlur = Math.max(6, drawH * 0.18);
+  ctx.shadowOffsetY = Math.max(2, drawH * 0.05);
+  ctx.drawImage(
+    image,
+    cropX,
+    cropY,
+    cropW,
+    cropH,
+    -drawW * 0.5,
+    -drawH * 0.5,
+    drawW,
+    drawH
+  );
+
+  ctx.restore();
+}
+
+function drawCoyoteCenterMark(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  variant: "tongue" | "wink",
+  mirrored = false
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (mirrored) {
+    ctx.scale(-1, 1);
+  }
+
+  const glow = ctx.createRadialGradient(0, 0, size * 0.12, 0, 0, size * 1.45);
+  glow.addColorStop(0, "rgba(255, 214, 142, 0.34)");
+  glow.addColorStop(0.75, "rgba(201, 132, 74, 0.16)");
+  glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 1.45, 0, Math.PI * 2);
+  ctx.fill();
+
+  const fur = ctx.createLinearGradient(0, -size * 0.95, 0, size * 0.82);
+  fur.addColorStop(0, "rgba(255, 214, 145, 0.86)");
+  fur.addColorStop(0.55, "rgba(219, 150, 87, 0.8)");
+  fur.addColorStop(1, "rgba(132, 82, 47, 0.8)");
+  ctx.fillStyle = fur;
+  ctx.strokeStyle = "rgba(70, 45, 25, 0.62)";
+  ctx.lineWidth = Math.max(1.1, size * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.72, size * 0.1);
+  ctx.lineTo(-size * 0.54, -size * 0.64);
+  ctx.lineTo(-size * 0.19, -size * 0.26);
+  ctx.lineTo(0, -size * 0.74);
+  ctx.lineTo(size * 0.2, -size * 0.26);
+  ctx.lineTo(size * 0.55, -size * 0.64);
+  ctx.lineTo(size * 0.74, size * 0.1);
+  ctx.lineTo(size * 0.2, size * 0.66);
+  ctx.lineTo(0, size * 0.46);
+  ctx.lineTo(-size * 0.2, size * 0.66);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(70, 45, 25, 0.62)";
+  ctx.lineWidth = Math.max(1, size * 0.07);
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.42, -size * 0.28);
+  ctx.lineTo(-size * 0.2, -size * 0.2);
+  ctx.moveTo(size * 0.42, -size * 0.28);
+  ctx.lineTo(size * 0.2, -size * 0.2);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(43, 25, 14, 0.74)";
+  if (variant === "wink") {
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.22, -size * 0.04, size * 0.07, size * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(43, 25, 14, 0.78)";
+    ctx.lineWidth = Math.max(1.4, size * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(size * 0.16, -size * 0.02);
+    ctx.lineTo(size * 0.32, -size * 0.06);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(28, 16, 10, 0.76)";
+    ctx.lineWidth = Math.max(1.1, size * 0.06);
+    ctx.beginPath();
+    ctx.arc(0, size * 0.2, size * 0.18, 0.2, Math.PI - 0.18);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.22, -size * 0.06, size * 0.07, size * 0.09, 0, 0, Math.PI * 2);
+    ctx.ellipse(size * 0.22, -size * 0.06, size * 0.07, size * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(48, 20, 12, 0.8)";
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.24, size * 0.2, size * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(232, 116, 128, 0.88)";
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.3, size * 0.1, size * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "rgba(28, 16, 10, 0.74)";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.08, size * 0.18);
+  ctx.lineTo(size * 0.08, size * 0.18);
+  ctx.lineTo(0, size * 0.3);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawDevopsCenterMark(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  label: "Dev" | "Ops",
+  now: number
+) {
+  const pulse = 0.68 + Math.sin(now * 0.006 + x * 0.01) * 0.32;
+  ctx.save();
+  ctx.translate(x, y);
+
+  const w = size * 1.9;
+  const h = size * 0.95;
+  const r = Math.min(h * 0.5, size * 0.42);
+  const pillGrad = ctx.createLinearGradient(-w * 0.5, -h * 0.5, w * 0.5, h * 0.5);
+  pillGrad.addColorStop(0, "rgba(10, 51, 60, 0.76)");
+  pillGrad.addColorStop(1, "rgba(8, 30, 37, 0.7)");
+  roundedPath(ctx, -w * 0.5, -h * 0.5, w, h, r);
+  ctx.fillStyle = pillGrad;
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(133, 255, 229, ${0.72 + pulse * 0.16})`;
+  ctx.lineWidth = Math.max(1.1, size * 0.09);
+  roundedPath(ctx, -w * 0.5, -h * 0.5, w, h, r);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(93, 218, 255, 0.55)";
+  ctx.lineWidth = Math.max(0.9, size * 0.05);
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.36, 0);
+  ctx.lineTo(-w * 0.2, 0);
+  ctx.moveTo(w * 0.2, 0);
+  ctx.lineTo(w * 0.36, 0);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(194, 255, 240, 0.88)";
+  ctx.beginPath();
+  ctx.arc(-w * 0.41, 0, Math.max(1.1, size * 0.07), 0, Math.PI * 2);
+  ctx.arc(w * 0.41, 0, Math.max(1.1, size * 0.07), 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.font = `800 ${Math.max(11, size * 0.74)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  drawReadableText(
+    ctx,
+    label,
+    0,
+    size * 0.03,
+    "rgba(211, 255, 244, 0.95)",
+    "rgba(6, 32, 39, 0.86)"
+  );
+
+  ctx.restore();
+}
+
+function drawDevopsSticker(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement | null,
+  x: number,
+  y: number,
+  size: number,
+  angleRad: number
+) {
+  if (!image || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
+
+  const cropX = image.naturalWidth * 0.12;
+  const cropY = image.naturalHeight * 0.1;
+  const cropW = image.naturalWidth * 0.76;
+  const cropH = image.naturalHeight * 0.8;
+
+  const drawW = Math.max(42, size);
+  const drawH = drawW * (cropH / cropW);
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angleRad);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(
+    image,
+    cropX,
+    cropY,
+    cropW,
+    cropH,
+    -drawW * 0.5,
+    -drawH * 0.5,
+    drawW,
+    drawH
+  );
+
+  ctx.restore();
+}
+
+function drawThemeCenterArt(
+  ctx: CanvasRenderingContext2D,
+  layout: Layout,
+  theme: BoardThemeId,
+  now: number
+) {
+  if (theme !== "coyote" && theme !== "devops") return;
+
+  const centerY = layout.centerY;
+  const leftX = layout.playX + layout.halfW * 0.44;
+  const rightX = layout.playX + layout.halfW + layout.barW + layout.halfW * 0.56;
+  const baseSize = Math.max(22, Math.min(layout.playH * 0.09, layout.cellW * 1.56));
+
+  if (theme === "coyote") {
+    const artWidth = clamp(layout.halfW * 0.62, baseSize * 3.1, layout.playW * 0.39);
+    const artHeight = artWidth * 1.02;
+    const hasCoyoteImage = !!(
+      coyoteThemeImage &&
+      coyoteThemeImage.complete &&
+      coyoteThemeImage.naturalWidth > 0 &&
+      coyoteThemeImage.naturalHeight > 0
+    );
+
+    if (hasCoyoteImage) {
+      drawCoyoteThemeImage(ctx, leftX, centerY, artWidth, artHeight, false);
+      drawCoyoteThemeImage(ctx, rightX, centerY, artWidth, artHeight, true);
+    } else {
+      drawCoyoteCenterMark(ctx, leftX, centerY, baseSize, "tongue", false);
+      drawCoyoteCenterMark(ctx, rightX, centerY, baseSize, "wink", true);
+    }
+    return;
+  }
+
+  const kubaX = leftX - baseSize * 2.35;
+  const dockerX = (columnX(layout, 4) + columnX(layout, 5)) * 0.5;
+  const tuxX = (columnX(layout, 6) + columnX(layout, 7)) * 0.5;
+  const postX = (columnX(layout, 10) + columnX(layout, 11)) * 0.5;
+  const devX = (kubaX + dockerX) * 0.5;
+  const opsX = (tuxX + postX) * 0.5;
+  drawDevopsCenterMark(ctx, devX, centerY, baseSize * 1.1, "Dev", now);
+  drawDevopsCenterMark(ctx, opsX, centerY, baseSize * 1.1, "Ops", now);
+  const stickerY = centerY + baseSize * 0.1;
+  const stickerSize = clamp(layout.playW * 0.122, 62, 88);
+  drawDevopsSticker(ctx, devopsKubaImage, kubaX, stickerY, stickerSize, -0.2);
+  drawDevopsSticker(ctx, devopsDockerImage, dockerX, stickerY, stickerSize, -0.22);
+  drawDevopsSticker(ctx, devopsTuxImage, tuxX, stickerY, stickerSize, 0.24);
+  drawDevopsSticker(ctx, devopsPostImage, postX, stickerY, stickerSize, -0.16);
+}
+
 function collectSourceHandles(
   state: BackgammonState,
   sourceMovesMap: Map<string, Move[]>,
@@ -494,21 +1029,24 @@ function drawScene(
   sourceMovesMap: Map<string, Move[]>,
   disableInput: boolean,
   selectedSource: MoveSource | null,
+  multiDieTargets: MultiDieTarget[],
   pointer: { x: number; y: number; inside: boolean },
   animationRef: React.MutableRefObject<MoveAnim | null>,
+  theme: BoardThemeId,
   mirroredX: boolean,
   mirroredY: boolean
 ) {
+  const palette = BOARD_THEME_PALETTES[theme] ?? BOARD_THEME_PALETTES.classic;
   const bg = ctx.createLinearGradient(0, 0, layout.width, layout.height);
-  bg.addColorStop(0, "#080c13");
-  bg.addColorStop(1, "#120c0f");
+  bg.addColorStop(0, palette.sceneBgStart);
+  bg.addColorStop(1, palette.sceneBgEnd);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, layout.width, layout.height);
 
   if (pointer.inside) {
     const aura = ctx.createRadialGradient(pointer.x, pointer.y, 16, pointer.x, pointer.y, layout.width * 0.52);
-    aura.addColorStop(0, "rgba(132,211,255,0.2)");
-    aura.addColorStop(0.45, "rgba(255,177,124,0.1)");
+    aura.addColorStop(0, palette.pointerAuraInner);
+    aura.addColorStop(0.45, palette.pointerAuraMid);
     aura.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = aura;
     ctx.fillRect(0, 0, layout.width, layout.height);
@@ -520,13 +1058,13 @@ function drawScene(
   const frameH = layout.playH + 30;
 
   roundedPath(ctx, frameX, frameY, frameW, frameH, 22);
-  ctx.fillStyle = "#5b3319";
+  ctx.fillStyle = palette.frameBase;
   ctx.fill();
 
   const gloss = ctx.createLinearGradient(frameX, frameY, frameX + frameW, frameY + frameH);
-  gloss.addColorStop(0, "rgba(255,210,162,0.28)");
+  gloss.addColorStop(0, palette.frameGlossStart);
   gloss.addColorStop(0.48, "rgba(0,0,0,0)");
-  gloss.addColorStop(1, "rgba(0,0,0,0.36)");
+  gloss.addColorStop(1, palette.frameGlossEnd);
   roundedPath(ctx, frameX, frameY, frameW, frameH, 22);
   ctx.fillStyle = gloss;
   ctx.fill();
@@ -540,18 +1078,18 @@ function drawScene(
     layout.playY + layout.playH * 0.5,
     layout.playW * 0.85
   );
-  felt.addColorStop(0, "#227050");
-  felt.addColorStop(0.7, "#174f3b");
-  felt.addColorStop(1, "#123a2c");
+  felt.addColorStop(0, palette.feltCenter);
+  felt.addColorStop(0.7, palette.feltMid);
+  felt.addColorStop(1, palette.feltEdge);
   ctx.fillStyle = felt;
   ctx.fill();
 
   const barX = layout.playX + layout.halfW;
   roundedPath(ctx, barX, layout.playY, layout.barW, layout.playH, 8);
   const bar = ctx.createLinearGradient(barX, layout.playY, barX + layout.barW, layout.playY + layout.playH);
-  bar.addColorStop(0, "#3c2414");
-  bar.addColorStop(0.5, "#29160c");
-  bar.addColorStop(1, "#3c2414");
+  bar.addColorStop(0, palette.barStart);
+  bar.addColorStop(0.5, palette.barMid);
+  bar.addColorStop(1, palette.barEnd);
   ctx.fillStyle = bar;
   ctx.fill();
 
@@ -575,11 +1113,11 @@ function drawScene(
     const tri = ctx.createLinearGradient(x, baseY, x, apexY);
     const warm = point % 2 === 0;
     if (warm) {
-      tri.addColorStop(0, "#e7a970");
-      tri.addColorStop(1, "#b95d27");
+      tri.addColorStop(0, palette.triangleWarmTop);
+      tri.addColorStop(1, palette.triangleWarmBottom);
     } else {
-      tri.addColorStop(0, "#f4d8b9");
-      tri.addColorStop(1, "#c58c59");
+      tri.addColorStop(0, palette.triangleCoolTop);
+      tri.addColorStop(1, palette.triangleCoolBottom);
     }
 
     ctx.beginPath();
@@ -589,12 +1127,15 @@ function drawScene(
     ctx.closePath();
     ctx.fillStyle = tri;
     ctx.fill();
-    ctx.strokeStyle = "rgba(57,31,18,0.42)";
+    ctx.strokeStyle = palette.triangleStroke;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  ctx.strokeStyle = "rgba(255,248,235,0.28)";
+  // Draw center-theme art above board triangles.
+  drawThemeCenterArt(ctx, layout, theme, now);
+
+  ctx.strokeStyle = palette.centerLine;
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.moveTo(layout.playX, layout.centerY);
@@ -609,11 +1150,11 @@ function drawScene(
     const canonicalTop = point >= 12;
     const top = mirroredY ? !canonicalTop : canonicalTop;
     const y = top ? layout.topY - 13 : layout.bottomY + 13;
-    drawReadableText(ctx, String(point + 1), x, y, "rgba(255, 234, 210, 0.76)");
+    drawReadableText(ctx, String(point + 1), x, y, palette.pointLabel);
   }
 
   roundedPath(ctx, layout.pad + 4, layout.playY + 8, layout.gutter - 8, layout.playH - 16, 10);
-  ctx.fillStyle = "rgba(18,15,13,0.28)";
+  ctx.fillStyle = palette.sideTray;
   ctx.fill();
   roundedPath(ctx, layout.width - layout.pad - layout.gutter + 4, layout.playY + 8, layout.gutter - 8, layout.playH - 16, 10);
   ctx.fill();
@@ -642,6 +1183,34 @@ function drawScene(
       radius: layout.checkerR,
       color: "#6fd6ff",
       intensity: 1.32,
+    });
+  }
+
+  const multiDieHighlights: Array<{
+    x: number;
+    y: number;
+    radius: number;
+    color: string;
+    intensity: number;
+  }> = [];
+
+  const strongestMultiDiePerTarget = new Map<string, MultiDieTarget>();
+  for (const multiDieTarget of multiDieTargets) {
+    const key = String(multiDieTarget.to);
+    const existing = strongestMultiDiePerTarget.get(key);
+    if (!existing || multiDieTarget.usedDice > existing.usedDice) {
+      strongestMultiDiePerTarget.set(key, multiDieTarget);
+    }
+  }
+
+  for (const multiDieTarget of strongestMultiDiePerTarget.values()) {
+    const p = targetPos(state, layout, state.currentPlayer, multiDieTarget.to, mirroredX, mirroredY);
+    multiDieHighlights.push({
+      x: p.x,
+      y: p.y,
+      radius: layout.checkerR * 1.04,
+      color: "#b86cff",
+      intensity: 1.45 + (multiDieTarget.usedDice - 2) * 0.2,
     });
   }
 
@@ -727,6 +1296,10 @@ function drawScene(
     drawRing(ctx, ring.x, ring.y, ring.radius, ring.color, now, ring.intensity, "target");
   }
 
+  for (const ring of multiDieHighlights) {
+    drawRing(ctx, ring.x, ring.y, ring.radius, ring.color, now, ring.intensity, "target");
+  }
+
   for (const ring of sourceHighlights) {
     drawRing(ctx, ring.x, ring.y, ring.radius, ring.color, now, ring.intensity, "source");
   }
@@ -735,15 +1308,15 @@ function drawScene(
   const blackTop = mirroredY ? false : true;
   const whiteTop = !blackTop;
   ctx.font = `600 ${Math.max(10, layout.playH * 0.022)}px ui-sans-serif, system-ui, sans-serif`;
-  drawReadableText(ctx, `יצא: ${state.borneOff.black}`, blackOffX, blackTop ? layout.centerY - 14 : layout.centerY + 14, "rgba(212, 228, 255, 0.82)");
-  drawReadableText(ctx, `יצא: ${state.borneOff.white}`, whiteOffX, whiteTop ? layout.centerY - 14 : layout.centerY + 14, "rgba(255, 241, 222, 0.82)");
+  drawReadableText(ctx, `יצא: ${state.borneOff.black}`, blackOffX, blackTop ? layout.centerY - 14 : layout.centerY + 14, palette.offLabelBlack);
+  drawReadableText(ctx, `יצא: ${state.borneOff.white}`, whiteOffX, whiteTop ? layout.centerY - 14 : layout.centerY + 14, palette.offLabelWhite);
   if (state.bar.black > 0) {
     drawReadableText(
       ctx,
       `בר: ${state.bar.black}`,
       layout.playX + layout.halfW + layout.barW * 0.5,
       blackTop ? layout.topY - 24 : layout.bottomY + 24,
-      "rgba(206, 225, 255, 0.82)"
+      palette.barLabelBlack
     );
   }
   if (state.bar.white > 0) {
@@ -752,7 +1325,7 @@ function drawScene(
       `בר: ${state.bar.white}`,
       layout.playX + layout.halfW + layout.barW * 0.5,
       whiteTop ? layout.topY - 24 : layout.bottomY + 24,
-      "rgba(255, 240, 221, 0.82)"
+      palette.barLabelWhite
     );
   }
 
@@ -765,12 +1338,16 @@ function drawScene(
     layout.width * 0.72
   );
   vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(1, "rgba(0,0,0,0.32)");
+  vignette.addColorStop(1, palette.vignetteEdge);
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, layout.width, layout.height);
 }
 
-export default function Board() {
+type BoardProps = {
+  theme: BoardThemeId;
+};
+
+export default function Board({ theme }: BoardProps) {
   const {
     state,
     legalMoves,
@@ -793,9 +1370,11 @@ export default function Board() {
   const movePieceRef = useRef(movePiece);
   const stateRef = useRef(state);
   const sourceMovesRef = useRef<Map<string, Move[]>>(new Map());
+  const multiDieTargetsRef = useRef<MultiDieTarget[]>([]);
   const disableInputRef = useRef(false);
   const selectedSourceRef = useRef<MoveSource | null>(selectedSource);
   const mirroredRef = useRef({ x: false, y: false });
+  const themeRef = useRef<BoardThemeId>(theme);
 
   const animRef = useRef<MoveAnim | null>(null);
   const prevStateRef = useRef<BackgammonState>(state);
@@ -819,6 +1398,11 @@ export default function Board() {
     return map;
   }, [legalMoves]);
 
+  const multiDieTargets = useMemo(() => {
+    if (selectedSource === null) return [];
+    return getMultiDieTargetsForSource(state, selectedSource);
+  }, [selectedSource, state]);
+
   useEffect(() => {
     movePieceRef.current = movePiece;
   }, [movePiece]);
@@ -828,11 +1412,16 @@ export default function Board() {
   }, [mirroredX, mirroredY]);
 
   useEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
+
+  useEffect(() => {
     stateRef.current = state;
     sourceMovesRef.current = sourceMovesMap;
+    multiDieTargetsRef.current = multiDieTargets;
     disableInputRef.current = disableInput;
     selectedSourceRef.current = selectedSource;
-  }, [state, legalMoves, sourceMovesMap, disableInput, selectedSource]);
+  }, [disableInput, multiDieTargets, selectedSource, sourceMovesMap, state]);
 
   useEffect(() => {
     if (selectedSource === null) return;
@@ -959,6 +1548,15 @@ export default function Board() {
       if (chosen) {
         movePieceRef.current(chosen);
         setSelectedSource(null);
+        return;
+      }
+
+      const combinedMoves = getMultiDieMovesForSourceTarget(stateRef.current, selected, mappedTarget);
+      if (combinedMoves.length > 0) {
+        for (const move of combinedMoves) {
+          movePieceRef.current(move);
+        }
+        setSelectedSource(null);
       }
     };
 
@@ -994,8 +1592,10 @@ export default function Board() {
           sourceMovesRef.current,
           disableInputRef.current,
           selectedSourceRef.current,
+          multiDieTargetsRef.current,
           pointerRef.current,
           animRef,
+          themeRef.current,
           mirroredRef.current.x,
           mirroredRef.current.y
         );
@@ -1044,4 +1644,3 @@ export default function Board() {
     </section>
   );
 }
-

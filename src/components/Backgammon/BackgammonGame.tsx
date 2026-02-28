@@ -2,7 +2,11 @@
 import Board from "./Board";
 import Dice from "./Dice";
 import OpeningRollOverlay from "./OpeningRollOverlay";
-import BackgammonContext, { type HomeQuadrant, type RollSource } from "./BackgammonContext";
+import BackgammonContext, {
+  type BoardThemeId,
+  type HomeQuadrant,
+  type RollSource,
+} from "./BackgammonContext";
 import {
   applyMove,
   chooseAiMove,
@@ -30,13 +34,15 @@ type OpponentMode = "ai" | "local" | "bot-vs-bot";
 type BackgammonSetup = {
   opponent: OpponentMode;
   homeQuadrant: HomeQuadrant;
+  boardTheme: BoardThemeId;
 };
 
 type OpeningRolls = Record<PlayerId, number | null>;
+type PersistedBackgammonSetup = Omit<BackgammonSetup, "boardTheme"> & { boardTheme?: BoardThemeId };
 type PersistedBackgammonSession = {
   version: 1;
   view: GameView;
-  setup: BackgammonSetup;
+  setup: PersistedBackgammonSetup;
   state: BackgammonState;
   statusText: string;
   aiEnabled: boolean;
@@ -45,6 +51,38 @@ type PersistedBackgammonSession = {
   openingRound: number;
   openingText: string;
 };
+
+const BOARD_THEME_OPTIONS: Array<{
+  id: BoardThemeId;
+  label: string;
+  description: string;
+}> = [
+  { id: "classic", label: "קלאסי", description: "עץ חם ולבד ירוק מסורתי" },
+  { id: "midnight", label: "Midnight", description: "לוח כהה עם ניגוד כחול קר" },
+  { id: "emerald", label: "Emerald", description: "גווני אמרלד עם מסגרת ברונזה" },
+  { id: "sunset", label: "Sunset", description: "גווני שקיעה עם תחושת ארקייד" },
+  { id: "coyote", label: "Coyote", description: "גווני חול וקניון חמים" },
+  { id: "devops", label: "DevOps", description: "סייבר טכני בירוק-כחול" },
+];
+
+function getBoardThemeLabel(theme: BoardThemeId): string {
+  switch (theme) {
+    case "classic":
+      return "קלאסי";
+    case "midnight":
+      return "Midnight";
+    case "emerald":
+      return "Emerald";
+    case "sunset":
+      return "Sunset";
+    case "coyote":
+      return "Coyote";
+    case "devops":
+      return "DevOps";
+    default:
+      return "קלאסי";
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -71,6 +109,15 @@ function isHomeQuadrantValue(value: unknown): value is HomeQuadrant {
     || value === "top-right"
     || value === "bottom-left"
     || value === "bottom-right";
+}
+
+function isBoardThemeValue(value: unknown): value is BoardThemeId {
+  return value === "classic"
+    || value === "midnight"
+    || value === "emerald"
+    || value === "sunset"
+    || value === "coyote"
+    || value === "devops";
 }
 
 function isGameView(value: unknown): value is GameView {
@@ -172,9 +219,11 @@ function isValidBackgammonState(value: unknown): value is BackgammonState {
   return true;
 }
 
-function isValidSetup(value: unknown): value is BackgammonSetup {
+function isValidSetup(value: unknown): value is PersistedBackgammonSetup {
   if (!isRecord(value)) return false;
-  return isOpponentMode(value.opponent) && isHomeQuadrantValue(value.homeQuadrant);
+  return isOpponentMode(value.opponent)
+    && isHomeQuadrantValue(value.homeQuadrant)
+    && (value.boardTheme === undefined || isBoardThemeValue(value.boardTheme));
 }
 
 function isPersistedSession(value: unknown): value is PersistedBackgammonSession {
@@ -243,7 +292,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export default function BackgammonGame() {
   const [view, setView] = useState<GameView>("lobby");
-  const [setup, setSetup] = useState<BackgammonSetup>({ opponent: "ai", homeQuadrant: "bottom-left" });
+  const [setup, setSetup] = useState<BackgammonSetup>({
+    opponent: "ai",
+    homeQuadrant: "bottom-left",
+    boardTheme: "classic",
+  });
 
   const [state, setState] = useState<BackgammonState>(() => createInitialState());
   const [statusText, setStatusText] = useState("גלגול פתיחה: כל שחקן מגלגל קובייה אחת.");
@@ -275,7 +328,11 @@ export default function BackgammonGame() {
     if (persisted) {
       const restoredView = normalizeRestoredView(persisted.view, persisted.state);
       setView(restoredView);
-      setSetup(persisted.setup);
+      setSetup({
+        opponent: persisted.setup.opponent,
+        homeQuadrant: persisted.setup.homeQuadrant,
+        boardTheme: persisted.setup.boardTheme ?? "classic",
+      });
       setState(persisted.state);
       setStatusText(persisted.statusText);
       setAiEnabled(persisted.aiEnabled);
@@ -777,6 +834,28 @@ export default function BackgammonGame() {
               </div>
             </div>
 
+            <div className="bgm-lobby__group">
+              <span>ערכת נושא ללוח</span>
+              <div className="bgm-lobby__choices bgm-lobby__choices--themes">
+                {BOARD_THEME_OPTIONS.map((themeOption) => (
+                  <button
+                    key={themeOption.id}
+                    type="button"
+                    className={`bgm-choice bgm-choice--theme${setup.boardTheme === themeOption.id ? " is-active" : ""}`}
+                    aria-pressed={setup.boardTheme === themeOption.id}
+                    onClick={() => setSetup((previous) => ({ ...previous, boardTheme: themeOption.id }))}
+                  >
+                    <span className={`bgm-theme-preview is-${themeOption.id}`} aria-hidden="true">
+                      <span className="bgm-theme-preview__felt" />
+                      <span className="bgm-theme-preview__bar" />
+                    </span>
+                    <strong>{themeOption.label}</strong>
+                    <small>{themeOption.description}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="bgm-lobby__start-row">
               <button
                 type="button"
@@ -832,7 +911,7 @@ export default function BackgammonGame() {
         )}
 
         <section className="bgm-stage">
-          <section className="bgm-quick-guide controls-only" aria-label="מדריך קליקים">
+          <section className="bgm-quick-guide controls-only" aria-label="מדריך קליקים ואינדיקטורים">
             <div className="bgm-guide-chip is-left bgm-guide-chip--lmb">
               <strong>קליק שמאלי</strong>
               <span>בחירת יעד מודגש לתזוזה</span>
@@ -841,10 +920,14 @@ export default function BackgammonGame() {
               <strong>קליק ימני</strong>
               <span>בחירת חייל או מקור</span>
             </div>
+            <div className="bgm-guide-chip is-purple bgm-guide-chip--sum">
+              <strong>אינדיקטור סגול</strong>
+              <span>יעד מצטבר לאותו חייל עם סכום 2 קוביות (ובדאבל גם 3/4)</span>
+            </div>
           </section>
 
           <div className="bgm-stage__board bgm-stage__board-wrap">
-            <Board />
+            <Board theme={setup.boardTheme} />
           </div>
 
           <aside className="bgm-stage__side">
@@ -856,6 +939,7 @@ export default function BackgammonGame() {
               <p className="bgm-status-card__meta">
                 מצב: {setup.opponent === "bot-vs-bot" ? "בוט נגד בוט" : (aiEnabled ? "נגד מחשב" : "2 שחקנים מקומי")}
               </p>
+              <p className="bgm-status-card__meta">לוח: {getBoardThemeLabel(setup.boardTheme)}</p>
 
               <div className="bgm-status-card__actions">
                 <button

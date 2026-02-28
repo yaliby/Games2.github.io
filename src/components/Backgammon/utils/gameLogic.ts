@@ -24,6 +24,11 @@ export type Move = {
   hit: boolean;
 };
 
+export type MultiDieTarget = {
+  to: MoveTarget;
+  usedDice: 2 | 3 | 4;
+};
+
 export type BackgammonState = {
   points: PointState[];
   bar: Record<PlayerId, number>;
@@ -439,6 +444,113 @@ export function getLegalMoves(state: BackgammonState): Move[] {
   }
 
   return [...deduped.values()];
+}
+
+function isDoubleTurn(state: BackgammonState): boolean {
+  if (state.dice.length < 2) return false;
+  const die = state.dice[0];
+  return state.dice.every((value) => value === die);
+}
+
+function maxCombinedDiceCount(state: BackgammonState): number {
+  if (state.dice.length < 2) return 0;
+  if (isDoubleTurn(state)) return Math.min(4, state.dice.length);
+  return Math.min(2, state.dice.length);
+}
+
+function moveTargetKey(target: MoveTarget): string {
+  return target === "off" ? "off" : `p:${target}`;
+}
+
+function moveTargetOrder(target: MoveTarget): number {
+  return target === "off" ? BOARD_POINTS : target;
+}
+
+export function getMultiDieTargetsForSource(
+  state: BackgammonState,
+  source: MoveSource
+): MultiDieTarget[] {
+  if (state.winner || state.isOpeningPhase || state.dice.length < 2) return [];
+
+  const maxDiceToSpend = maxCombinedDiceCount(state);
+  if (maxDiceToSpend < 2) return [];
+
+  const sequences = collectMoveSequences(state);
+  const targets: MultiDieTarget[] = [];
+  const seen = new Set<string>();
+
+  for (const sequence of sequences) {
+    if (sequence.length < 2) continue;
+
+    let expectedFrom: MoveSource = source;
+    const maxSteps = Math.min(maxDiceToSpend, sequence.length);
+
+    for (let step = 0; step < maxSteps; step += 1) {
+      const move = sequence[step];
+      if (move.from !== expectedFrom) break;
+
+      const usedDice = step + 1;
+      if (usedDice >= 2) {
+        const key = `${usedDice}:${moveTargetKey(move.to)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          targets.push({
+            to: move.to,
+            usedDice: usedDice as 2 | 3 | 4,
+          });
+        }
+      }
+
+      if (move.to === "off") break;
+      expectedFrom = move.to;
+    }
+  }
+
+  targets.sort((a, b) => {
+    if (a.usedDice !== b.usedDice) return a.usedDice - b.usedDice;
+    return moveTargetOrder(a.to) - moveTargetOrder(b.to);
+  });
+
+  return targets;
+}
+
+export function getMultiDieMovesForSourceTarget(
+  state: BackgammonState,
+  source: MoveSource,
+  target: MoveTarget
+): Move[] {
+  if (state.winner || state.isOpeningPhase || state.dice.length < 2) return [];
+
+  const maxDiceToSpend = maxCombinedDiceCount(state);
+  if (maxDiceToSpend < 2) return [];
+
+  const sequences = collectMoveSequences(state);
+  let bestPath: Move[] = [];
+
+  for (const sequence of sequences) {
+    if (sequence.length < 2) continue;
+
+    let expectedFrom: MoveSource = source;
+    const path: Move[] = [];
+    const maxSteps = Math.min(maxDiceToSpend, sequence.length);
+
+    for (let step = 0; step < maxSteps; step += 1) {
+      const move = sequence[step];
+      if (move.from !== expectedFrom) break;
+
+      path.push(move);
+      const usedDice = step + 1;
+
+      if (usedDice >= 2 && move.to === target && path.length > bestPath.length) {
+        bestPath = [...path];
+      }
+
+      if (move.to === "off") break;
+      expectedFrom = move.to;
+    }
+  }
+
+  return bestPath;
 }
 
 export function rollDice(

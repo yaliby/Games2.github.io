@@ -407,33 +407,115 @@ export function drawBoard(
 
   /* ---------- Winner Overlay ---------- */
   if (state.winner && state.winner.kind !== 'NONE') {
+    const winner = state.winner;
+    const isDraw = winner.kind === 'DRAW';
+    const isRedWin = winner.kind === 'WIN' && winner.player === 1;
+    const pulse = 0.5 + 0.5 * Math.sin(time * 2.8);
+    const cx = W / 2;
+    const cy = H / 2;
+
+    const cardW = Math.min(W * 0.82, TILE * 7.6);
+    const cardH = Math.min(H * 0.62, TILE * 4.4);
+    const cardX = cx - cardW / 2;
+    const cardY = cy - cardH / 2;
+
+    const accentA = isDraw
+      ? 'rgba(112, 195, 255, 0.95)'
+      : isRedWin
+      ? 'rgba(255, 120, 150, 0.95)'
+      : 'rgba(170, 205, 255, 0.95)';
+    const accentB = isDraw
+      ? 'rgba(86, 245, 212, 0.95)'
+      : isRedWin
+      ? 'rgba(255, 216, 124, 0.95)'
+      : 'rgba(136, 255, 225, 0.95)';
+
     ctx.save();
-    ctx.fillStyle = COLORS.overlay;
+    ctx.fillStyle = 'rgba(4, 8, 18, 0.74)';
     ctx.fillRect(0, 0, W, H);
 
+    // Background glow behind the card
+    const glow = ctx.createRadialGradient(cx, cy, TILE * 0.2, cx, cy, Math.max(cardW, cardH) * 0.95);
+    glow.addColorStop(0, `rgba(255,255,255,${0.08 + pulse * 0.1})`);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle orbiting particles
+    for (let i = 0; i < 18; i++) {
+      const base = (i / 18) * Math.PI * 2;
+      const dir = i % 2 === 0 ? 1 : -1;
+      const orbit = base + time * 0.55 * dir;
+      const radius = cardW * 0.46 + (i % 5) * TILE * 0.08 + pulse * TILE * 0.18;
+      const px = cx + Math.cos(orbit) * radius;
+      const py = cy + Math.sin(orbit) * radius * 0.52;
+      const pr = TILE * (0.028 + (i % 3) * 0.006);
+
+      ctx.beginPath();
+      ctx.arc(px, py, pr, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${0.08 + (i % 4) * 0.03})`;
+      ctx.fill();
+    }
+
+    // Main result card
+    ctx.shadowColor = `rgba(0, 0, 0, ${0.35 + pulse * 0.2})`;
+    ctx.shadowBlur = 22 + pulse * 22;
+    ctx.shadowOffsetY = 10;
+    const cardFill = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
+    cardFill.addColorStop(0, 'rgba(24, 31, 51, 0.96)');
+    cardFill.addColorStop(1, 'rgba(12, 16, 28, 0.96)');
+    ctx.fillStyle = cardFill;
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, TILE * 0.22);
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+    const border = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
+    border.addColorStop(0, accentA);
+    border.addColorStop(1, accentB);
+    ctx.strokeStyle = border;
+    ctx.lineWidth = Math.max(2, TILE * 0.03);
+    ctx.stroke();
+
+    // Top accent bar
+    const topBar = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY);
+    topBar.addColorStop(0, accentA);
+    topBar.addColorStop(1, accentB);
+    ctx.fillStyle = topBar;
+    ctx.beginPath();
+    ctx.roundRect(cardX + TILE * 0.2, cardY + TILE * 0.16, cardW - TILE * 0.4, TILE * 0.08, TILE * 0.04);
+    ctx.fill();
+
     ctx.fillStyle = COLORS.text;
-    ctx.font = `800 ${Math.round(
-      TILE * 0.55
-    )}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     const title =
-      state.winner.kind === 'DRAW'
+      winner.kind === 'DRAW'
         ? 'Draw!'
-        : state.winner.kind === 'WIN'
-        ? state.winner.player === 1
+        : winner.kind === 'WIN'
+        ? winner.player === 1
           ? 'RED Wins!'
           : 'BLACK Wins!'
         : '';
 
-    ctx.fillText(title, W / 2, H / 2 - TILE * 0.15);
+    const titleGrad = ctx.createLinearGradient(cx - cardW * 0.28, 0, cx + cardW * 0.28, 0);
+    titleGrad.addColorStop(0, accentA);
+    titleGrad.addColorStop(1, accentB);
+    ctx.fillStyle = titleGrad;
+    ctx.font = `900 ${Math.round(TILE * 0.58)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.fillText(title, cx, cardY + cardH * 0.52);
 
     ctx.fillStyle = COLORS.textSub;
-    ctx.font = `600 ${Math.round(
-      TILE * 0.22
-    )}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-    ctx.fillText('Press R to restart · ESC to menu', W / 2, H / 2 + TILE * 0.32);
+    ctx.font = `600 ${Math.round(TILE * 0.2)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.fillText(
+      isDraw ? 'Single king vs single king' : 'Opponent has no legal moves',
+      cx,
+      cardY + cardH * 0.72
+    );
+
+    ctx.font = `600 ${Math.round(TILE * 0.18)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.fillText('Press R to restart · ESC to menu', cx, cardY + cardH * 0.84);
 
     ctx.restore();
   }

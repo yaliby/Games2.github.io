@@ -652,7 +652,8 @@ export default function CheckersGame() {
           g.anim.active = false;
 
           if (!g.inChainCapture) {
-            g.winner = getWinner(g.board, g.turn);
+            // Check terminal state for the side that should move next.
+            g.winner = getWinner(g.board, otherPlayer(g.turn));
             if (g.winner.kind === 'WIN') {
               g.msg = g.winner.player === RED ? 'RED wins!' : 'BLACK wins!';
               if (
@@ -669,6 +670,8 @@ export default function CheckersGame() {
                   });
                 }
               }
+            } else if (g.winner.kind === 'DRAW') {
+              g.msg = 'Draw!';
             } else {
               g.turn = otherPlayer(g.turn);
               g.selectedPos = null;

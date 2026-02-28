@@ -99,8 +99,9 @@ function getInterpolatedPoint(s: Snake, i: number, alpha: number): { x: number, 
 function drawSnake(ctx: CanvasRenderingContext2D, s: Snake, alpha: number) {
   if (s.points.length === 0) return;
 
-  // Draw body as "tiles" (circles) from tail to head
-  for (let i = s.points.length - 1; i >= 0; i--) {
+  // Draw body tiles from tail up to the neck segment.
+  // Head is drawn separately so we can place the neck tile above it.
+  for (let i = s.points.length - 1; i >= 1; i--) {
     const p = getInterpolatedPoint(s, i, alpha);
     
     ctx.beginPath();
@@ -109,9 +110,15 @@ function drawSnake(ctx: CanvasRenderingContext2D, s: Snake, alpha: number) {
     ctx.fill();
   }
 
+  // Draw head base tile.
+  const head = getInterpolatedPoint(s, 0, alpha);
+  ctx.beginPath();
+  ctx.arc(head.x, head.y, s.radius, 0, TAU);
+  ctx.fillStyle = s.color;
+  ctx.fill();
+
   // Boost indicator
   if (s.boosting) {
-    const head = getInterpolatedPoint(s, 0, alpha);
     const time = performance.now() / 1000;
     
     ctx.save();
@@ -155,9 +162,17 @@ function drawSnake(ctx: CanvasRenderingContext2D, s: Snake, alpha: number) {
     ctx.restore();
   }
 
-  // Draw Eyes on head
-  const head = getInterpolatedPoint(s, 0, alpha);
+  // Draw the tile right after the head on top of it to visually reduce head mass.
+  // Eyes are drawn afterward so they remain visible.
+  if (s.points.length > 1) {
+    const neck = getInterpolatedPoint(s, 1, alpha);
+    ctx.beginPath();
+    ctx.arc(neck.x, neck.y, s.radius, 0, TAU);
+    ctx.fillStyle = s.color;
+    ctx.fill();
+  }
 
+  // Draw Eyes on head
   // 3. Draw Eyes
   const dir = s._prevDir !== undefined ? lerp(s._prevDir, s.dir, alpha) : s.dir;
   

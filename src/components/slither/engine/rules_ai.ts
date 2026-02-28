@@ -46,7 +46,12 @@ const PELLET_EAT_PAD = 10;       // extra "magnet" radius for eating like Slithe
 // Combat
 const KILL_SPILL_MIN = 22;
 const KILL_SPILL_MAX = 180;
-const HEAD_COLLISION_RADIUS = 1.15; // head collision multiplier
+const HEAD_HITBOX_RADIUS = 0.95; // head hitbox is slightly smaller than body tiles
+const HEAD_PELLET_RADIUS = 1.15; // keep pellet pickup feel unchanged
+const HEAD_CLASH_FRONT_DOT = Math.cos((58 * Math.PI) / 180); // "front vision" cone
+const HEAD_CLASH_FACE_DOT = Math.cos((34 * Math.PI) / 180);  // strict face-to-face cone
+const HEAD_CLASH_OPPOSING_DOT = -0.55; // headings must be mostly opposite for HeadBust
+const HEAD_CLASH_TIE_EPS = 0.03;
 
 // Respawn
 const RESPAWN_SECONDS = 1.15;
@@ -268,8 +273,62 @@ function follow(points: Vec[], spacing: number) {
   }
 }
 
-function headRadius(s: Snake) {
-  return s.radius * HEAD_COLLISION_RADIUS;
+function headHitboxRadius(s: Snake) {
+  return s.radius * HEAD_HITBOX_RADIUS;
+}
+
+function headPelletRadius(s: Snake) {
+  return s.radius * HEAD_PELLET_RADIUS;
+}
+
+function snakeForward(s: Snake): Vec {
+  const vx = s.velX;
+  const vy = s.velY;
+  const v2 = vx * vx + vy * vy;
+  if (v2 > 1e-6) {
+    const inv = 1 / Math.sqrt(v2);
+    return { x: vx * inv, y: vy * inv };
+  }
+
+  if (s.points.length > 1) {
+    const head = s.points[0];
+    const neck = s.points[1];
+    const dx = head.x - neck.x;
+    const dy = head.y - neck.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > 1e-6) {
+      const inv = 1 / Math.sqrt(d2);
+      return { x: dx * inv, y: dy * inv };
+    }
+  }
+
+  return { x: Math.cos(s.dir), y: Math.sin(s.dir) };
+}
+
+function dotHeadToward(s: Snake, target: Vec): number {
+  const head = s.points[0];
+  if (!head) return -1;
+  const dx = target.x - head.x;
+  const dy = target.y - head.y;
+  const d2 = dx * dx + dy * dy;
+  if (d2 <= 1e-6) return 1;
+  const inv = 1 / Math.sqrt(d2);
+  const fwd = snakeForward(s);
+  return fwd.x * (dx * inv) + fwd.y * (dy * inv);
+}
+
+function dotMoveToward(px: number, py: number, x: number, y: number, tx: number, ty: number): number {
+  const mx = x - px;
+  const my = y - py;
+  const m2 = mx * mx + my * my;
+  if (m2 <= 1e-6) return 0;
+
+  const dx = tx - x;
+  const dy = ty - y;
+  const d2 = dx * dx + dy * dy;
+  if (d2 <= 1e-6) return 0;
+
+  return (mx * dx + my * dy) / Math.sqrt(m2 * d2);
 }
 
 // -------------------- Pellets --------------------
@@ -450,7 +509,7 @@ function fillPellets(world: World) {
 
 function checkPelletEat(world: World, s: Snake) {
   const head = s.points[0];
-  const r = headRadius(s) + PELLET_EAT_PAD;
+  const r = headPelletRadius(s) + PELLET_EAT_PAD;
   const dt = world._dtLast ?? 0.016;
   let moved = false;
 
@@ -1143,22 +1202,78 @@ function checkSnakeCollisions(world: World) {
         const d2Now = dist2(h1, h2);
         const d2Swept = dist2SegmentSegment(h1px, h1py, h1.x, h1.y, h2px, h2py, h2.x, h2.y);
         if (d2Now <= rSum * rSum || d2Swept <= rSum * rSum) {
-          const headBustEnabled = world.headBustEnabled !== false;
-          // Player-involved head clash is resolved in the HEADBUST screen.
-          if (headBustEnabled && (s1.isPlayer || s2.isPlayer)) {
-            queueHeadBust(world, s1, s2);
-            return;
-          }
+          const s1TowardS2 = dotHeadToward(s1, h2);
+          const s2TowardS1 = dotHeadToward(s2, h1);
+          const s1SeesS2Front = s1TowardS2 >= HEAD_CLASH_FRONT_DOT;
+          const s2SeesS1Front = s2TowardS1 >= HEAD_CLASH_FRONT_DOT;
+          const f1 = snakeForward(s1);
+          const f2 = snakeForward(s2);
+          const headingDot = f1.x * f2.x + f1.y * f2.y;
+          const faceToFace =
+            s1TowardS2 >= HEAD_CLASH_FACE_DOT &&
+            s2TowardS1 >= HEAD_CLASH_FACE_DOT &&
+            headingDot <= HEAD_CLASH_OPPOSING_DOT;
 
-          // No-headbust mode: head-to-head collision kills both snakes immediately.
-          if (!headBustEnabled) {
-            killSnake(world, s1, null);
-            killSnake(world, s2, null);
+          const headBustEnabled = world.headBustEnabled !== false;
+
+          // True face-to-face collisions are rare and are the only ones that can trigger HeadBust.
+          if (faceToFace) {
+            // Player-involved head clash is resolved in the HEADBUST screen.
+            if (headBustEnabled && (s1.isPlayer || s2.isPlayer)) {
+              queueHeadBust(world, s1, s2);
+              return;
+            }
+
+            // No-headbust mode: face-to-face collision kills both snakes immediately.
+            if (!headBustEnabled) {
+              killSnake(world, s1, null);
+              killSnake(world, s2, null);
+              continue;
+            }
+
+            // HeadBust mode keeps bot-vs-bot clashes decisive (one winner survives).
+            resolveBotHeadBust(world, s1, s2);
             continue;
           }
 
-          // HeadBust mode keeps bot-vs-bot clashes decisive (one winner survives).
-          resolveBotHeadBust(world, s1, s2);
+          // Non face-to-face contact: side/back hit on a head means the rammer dies.
+          if (!s1SeesS2Front && s2SeesS1Front) {
+            killSnake(world, s2, s1);
+            continue;
+          }
+          if (!s2SeesS1Front && s1SeesS2Front) {
+            killSnake(world, s1, s2);
+            continue;
+          }
+
+          // Ambiguous edge cases: attacker is the one moving/pointing more into the other head.
+          if (s1TowardS2 > s2TowardS1 + HEAD_CLASH_TIE_EPS) {
+            killSnake(world, s1, s2);
+            continue;
+          }
+          if (s2TowardS1 > s1TowardS2 + HEAD_CLASH_TIE_EPS) {
+            killSnake(world, s2, s1);
+            continue;
+          }
+
+          const s1MoveTowardS2 = dotMoveToward(h1px, h1py, h1.x, h1.y, h2.x, h2.y);
+          const s2MoveTowardS1 = dotMoveToward(h2px, h2py, h2.x, h2.y, h1.x, h1.y);
+          if (s1MoveTowardS2 > s2MoveTowardS1 + HEAD_CLASH_TIE_EPS) {
+            killSnake(world, s1, s2);
+            continue;
+          }
+          if (s2MoveTowardS1 > s1MoveTowardS2 + HEAD_CLASH_TIE_EPS) {
+            killSnake(world, s2, s1);
+            continue;
+          }
+
+          // Last-resort fallback for perfectly symmetric touches.
+          if (!headBustEnabled) {
+            killSnake(world, s1, null);
+            killSnake(world, s2, null);
+          } else {
+            resolveBotHeadBust(world, s1, s2);
+          }
         }
       }
   }
@@ -1172,7 +1287,7 @@ function checkSnakeCollisions(world: World) {
     const head = s.points[0];
     if (!head) continue;
 
-    const hr = headRadius(s);
+    const hr = headHitboxRadius(s);
     const hr2Base = hr * hr;
 
     const cx = clamp(Math.floor((head.x + world.radius) / grid.cellSize), 0, grid.cols - 1);

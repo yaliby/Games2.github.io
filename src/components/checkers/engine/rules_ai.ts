@@ -399,8 +399,9 @@ export function applyMove(
 
 // Check if game is over
 export function getWinner(board: Board, currentPlayer: Player): Winner {
-  const redPieces = countPieces(board, RED);
-  const blackPieces = countPieces(board, BLACK);
+  const material = countMaterial(board);
+  const redPieces = material.redMen + material.redKings;
+  const blackPieces = material.blackMen + material.blackKings;
 
   if (redPieces === 0) {
     return { kind: 'WIN', player: BLACK };
@@ -409,33 +410,60 @@ export function getWinner(board: Board, currentPlayer: Player): Winner {
     return { kind: 'WIN', player: RED };
   }
 
-  // Check if current player has any legal moves
-  const moves = getAllMoves(board, currentPlayer);
-  if (moves.length === 0) {
-    return { kind: 'WIN', player: otherPlayer(currentPlayer) };
-  }
-
-  // Check for draw (very rare in checkers, but possible)
-  // For simplicity, we'll consider it a draw if both players have no moves
-  // (though this is extremely unlikely)
-  const otherMoves = getAllMoves(board, otherPlayer(currentPlayer));
-  if (moves.length === 0 && otherMoves.length === 0) {
+  // Requested draw rule: a single king versus a single king is an automatic draw.
+  if (
+    material.redMen === 0 &&
+    material.blackMen === 0 &&
+    material.redKings === 1 &&
+    material.blackKings === 1
+  ) {
     return { kind: 'DRAW' };
   }
+
+  const other = otherPlayer(currentPlayer);
+
+  // If one side is stuck, the other side wins.
+  const currentMoves = getAllMoves(board, currentPlayer);
+  const otherMoves = getAllMoves(board, other);
+
+  if (currentMoves.length === 0 && otherMoves.length === 0) {
+    return { kind: 'DRAW' };
+  }
+  if (currentMoves.length === 0) return { kind: 'WIN', player: other };
+  if (otherMoves.length === 0) return { kind: 'WIN', player: currentPlayer };
 
   return { kind: 'NONE' };
 }
 
-function countPieces(board: Board, player: Player): number {
-  let count = 0;
+function countMaterial(board: Board): {
+  redMen: number;
+  redKings: number;
+  blackMen: number;
+  blackKings: number;
+} {
+  const material = {
+    redMen: 0,
+    redKings: 0,
+    blackMen: 0,
+    blackKings: 0
+  };
+
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      if (isPlayerPiece(board[r][c], player)) {
-        count++;
+      const cell = board[r][c];
+      if (cell === RED_MAN) {
+        material.redMen++;
+      } else if (cell === RED_KING) {
+        material.redKings++;
+      } else if (cell === BLACK_MAN) {
+        material.blackMen++;
+      } else if (cell === BLACK_KING) {
+        material.blackKings++;
       }
     }
   }
-  return count;
+
+  return material;
 }
 
 export function isDraw(board: Board): boolean {

@@ -9,11 +9,35 @@ export function updateMedalTooltipPlacement(medalElement: HTMLElement) {
   medalElement.style.setProperty("--tooltip-shift-x", "0px");
 
   const medalRect = medalElement.getBoundingClientRect();
+  const computedDisplay = window.getComputedStyle(tooltipElement).display;
+  const prevInlineDisplay = tooltipElement.style.display;
+  const prevInlineVisibility = tooltipElement.style.visibility;
+
+  if (computedDisplay === "none") {
+    tooltipElement.style.display = "block";
+    tooltipElement.style.visibility = "hidden";
+  }
+
   const tooltipRect = tooltipElement.getBoundingClientRect();
 
-  const requiredTopSpace = tooltipRect.height + TOOLTIP_OFFSET;
-  const topSpace = medalRect.top;
-  const shouldPlaceBottom = topSpace < requiredTopSpace;
+  if (computedDisplay === "none") {
+    tooltipElement.style.display = prevInlineDisplay;
+    tooltipElement.style.visibility = prevInlineVisibility;
+  }
+
+  const requiredSpace = tooltipRect.height + TOOLTIP_OFFSET;
+  const topSpace = medalRect.top - VIEWPORT_PADDING;
+  const bottomSpace = window.innerHeight - medalRect.bottom - VIEWPORT_PADDING;
+  const fitsTop = topSpace >= requiredSpace;
+  const fitsBottom = bottomSpace >= requiredSpace;
+
+  let shouldPlaceBottom = false;
+  if (!fitsTop && fitsBottom) {
+    shouldPlaceBottom = true;
+  } else if (!fitsTop && !fitsBottom) {
+    // If neither side fully fits, prefer the side with more available space.
+    shouldPlaceBottom = bottomSpace > topSpace;
+  }
 
   medalElement.dataset.tooltipPlacement = shouldPlaceBottom ? "bottom" : "top";
 

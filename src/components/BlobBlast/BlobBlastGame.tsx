@@ -9,6 +9,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../../services/firebase";
 import { submitBlobBlastScore } from "../../services/scoreService";
+import UserBox from "../UserBox/UserBox";
 import "./BlobBlastGame.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,13 +29,15 @@ interface Bullet {
   vx: number;
   r: number;
   hue: number; // for coloring (powerup tinted)
+  kind?: "normal" | "laser" | "missile";
+  pierce?: number;
 }
 
 interface Ball {
   id: number;
   x: number;
   y: number;
-  laneY: number;
+  laneY: number; // target apex Y for floor rebounds (field name kept for save compatibility)
   carrierKind?: PowerUpKind;
   vx: number;
   vy: number;
@@ -93,6 +96,10 @@ interface World {
   shieldArmed: boolean;  // shield is waiting for first hit (no decay yet)
   rapidTimer: number;
   multiTimer: number;
+  laserTimer: number;
+  missileTimer: number;
+  overdriveTimer: number;
+  specialShotTick: number;
   combo: number;
   comboTimer: number;
   screenShake: number;
@@ -130,7 +137,7 @@ const BULLET_SPEED = -720;
 const BULLET_RADIUS = 5;
 const MAX_BULLETS = 260;
 
-const GRAVITY = 540;
+const GRAVITY = 400;
 // Strict cap — new spawns AND split children both honour this.
 const MAX_BALLS = 20;
 const BALL_CAP_START = 6;
@@ -139,7 +146,15 @@ const FRONTLINE_MIN_CAP = 2;
 const FRONTLINE_MAX_CAP = 6;
 const FRONTLINE_Y = FLOOR_Y - 230;
 const FRONTLINE_X = 140;
-const MIN_SIDE_SPEED = 10;
+const MIN_SIDE_SPEED = 28;
+const DANGER_CORRIDOR_X = 118;
+const DANGER_ZONE_TOP = FRONTLINE_Y - 30;
+const DANGER_ZONE_BOTTOM = FLOOR_Y + 22;
+const DANGER_ZONE_SOFT_CAP = 4;
+const CONGESTION_COOLDOWN_BOOST = 0.72;
+const LOCAL_REPULSION_MARGIN = 36;
+const LOCAL_REPULSION_STRENGTH = 190;
+const CROWD_PRESSURE_STRENGTH = 270;
 
 // Ball Blast-like physics (2D, gravity + floor bounce)
 const BALL_RESTITUTION_WALL = 0.92;
@@ -147,7 +162,10 @@ const BALL_RESTITUTION_FLOOR = 0.82;
 const BALL_FLOOR_FRICTION = 0.985;   // applied while touching ground
 const BALL_STOP_EPS = 22;            // px/s: small vertical bounces get clamped
 const FLOOR_COLLISION_Y = FLOOR_Y - 6;
-const MIN_BOUNCE_APEX_Y = HEIGHT * 0.5; // rebounds stay around half-screen max height
+const BOUNCE_APEX_CENTER_Y = HEIGHT * 0.5;
+const BOUNCE_APEX_UP_RELATIVE = 0.08; // relative to center->floor distance
+const BOUNCE_APEX_UP_MIN = 6;
+const BOUNCE_APEX_UP_MAX = 14;
 const BOUNCE_ENERGY_BOOST = 0.98;
 const POWERUP_FLOOR_STAY = 4;
 const BONUS_BASE_COOLDOWN = 6.4;
@@ -160,6 +178,12 @@ const BONUS_COLLECT_SCORE = 35;
 const SHIELD_BREAK_DURATION = 3;
 const RAPID_DURATION = 8;
 const MULTI_DURATION = 9;
+const LASER_DURATION = 6;
+const MISSILE_DURATION = 6;
+const OVERDRIVE_DURATION = 7;
+const LASER_BASE_PIERCE = 4;
+const MISSILE_HOMING_SPEED = 560;
+const MISSILE_HOMING_STEER = 5.5;
 
 const TRAIL_MAX = 9;
 
@@ -255,6 +279,11 @@ function normalizeBullet(value: unknown): Bullet | null {
   const vx = finiteNumber(value.vx, Number.NaN);
   const r = finiteNumber(value.r, BULLET_RADIUS);
   const hue = finiteNumber(value.hue, 55);
+  const kind =
+    value.kind === "laser" || value.kind === "missile" || value.kind === "normal"
+      ? value.kind
+      : "normal";
+  const rawPierce = Math.floor(finiteNumber(value.pierce, kind === "laser" ? LASER_BASE_PIERCE : 0));
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(vx) || !Number.isFinite(vy)) return null;
   return {
     x,
@@ -265,6 +294,8 @@ function normalizeBullet(value: unknown): Bullet | null {
     vx,
     r: clamp(r, 1, 40),
     hue,
+    kind,
+    pierce: clamp(rawPierce, 0, 12),
   };
 }
 
@@ -282,10 +313,14 @@ function normalizeBall(value: unknown): Ball | null {
   const id = Math.max(1, Math.floor(finiteNumber(value.id, 0)));
   const x = finiteNumber(value.x, Number.NaN);
   const y = finiteNumber(value.y, Number.NaN);
-  const laneY = finiteNumber(value.laneY, y);
+  const r = clamp(finiteNumber(value.r, 18), 8, 120);
+  const laneYCandidate = finiteNumber(value.laneY, Number.NaN);
+  const laneY = Number.isFinite(laneYCandidate)
+    && isValidBounceApexY(r, laneYCandidate)
+    ? laneYCandidate
+    : randomBounceApexY(r);
   const vx = finiteNumber(value.vx, Number.NaN);
   const vy = finiteNumber(value.vy, Number.NaN);
-  const r = clamp(finiteNumber(value.r, 18), 8, 120);
   const hp = Math.max(1, Math.floor(finiteNumber(value.hp, 1)));
   const maxHp = Math.max(hp, Math.floor(finiteNumber(value.maxHp, hp)));
   const flashTimer = Math.max(0, finiteNumber(value.flashTimer, 0));
@@ -425,6 +460,10 @@ function normalizeWorldSnapshot(value: unknown): World | null {
   world.shieldArmed = Boolean(value.shieldArmed);
   world.rapidTimer = Math.max(0, finiteNumber(value.rapidTimer, 0));
   world.multiTimer = Math.max(0, finiteNumber(value.multiTimer, 0));
+  world.laserTimer = Math.max(0, finiteNumber(value.laserTimer, 0));
+  world.missileTimer = Math.max(0, finiteNumber(value.missileTimer, 0));
+  world.overdriveTimer = Math.max(0, finiteNumber(value.overdriveTimer, 0));
+  world.specialShotTick = Math.max(0, Math.floor(finiteNumber(value.specialShotTick, 0)));
   world.combo = Math.max(0, Math.floor(finiteNumber(value.combo, 0)));
   world.comboTimer = Math.max(0, finiteNumber(value.comboTimer, 0));
   world.screenShake = Math.max(0, finiteNumber(value.screenShake, 0));
@@ -701,6 +740,71 @@ function countFrontlineBalls(world: World): number {
   return count;
 }
 
+function countDangerZoneBalls(world: World): number {
+  let count = 0;
+  for (const ball of world.balls) {
+    const inDangerX = Math.abs(ball.x - world.playerX) <= DANGER_CORRIDOR_X;
+    const inDangerY = ball.y + ball.r >= DANGER_ZONE_TOP && ball.y - ball.r <= DANGER_ZONE_BOTTOM;
+    if (inDangerX && inDangerY) count += 1;
+  }
+  return count;
+}
+
+function applyAntiOvercrowdForces(world: World, dt: number): void {
+  const balls = world.balls;
+  if (balls.length < 2) return;
+
+  const dangerCount = countDangerZoneBalls(world);
+  if (dangerCount > DANGER_ZONE_SOFT_CAP) {
+    const overload = dangerCount - DANGER_ZONE_SOFT_CAP;
+    const sidePushBase = (CROWD_PRESSURE_STRENGTH + world.level * 12) * Math.min(2, 1 + overload * 0.3);
+    for (const ball of balls) {
+      const inDangerY = ball.y + ball.r >= DANGER_ZONE_TOP && ball.y - ball.r <= DANGER_ZONE_BOTTOM;
+      if (!inDangerY) continue;
+      const dxPlayer = ball.x - world.playerX;
+      if (Math.abs(dxPlayer) > DANGER_CORRIDOR_X * 1.05) continue;
+
+      const side = Math.abs(dxPlayer) < 0.8 ? (ball.id % 2 === 0 ? -1 : 1) : Math.sign(dxPlayer);
+      const corridorRatio = 1 - clamp(Math.abs(dxPlayer) / DANGER_CORRIDOR_X, 0, 1);
+      const sidePush = sidePushBase * corridorRatio;
+      ball.vx += side * sidePush * dt;
+      ball.vy -= (90 + overload * 26) * corridorRatio * dt;
+    }
+  }
+
+  // Soft local repulsion to prevent "traffic jams" while keeping motion organic.
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      const a = balls[i];
+      const b = balls[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distSq = dx * dx + dy * dy;
+      const range = a.r + b.r + LOCAL_REPULSION_MARGIN;
+      const rangeSq = range * range;
+      if (distSq >= rangeSq) continue;
+
+      const dist = Math.sqrt(Math.max(0.0001, distSq));
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const proximity = 1 - dist / range;
+      const impulse = LOCAL_REPULSION_STRENGTH * proximity * proximity;
+      const groundBias = (a.y > FRONTLINE_Y || b.y > FRONTLINE_Y) ? 1.35 : 1;
+
+      a.vx -= nx * impulse * dt;
+      b.vx += nx * impulse * dt;
+      const lift = Math.abs(ny) * impulse * 0.18 * groundBias * dt;
+      a.vy -= lift;
+      b.vy -= lift;
+    }
+  }
+
+  for (const ball of balls) {
+    ball.vx = clamp(ball.vx, -760, 760);
+    ball.vy = clamp(ball.vy, -980, 980);
+  }
+}
+
 function segmentIntersectsCircle(
   ax: number,
   ay: number,
@@ -730,11 +834,45 @@ function pickSpawnY(radius: number): number {
   return -radius - rand(30, 170);
 }
 
-function minBounceVyForHalfScreen(ballRadius: number): number {
+function bounceApexBounds(ballRadius: number): { minY: number; maxY: number } {
   const floorCenterY = FLOOR_COLLISION_Y - ballRadius;
-  const targetApexY = Math.min(MIN_BOUNCE_APEX_Y, floorCenterY - 8);
-  const travel = Math.max(8, floorCenterY - targetApexY);
+  const centerY = Math.min(BOUNCE_APEX_CENTER_Y, floorCenterY - 12);
+  const centerToFloor = Math.max(24, floorCenterY - centerY);
+  const upBand = clamp(
+    centerToFloor * BOUNCE_APEX_UP_RELATIVE,
+    BOUNCE_APEX_UP_MIN,
+    BOUNCE_APEX_UP_MAX
+  );
+  // Apex range is from screen middle and slightly upward only.
+  const minY = centerY - upBand;
+  const maxY = centerY;
+  return { minY, maxY };
+}
+
+function isValidBounceApexY(ballRadius: number, apexY: number): boolean {
+  const { minY, maxY } = bounceApexBounds(ballRadius);
+  return apexY >= minY && apexY <= maxY;
+}
+
+function randomBounceApexY(ballRadius: number): number {
+  const { minY, maxY } = bounceApexBounds(ballRadius);
+  return rand(minY, maxY);
+}
+
+function minBounceVyForApex(ballRadius: number, targetApexY: number): number {
+  const floorCenterY = FLOOR_COLLISION_Y - ballRadius;
+  const { minY, maxY } = bounceApexBounds(ballRadius);
+  const clampedApexY = clamp(targetApexY, minY, maxY);
+  const effectiveApexY = Math.min(clampedApexY, floorCenterY - 4);
+  const travel = Math.max(8, floorCenterY - effectiveApexY);
   return -Math.sqrt(2 * GRAVITY * travel) * BOUNCE_ENERGY_BOOST;
+}
+
+function ensureBallBounceApexY(ball: Ball): number {
+  if (!Number.isFinite(ball.laneY) || !isValidBounceApexY(ball.r, ball.laneY)) {
+    ball.laneY = randomBounceApexY(ball.r);
+  }
+  return ball.laneY;
 }
 
 function pushBullet(world: World, bullet: Bullet): void {
@@ -747,6 +885,52 @@ function pushBullet(world: World, bullet: Bullet): void {
 function randomPowerUpKind(): PowerUpKind {
   const kinds: PowerUpKind[] = ["shield", "rapid", "multi"];
   return kinds[Math.floor(Math.random() * kinds.length)];
+}
+
+function findClosestBall(balls: Ball[], x: number, y: number): Ball | null {
+  let best: Ball | null = null;
+  let bestDistSq = Number.POSITIVE_INFINITY;
+  for (const ball of balls) {
+    const dx = ball.x - x;
+    const dy = ball.y - y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      best = ball;
+    }
+  }
+  return best;
+}
+
+function applyCollectedPowerUp(world: World, kind: PowerUpKind): void {
+  if (kind === "shield") {
+    world.shieldArmed = true;
+    world.shieldTimer = SHIELD_BREAK_DURATION;
+    return;
+  }
+
+  if (kind === "rapid") {
+    const hadRapid = world.rapidTimer > 0;
+    const hadMulti = world.multiTimer > 0;
+    world.rapidTimer = Math.max(world.rapidTimer, RAPID_DURATION);
+    if (hadRapid) {
+      world.laserTimer = Math.max(world.laserTimer, LASER_DURATION);
+    }
+    if (hadMulti) {
+      world.overdriveTimer = Math.max(world.overdriveTimer, OVERDRIVE_DURATION);
+    }
+    return;
+  }
+
+  const hadRapid = world.rapidTimer > 0;
+  const hadMulti = world.multiTimer > 0;
+  world.multiTimer = Math.max(world.multiTimer, MULTI_DURATION);
+  if (hadMulti) {
+    world.missileTimer = Math.max(world.missileTimer, MISSILE_DURATION);
+  }
+  if (hadRapid) {
+    world.overdriveTimer = Math.max(world.overdriveTimer, OVERDRIVE_DURATION);
+  }
 }
 
 function countCarrierBalls(world: World): number {
@@ -768,6 +952,7 @@ function createWorld(): World {
     score: 0, elapsed: 0, level: 1,
     nextBallId: 1, nextPowerUpId: 1,
     shieldTimer: 0, shieldArmed: false, rapidTimer: 0, multiTimer: 0,
+    laserTimer: 0, missileTimer: 0, overdriveTimer: 0, specialShotTick: 0,
     combo: 0, comboTimer: 0,
     screenShake: 0, playerBobTime: 0,
   };
@@ -921,7 +1106,7 @@ function spawnBall(world: World, carrierKind?: PowerUpKind) {
   world.balls.push({
     id: world.nextBallId++,
     x, y,
-    laneY: y, // kept for backwards compatibility (no longer used for motion)
+    laneY: randomBounceApexY(r),
     carrierKind,
     vx, vy,
     r, hp, maxHp: hp,
@@ -950,7 +1135,7 @@ function splitBall(world: World, src: Ball, maxAllowedBalls: number): void {
       id: world.nextBallId++,
       x: clamp(src.x + dir * childR * 0.8, childR + 2, WIDTH - childR - 2),
       y: src.y - childR * 0.3,
-      laneY: src.y, // kept for backwards compatibility (no longer used for motion)
+      laneY: randomBounceApexY(childR),
       carrierKind: undefined,
       vx: dir * (baseH + rand(0, 55)),
       vy: -baseUp,
@@ -1039,16 +1224,74 @@ function resolveBallCollisions(balls: Ball[]) {
 
 // ─── Player hit check ─────────────────────────────────────────────────────────
 
-function checkPlayerHit(world: World): boolean {
-  const rectX = world.playerX - PLAYER_HALF_WIDTH;
-  const rectY = FLOOR_Y - 38;
-  const rectW = PLAYER_HALF_WIDTH * 2;
-  const rectH = 38;
+type PlayerHitShape =
+  | { kind: "circle"; x: number; y: number; r: number }
+  | { kind: "capsule"; x1: number; y1: number; x2: number; y2: number; r: number };
+
+function playerBaseY(world: Pick<World, "playerBobTime">): number {
+  return FLOOR_Y - 4 + Math.sin(world.playerBobTime * 4.5) * 1.5;
+}
+
+function getPlayerHitShapes(playerX: number, baseY: number, shipModel: ShipModel): PlayerHitShape[] {
+  if (shipModel === "arrow") {
+    return [
+      { kind: "capsule", x1: playerX, y1: baseY - 50, x2: playerX, y2: baseY - 16, r: 8.5 },
+      { kind: "circle", x: playerX - 12, y: baseY - 8, r: 7.2 },
+      { kind: "circle", x: playerX + 12, y: baseY - 8, r: 7.2 },
+      { kind: "capsule", x1: playerX, y1: baseY - 54, x2: playerX, y2: baseY - 50, r: 4.1 },
+    ];
+  }
+  if (shipModel === "orb") {
+    return [
+      { kind: "capsule", x1: playerX - 9, y1: baseY - 10, x2: playerX + 9, y2: baseY - 10, r: 18.6 },
+      { kind: "circle", x: playerX, y: baseY - 30, r: 8.6 },
+      { kind: "capsule", x1: playerX, y1: baseY - 52, x2: playerX, y2: baseY - 22, r: 4.8 },
+    ];
+  }
+  return [
+    { kind: "capsule", x1: playerX - 22, y1: baseY - 7, x2: playerX + 22, y2: baseY - 7, r: 8.4 },
+    { kind: "circle", x: playerX, y: baseY - 20, r: 11.2 },
+    { kind: "circle", x: playerX - 16, y: baseY - 8, r: 5.5 },
+    { kind: "circle", x: playerX + 16, y: baseY - 8, r: 5.5 },
+    { kind: "circle", x: playerX, y: baseY - 30, r: 8.8 },
+    { kind: "capsule", x1: playerX, y1: baseY - 52, x2: playerX, y2: baseY - 22, r: 5.1 },
+  ];
+}
+
+function pointSegmentDistanceSq(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const sx = x2 - x1;
+  const sy = y2 - y1;
+  const segLenSq = sx * sx + sy * sy;
+  if (segLenSq <= 1e-8) {
+    const dx = px - x1;
+    const dy = py - y1;
+    return dx * dx + dy * dy;
+  }
+  const t = clamp(((px - x1) * sx + (py - y1) * sy) / segLenSq, 0, 1);
+  const qx = x1 + sx * t;
+  const qy = y1 + sy * t;
+  const dx = px - qx;
+  const dy = py - qy;
+  return dx * dx + dy * dy;
+}
+
+function ballIntersectsPlayerShape(ball: Ball, shape: PlayerHitShape): boolean {
+  if (shape.kind === "circle") {
+    const dx = ball.x - shape.x;
+    const dy = ball.y - shape.y;
+    const r = ball.r + shape.r;
+    return dx * dx + dy * dy <= r * r;
+  }
+  const r = ball.r + shape.r;
+  return pointSegmentDistanceSq(ball.x, ball.y, shape.x1, shape.y1, shape.x2, shape.y2) <= r * r;
+}
+
+function checkPlayerHit(world: World, shipModel: ShipModel): boolean {
+  const hitShapes = getPlayerHitShapes(world.playerX, playerBaseY(world), shipModel);
   for (const ball of world.balls) {
-    const cx = clamp(ball.x, rectX, rectX + rectW);
-    const cy = clamp(ball.y, rectY, rectY + rectH);
-    const dx = ball.x - cx, dy = ball.y - cy;
-    if (dx * dx + dy * dy <= ball.r * ball.r) return true;
+    for (const shape of hitShapes) {
+      if (ballIntersectsPlayerShape(ball, shape)) return true;
+    }
   }
   return false;
 }
@@ -1059,7 +1302,8 @@ function updateWorld(
   world: World,
   dt: number,
   keys: KeyboardState,
-  ballCollisionEnabled: boolean
+  ballCollisionEnabled: boolean,
+  shipModel: ShipModel
 ) {
   world.elapsed += dt;
   world.level = 1 + Math.floor(world.elapsed / 18);
@@ -1080,6 +1324,9 @@ function updateWorld(
   }
   world.rapidTimer = Math.max(0, world.rapidTimer - dt);
   world.multiTimer = Math.max(0, world.multiTimer - dt);
+  world.laserTimer = Math.max(0, world.laserTimer - dt);
+  world.missileTimer = Math.max(0, world.missileTimer - dt);
+  world.overdriveTimer = Math.max(0, world.overdriveTimer - dt);
 
   // player movement
   if (!world.usePointer) {
@@ -1093,42 +1340,84 @@ function updateWorld(
 
   // shooting
   world.shotCooldown -= dt;
+  const rapidActive = world.rapidTimer > 0;
+  const multiActive = world.multiTimer > 0;
+  const laserActive = world.laserTimer > 0;
+  const missileActive = world.missileTimer > 0;
+  const overdriveActive = world.overdriveTimer > 0 || (rapidActive && multiActive);
   const baseInterval = Math.max(0.06, SHOOT_INTERVAL - (world.level - 1) * 0.003);
-  const interval = world.rapidTimer > 0 ? baseInterval * 0.38 : baseInterval;
-  const isMulti = world.multiTimer > 0;
+  let interval = rapidActive ? baseInterval * 0.38 : baseInterval;
+  if (overdriveActive) interval *= 0.84;
+  if (laserActive) interval *= 0.9;
+  interval = Math.max(0.028, interval);
+  const tripleShot = multiActive || overdriveActive;
   while (world.shotCooldown <= 0) {
-    const bHue = world.rapidTimer > 0 ? 45 : world.multiTimer > 0 ? 300 : 55;
+    world.specialShotTick += 1;
+    const bHue = laserActive
+      ? 52
+      : overdriveActive
+        ? 330
+        : rapidActive
+          ? 45
+          : multiActive
+            ? 300
+            : 55;
     pushBullet(world, {
       x: world.playerX,
       y: FLOOR_Y - 44,
       prevX: world.playerX,
       prevY: FLOOR_Y - 44,
-      vy: BULLET_SPEED,
+      vy: laserActive ? BULLET_SPEED * 1.25 : BULLET_SPEED,
       vx: 0,
-      r: BULLET_RADIUS,
+      r: laserActive ? BULLET_RADIUS + 2.3 : BULLET_RADIUS,
       hue: bHue,
+      kind: laserActive ? "laser" : "normal",
+      pierce: laserActive ? LASER_BASE_PIERCE : 0,
     });
-    if (isMulti) {
+    if (tripleShot) {
+      const spread = overdriveActive ? 92 : 60;
+      const sideRadius = laserActive ? BULLET_RADIUS + 1.1 : BULLET_RADIUS;
       pushBullet(world, {
         x: world.playerX - 16,
         y: FLOOR_Y - 36,
         prevX: world.playerX - 16,
         prevY: FLOOR_Y - 36,
-        vy: BULLET_SPEED * 0.96,
-        vx: -60,
-        r: BULLET_RADIUS,
+        vy: laserActive ? BULLET_SPEED * 1.15 : BULLET_SPEED * 0.96,
+        vx: -spread,
+        r: sideRadius,
         hue: bHue,
+        kind: laserActive ? "laser" : "normal",
+        pierce: laserActive ? Math.max(1, LASER_BASE_PIERCE - 1) : 0,
       });
       pushBullet(world, {
         x: world.playerX + 16,
         y: FLOOR_Y - 36,
         prevX: world.playerX + 16,
         prevY: FLOOR_Y - 36,
-        vy: BULLET_SPEED * 0.96,
-        vx: 60,
-        r: BULLET_RADIUS,
+        vy: laserActive ? BULLET_SPEED * 1.15 : BULLET_SPEED * 0.96,
+        vx: spread,
+        r: sideRadius,
         hue: bHue,
+        kind: laserActive ? "laser" : "normal",
+        pierce: laserActive ? Math.max(1, LASER_BASE_PIERCE - 1) : 0,
       });
+    }
+
+    if (missileActive && world.specialShotTick % 2 === 0) {
+      for (const dir of [-1, 1] as const) {
+        pushBullet(world, {
+          x: world.playerX + dir * 18,
+          y: FLOOR_Y - 34,
+          prevX: world.playerX + dir * 18,
+          prevY: FLOOR_Y - 34,
+          vy: BULLET_SPEED * 0.55,
+          vx: dir * 120,
+          r: BULLET_RADIUS + 1.4,
+          hue: 290,
+          kind: "missile",
+          pierce: 0,
+        });
+      }
     }
     world.shotCooldown += interval;
   }
@@ -1142,8 +1431,14 @@ function updateWorld(
       if (world.balls.length >= ballQuota.total) break;
 
       const frontlineCount = countFrontlineBalls(world);
+      const dangerCount = countDangerZoneBalls(world);
       if (frontlineCount >= ballQuota.frontline) {
         world.spawnCooldown += rand(0.22, 0.48);
+        break;
+      }
+      if (dangerCount > DANGER_ZONE_SOFT_CAP) {
+        const overload = dangerCount - DANGER_ZONE_SOFT_CAP;
+        world.spawnCooldown += rand(0.28, 0.56) * (1 + overload * 0.45);
         break;
       }
 
@@ -1157,8 +1452,11 @@ function updateWorld(
       }
       spawnBall(world, carrierKind);
       const pressure = world.balls.length / ballQuota.total;
+      const frontlineRatio = frontlineCount / Math.max(1, ballQuota.frontline);
+      const dangerRatio = dangerCount / Math.max(1, DANGER_ZONE_SOFT_CAP);
+      const congestion = Math.max(0, frontlineRatio - 0.85) + Math.max(0, dangerRatio - 0.9);
       const base = Math.max(0.55, 1.7 - world.level * 0.05);
-      world.spawnCooldown += rand(base * 0.82, base * 1.2) * (1 + pressure * 0.32);
+      world.spawnCooldown += rand(base * 0.82, base * 1.2) * (1 + pressure * 0.32 + congestion * CONGESTION_COOLDOWN_BOOST);
     }
   } else {
     world.spawnCooldown = Math.max(world.spawnCooldown, 0.22);
@@ -1169,9 +1467,28 @@ function updateWorld(
     const b = world.bullets[i];
     b.prevX = b.x;
     b.prevY = b.y;
+
+    if (b.kind === "missile") {
+      const target = findClosestBall(world.balls, b.x, b.y);
+      if (target) {
+        const dx = target.x - b.x;
+        const dy = target.y - b.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const desiredVx = (dx / len) * MISSILE_HOMING_SPEED;
+        const desiredVy = (dy / len) * MISSILE_HOMING_SPEED;
+        const steer = Math.min(1, MISSILE_HOMING_STEER * dt);
+        b.vx += (desiredVx - b.vx) * steer;
+        b.vy += (desiredVy - b.vy) * steer;
+      } else {
+        b.vy = Math.min(b.vy + GRAVITY * 0.12 * dt, -140);
+      }
+    }
+
     b.y += b.vy * dt;
     b.x += b.vx * dt;
-    if (b.y + b.r < -20 || b.x < -20 || b.x > WIDTH + 20) world.bullets.splice(i, 1);
+    if (b.y + b.r < -24 || b.y - b.r > HEIGHT + 40 || b.x < -28 || b.x > WIDTH + 28) {
+      world.bullets.splice(i, 1);
+    }
   }
 
   // update balls + trails (gravity + bounce)
@@ -1204,7 +1521,10 @@ function updateWorld(
 
       if (ball.vy > 0) {
         const dampedVy = -ball.vy * BALL_RESTITUTION_FLOOR;
-        const minRequiredVy = Math.min(minBounceVyForHalfScreen(ball.r), -BALL_STOP_EPS);
+        const minRequiredVy = Math.min(
+          minBounceVyForApex(ball.r, ensureBallBounceApexY(ball)),
+          -BALL_STOP_EPS
+        );
         // Hard rule: rebounds stay energetic and don't decay too low.
         ball.vy = Math.min(dampedVy, minRequiredVy);
       }
@@ -1213,8 +1533,9 @@ function updateWorld(
       ball.vx *= BALL_FLOOR_FRICTION;
 
       // keep balls from getting "stuck" in place on the floor
-      if (Math.abs(ball.vx) < MIN_SIDE_SPEED && Math.abs(ball.vy) < 2) {
-        ball.vx = (ball.vx >= 0 ? 1 : -1) * MIN_SIDE_SPEED;
+      if (Math.abs(ball.vx) < MIN_SIDE_SPEED) {
+        const direction = Math.abs(ball.vx) < 0.5 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(ball.vx);
+        ball.vx = direction * MIN_SIDE_SPEED;
       }
     }
 
@@ -1227,6 +1548,7 @@ function updateWorld(
   if (ballCollisionEnabled) {
     resolveBallCollisions(world.balls);
   }
+  applyAntiOvercrowdForces(world, dt);
 
   // update power-ups
   for (let i = world.powerUps.length - 1; i >= 0; i--) {
@@ -1260,34 +1582,35 @@ function updateWorld(
     if (dx * dx + dy * dy < pickupRadius * pickupRadius) {
       world.powerUps.splice(i, 1);
       world.score += BONUS_COLLECT_SCORE;
-      if (pu.kind === "shield") {
-        world.shieldArmed = true;
-        world.shieldTimer = SHIELD_BREAK_DURATION;
-      }
-      else if (pu.kind === "rapid")   { world.rapidTimer = RAPID_DURATION; }
-      else if (pu.kind === "multi")   { world.multiTimer = MULTI_DURATION; }
+      applyCollectedPowerUp(world, pu.kind);
     }
   }
 
   // bullet-ball collision
   for (let i = world.bullets.length - 1; i >= 0; i--) {
     const bullet = world.bullets[i];
+    const kind = bullet.kind ?? "normal";
+    const damage = kind === "laser" ? 2 : kind === "missile" ? 2 : 1;
     const fromX = bullet.prevX ?? bullet.x;
     const fromY = bullet.prevY ?? bullet.y;
     const toX = bullet.x;
     const toY = bullet.y;
-    let hit = false;
+    let removeBullet = false;
     for (let j = world.balls.length - 1; j >= 0; j--) {
       const ball = world.balls[j];
       const collisionRadius = bullet.r + ball.r;
       if (!segmentIntersectsCircle(fromX, fromY, toX, toY, ball.x, ball.y, collisionRadius)) {
         continue;
       }
-      hit = true;
+      removeBullet = true;
       const impactHue = currentBallHue(ball);
-      ball.hp -= 1;
+      ball.hp -= damage;
       ball.flashTimer = 0.07;
       spawnHitSpark(world, toX, toY, impactHue);
+      if (kind === "missile") {
+        spawnExplosion(world, toX, toY, Math.max(10, bullet.r * 2.6), 292);
+        world.screenShake = Math.min(world.screenShake + 0.16, 0.85);
+      }
       if (ball.hp <= 0) {
         world.combo++;
         world.comboTimer = 2.2;
@@ -1306,13 +1629,18 @@ function updateWorld(
         }
         splitBall(world, destroyed, ballQuota.total);
       }
+
+      if (kind === "laser" && (bullet.pierce ?? 0) > 0) {
+        bullet.pierce = Math.max(0, (bullet.pierce ?? 0) - 1);
+        removeBullet = false;
+      }
       break;
     }
-    if (hit) world.bullets.splice(i, 1);
+    if (removeBullet) world.bullets.splice(i, 1);
   }
 
   // player hit
-  if (checkPlayerHit(world) && world.safeTimer <= 0) {
+  if (checkPlayerHit(world, shipModel) && world.safeTimer <= 0) {
     if (world.shieldTimer > 0) {
       if (world.shieldArmed) {
         // First impact consumes the shield and starts the 3s blinking decay.
@@ -1496,6 +1824,73 @@ function drawBackground(ctx: CanvasRenderingContext2D, time: number, visualMode:
   drawGroundTexture(ctx, time, theme, visualMode);
 }
 
+function drawCannonBarrel(
+  ctx: CanvasRenderingContext2D,
+  px: number,
+  baseY: number,
+  theme: VisualTheme,
+  time: number,
+  shipModel: ShipModel
+): number {
+  const halfW = shipModel === "arrow" ? 4.4 : shipModel === "orb" ? 4.8 : 5.2;
+  const top = baseY - 52;
+  const bottom = shipModel === "arrow" ? baseY - 20 : baseY - 22;
+  const left = px - halfW;
+  const width = halfW * 2;
+  const height = bottom - top;
+
+  const barrelGrad = ctx.createLinearGradient(left, top, left + width, bottom);
+  barrelGrad.addColorStop(0, "rgba(240,252,255,0.95)");
+  barrelGrad.addColorStop(0.35, theme.shipSecondary);
+  barrelGrad.addColorStop(1, "#28486b");
+  ctx.fillStyle = barrelGrad;
+  ctx.beginPath();
+  ctx.roundRect(left, top, width, height, 3.5);
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(left + 0.5, top + 0.5, width - 1, height - 1, 3);
+  ctx.clip();
+  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.lineWidth = 1;
+  const stripeOffset = (time * 36) % 6;
+  for (let y = top + 4 + stripeOffset; y < bottom + 5; y += 6) {
+    ctx.beginPath();
+    ctx.moveTo(left - 2, y);
+    ctx.lineTo(left + width + 2, y - 2.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(16,34,56,0.45)";
+  ctx.fillRect(left + 0.7, top + 4.5, width - 1.4, 1.4);
+  ctx.fillRect(left + 0.7, top + height * 0.58, width - 1.4, 1.4);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.46)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left + 1.1, top + 1.6);
+  ctx.lineTo(left + 1.1, bottom - 1.6);
+  ctx.stroke();
+
+  const muzzleY = top + 0.8;
+  const rimGrad = ctx.createLinearGradient(px - halfW, muzzleY - 2, px + halfW, muzzleY + 2);
+  rimGrad.addColorStop(0, "#f8fcff");
+  rimGrad.addColorStop(0.55, theme.shipSecondary);
+  rimGrad.addColorStop(1, "#355f8c");
+  ctx.fillStyle = rimGrad;
+  ctx.beginPath();
+  ctx.ellipse(px, muzzleY, halfW + 1.5, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(10,16,26,0.8)";
+  ctx.beginPath();
+  ctx.ellipse(px, muzzleY, Math.max(1.4, halfW - 1.8), 1.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  return muzzleY;
+}
+
 function drawPlayer(
   ctx: CanvasRenderingContext2D,
   world: World,
@@ -1505,8 +1900,7 @@ function drawPlayer(
 ) {
   const theme = getVisualTheme(visualMode);
   const px = world.playerX;
-  const bob = Math.sin(world.playerBobTime * 4.5) * 1.5;
-  const baseY = FLOOR_Y - 4 + bob;
+  const baseY = playerBaseY(world);
 
   // engine flame glow
   const flamePulse = 0.7 + Math.sin(time * 18) * 0.3;
@@ -1553,6 +1947,24 @@ function drawPlayer(
     ctx.moveTo(px, baseY - 52);
     ctx.lineTo(px, baseY - 2);
     ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(px - 14, baseY - 6);
+    ctx.lineTo(px, baseY - 18);
+    ctx.lineTo(px + 14, baseY - 6);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = "rgba(24,8,34,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, baseY - 44);
+    ctx.lineTo(px, baseY - 10);
+    ctx.stroke();
+    ctx.restore();
   } else if (shipModel === "orb") {
     const orbGrad = ctx.createRadialGradient(px - 8, baseY - 18, 3, px, baseY - 10, 27);
     orbGrad.addColorStop(0, theme.shipSecondary);
@@ -1567,6 +1979,14 @@ function drawPlayer(
     ctx.beginPath();
     ctx.arc(px, baseY - 10, 18, 0, Math.PI * 2);
     ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 1;
+    for (const y of [-8, -2, 4]) {
+      ctx.beginPath();
+      ctx.ellipse(px, baseY - 10 + y, 21 - Math.abs(y) * 0.8, 4.6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   } else {
     const hullGrad = ctx.createLinearGradient(px - 30, baseY - 18, px + 30, baseY);
     hullGrad.addColorStop(0, theme.shipPrimary);
@@ -1586,14 +2006,25 @@ function drawPlayer(
     ctx.beginPath();
     ctx.ellipse(px - 4, baseY - 13, 16, 5, -0.2, 0, Math.PI * 2);
     ctx.fill();
-    const cannGrad = ctx.createLinearGradient(px - 4, baseY - 44, px + 4, baseY - 22);
-    cannGrad.addColorStop(0, "#c8e8ff");
-    cannGrad.addColorStop(1, "#3a6898");
-    ctx.fillStyle = cannGrad;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.24)";
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
-    ctx.roundRect(px - 5, baseY - 48, 10, 24, 4);
-    ctx.fill();
+    ctx.moveTo(px - 20, baseY - 7);
+    ctx.lineTo(px - 7, baseY - 16);
+    ctx.moveTo(px + 20, baseY - 7);
+    ctx.lineTo(px + 7, baseY - 16);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(18,46,72,0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px - 23, baseY - 2);
+    ctx.lineTo(px + 23, baseY - 2);
+    ctx.stroke();
   }
+
+  const muzzleY = drawCannonBarrel(ctx, px, baseY, theme, time, shipModel);
 
   const cockGrad = ctx.createRadialGradient(px - 3, baseY - 30, 2, px, baseY - 28, 10);
   cockGrad.addColorStop(0, theme.cockpitA);
@@ -1605,12 +2036,12 @@ function drawPlayer(
   ctx.fill();
 
   // muzzle glow
-  const muzzleGrad = ctx.createRadialGradient(px, baseY - 48, 0, px, baseY - 48, 10);
-  muzzleGrad.addColorStop(0, "rgba(200,240,255,0.8)");
+  const muzzleGrad = ctx.createRadialGradient(px, muzzleY, 0, px, muzzleY, 10);
+  muzzleGrad.addColorStop(0, "rgba(200,240,255,0.84)");
   muzzleGrad.addColorStop(1, "rgba(80,180,255,0)");
   ctx.fillStyle = muzzleGrad;
   ctx.beginPath();
-  ctx.arc(px, baseY - 48, 10, 0, Math.PI * 2);
+  ctx.arc(px, muzzleY, 10, 0, Math.PI * 2);
   ctx.fill();
 
   // shield
@@ -1638,16 +2069,67 @@ function drawPlayer(
 function drawBullets(ctx: CanvasRenderingContext2D, bullets: Bullet[], time: number) {
   for (const b of bullets) {
     const flicker = 0.78 + Math.sin(time * 26 + b.x * 0.05 + b.y * 0.08) * 0.22;
-    // glow
+    const kind = b.kind ?? "normal";
+
+    if (kind === "laser") {
+      const lg = ctx.createLinearGradient(b.x, b.y + 18, b.x, b.y - 22);
+      lg.addColorStop(0, `hsla(${b.hue - 6}, 100%, 62%, 0)`);
+      lg.addColorStop(0.45, `hsla(${b.hue + 20}, 100%, 72%, ${0.32 + flicker * 0.28})`);
+      lg.addColorStop(1, `hsla(${b.hue + 35}, 100%, 94%, ${0.88})`);
+      ctx.strokeStyle = lg;
+      ctx.lineWidth = Math.max(2.4, b.r * 0.95);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y + 16);
+      ctx.lineTo(b.x, b.y - 20);
+      ctx.stroke();
+
+      ctx.fillStyle = `hsla(${b.hue + 36}, 100%, 95%, 1)`;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y - 1.5, Math.max(2.2, b.r * 0.55), 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
+
+    if (kind === "missile") {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      const angle = Math.atan2(b.vy, b.vx) + Math.PI / 2;
+      ctx.rotate(angle);
+      const bodyGrad = ctx.createLinearGradient(0, -b.r * 2.2, 0, b.r * 2.2);
+      bodyGrad.addColorStop(0, "rgba(255,170,255,0.95)");
+      bodyGrad.addColorStop(0.55, `hsla(${b.hue + 25}, 96%, 66%, 0.96)`);
+      bodyGrad.addColorStop(1, "rgba(90,35,130,0.95)");
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.moveTo(0, -b.r * 2.3);
+      ctx.lineTo(b.r * 0.85, b.r * 1.15);
+      ctx.lineTo(0, b.r * 0.75);
+      ctx.lineTo(-b.r * 0.85, b.r * 1.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath();
+      ctx.arc(0, -b.r * 1.25, b.r * 0.36, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = `hsla(${b.hue}, 100%, 74%, ${0.44 + flicker * 0.2})`;
+      ctx.lineWidth = Math.max(1.6, b.r * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y + b.r * 1.2);
+      ctx.lineTo(b.x - b.vx * 0.03, b.y - b.vy * 0.03 + 16);
+      ctx.stroke();
+      continue;
+    }
+
+    // normal bullet
     const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 3.5);
     glow.addColorStop(0, `hsla(${b.hue + 20}, 100%, 92%, ${0.85 * flicker})`);
     glow.addColorStop(1, `hsla(${b.hue}, 100%, 70%, 0)`);
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 3.5, 0, Math.PI * 2); ctx.fill();
-    // core
     ctx.fillStyle = `hsla(${b.hue + 30}, 100%, ${92 + flicker * 6}%, 1)`;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
-    // trail
     ctx.strokeStyle = `hsla(${b.hue}, 100%, 80%, ${0.35 + flicker * 0.2})`;
     ctx.lineWidth = b.r * 0.8;
     ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * 0.02, b.y + 14); ctx.stroke();
@@ -2162,6 +2644,9 @@ function drawHUD(ctx: CanvasRenderingContext2D, world: World) {
   }
   if (world.rapidTimer > 0) active.push(`⚡ ${world.rapidTimer.toFixed(1)}s`);
   if (world.multiTimer > 0) active.push(`✳ ${world.multiTimer.toFixed(1)}s`);
+  if (world.laserTimer > 0) active.push(`🔆 LASER ${world.laserTimer.toFixed(1)}s`);
+  if (world.missileTimer > 0) active.push(`🚀 MISSILES ${world.missileTimer.toFixed(1)}s`);
+  if (world.overdriveTimer > 0) active.push(`⚡✳ OVERDRIVE ${world.overdriveTimer.toFixed(1)}s`);
   if (active.length > 0) {
     ctx.font = "bold 13px 'Exo 2', system-ui";
     ctx.textAlign = "left";
@@ -2225,6 +2710,7 @@ function toCanvasX(canvas: HTMLCanvasElement, clientX: number): number {
 
 export default function BlobBlastGame() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const worldRef = useRef<World>(createWorld());
   const keyboardRef = useRef<KeyboardState>({ left: false, right: false });
   const bestRef = useRef<number>(readBest());
@@ -2246,6 +2732,7 @@ export default function BlobBlastGame() {
   const [activeUid, setActiveUid] = useState<string | null>(auth.currentUser?.uid ?? null);
   const [cloudBest, setCloudBest] = useState(0);
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
+  const [leaderboardMaxHeight, setLeaderboardMaxHeight] = useState<number | null>(null);
 
   const buildSnapshotSignature = useCallback(
     (targetPhase: Phase, settings: BlobBlastSaveSettings, world: World) => JSON.stringify({
@@ -2431,10 +2918,32 @@ export default function BlobBlastGame() {
   }, [applySnapshot]);
 
   useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return undefined;
+
+    const measure = () => {
+      const h = Math.max(0, Math.floor(card.getBoundingClientRect().height));
+      setLeaderboardMaxHeight(h > 0 ? h : null);
+    };
+
+    measure();
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(measure);
+      resizeObserver.observe(card);
+    }
+    window.addEventListener("resize", measure);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  useEffect(() => {
     const scoresRef = query(
       collection(db, "scores", "blob-blast", "users"),
       orderBy("score", "desc"),
-      limit(8)
+      limit(80)
     );
     return onSnapshot(
       scoresRef,
@@ -2507,7 +3016,7 @@ export default function BlobBlastGame() {
       if (world.phase === "playing") {
         let steps = 0;
         while (accumulator >= PHYSICS_STEP && steps < MAX_STEPS_PER_FRAME && world.phase === "playing") {
-          updateWorld(world, PHYSICS_STEP, keyboardRef.current, collisionMode === "on");
+          updateWorld(world, PHYSICS_STEP, keyboardRef.current, collisionMode === "on", shipModel);
           accumulator -= PHYSICS_STEP;
           steps++;
         }
@@ -2594,12 +3103,12 @@ export default function BlobBlastGame() {
   }, [updatePointerTarget]);
 
   const handlePointerLeave = useCallback(() => { worldRef.current.usePointer = false; }, []);
-  const topLeaderboardRows = leaderboardRows.slice(0, 6);
+  const visibleLeaderboardRows = leaderboardRows;
 
   return (
     <main className="bb-page">
       <div className="bb-layout">
-        <section className="bb-card">
+        <section className="bb-card" ref={cardRef}>
           <header className="bb-head">
             <div className="bb-title-group">
               <h2 className="bb-title">
@@ -2781,22 +3290,28 @@ export default function BlobBlastGame() {
           </div>
         </section>
 
-        <aside className="bb-leaderboard bb-leaderboard--side" aria-label="BlobBlast leaderboard">
+        <aside
+          className="bb-leaderboard bb-leaderboard--side"
+          aria-label="BlobBlast leaderboard"
+          style={leaderboardMaxHeight ? { maxHeight: `${leaderboardMaxHeight}px` } : undefined}
+        >
           <div className="bb-leaderboard-head">
             <span>Leaderboard</span>
             <strong>Top Players</strong>
           </div>
           <div className="bb-leaderboard-list">
-            {topLeaderboardRows.length === 0 ? (
+            {visibleLeaderboardRows.length === 0 ? (
               <p className="bb-leaderboard-empty">No scores yet. Play and claim rank #1.</p>
             ) : (
-              topLeaderboardRows.map((row, index) => (
+              visibleLeaderboardRows.map((row, index) => (
                 <article
                   key={row.uid}
                   className={`bb-leaderboard-row${row.uid === activeUid ? " is-self" : ""}`}
                 >
                   <span className="bb-leaderboard-rank">#{index + 1}</span>
-                  <span className="bb-leaderboard-user">{row.username}</span>
+                  <div className="bb-leaderboard-userbox">
+                    <UserBox userId={row.uid} />
+                  </div>
                   <strong className="bb-leaderboard-score">{row.score.toLocaleString()}</strong>
                 </article>
               ))

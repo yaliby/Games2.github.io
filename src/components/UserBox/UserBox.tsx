@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUserProfile } from "./useUserProfile";
 import { updateMedalTooltipPlacement } from "./medalTooltipPlacement";
@@ -6,7 +6,17 @@ import "./UserBox.css";
 
 type UserBoxProps = {
   userId: string;
+  medalMode?: "fit" | "wrap";
 };
+
+type MedalFit = {
+  size: number;
+  gap: number;
+};
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
 
 function optimizePhotoUrl(input: string): string {
   try {
@@ -48,11 +58,53 @@ function optimizePhotoUrl(input: string): string {
   }
 }
 
-export default function UserBox({ userId }: UserBoxProps) {
+export default function UserBox({ userId, medalMode = "fit" }: UserBoxProps) {
   const navigate = useNavigate();
   const { profile, loading } = useUserProfile(userId);
+  const medalsRef = useRef<HTMLDivElement | null>(null);
+  const [medalFit, setMedalFit] = useState<MedalFit | null>(null);
 
   const medals = useMemo(() => profile?.medals ?? [], [profile]);
+  const medalsCount = medals.length;
+
+  useEffect(() => {
+    if (medalMode !== "fit") {
+      setMedalFit(null);
+      return;
+    }
+
+    const el = medalsRef.current;
+    if (!el || medalsCount <= 1) {
+      setMedalFit(null);
+      return;
+    }
+
+    const updateFit = () => {
+      const width = el.clientWidth;
+      if (!Number.isFinite(width) || width <= 0) return;
+
+      const minSize = 9;
+      const maxSize = 30;
+      const minGap = 1;
+      const maxGap = 10;
+      const requiredGaps = Math.max(0, medalsCount - 1);
+
+      let size = Math.floor((width - minGap * requiredGaps) / medalsCount);
+      size = clamp(size, minSize, maxSize);
+
+      let gap = requiredGaps > 0
+        ? Math.floor((width - size * medalsCount) / requiredGaps)
+        : maxGap;
+      gap = clamp(gap, minGap, maxGap);
+
+      setMedalFit((prev) => (prev && prev.size === size && prev.gap === gap ? prev : { size, gap }));
+    };
+
+    updateFit();
+    const ro = new ResizeObserver(updateFit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [medalsCount, medalMode]);
 
   if (loading) {
     return (
@@ -82,11 +134,17 @@ export default function UserBox({ userId }: UserBoxProps) {
   }
 
   const optimizedPhoto = profile.photoURL ? optimizePhotoUrl(profile.photoURL) : "";
+  const medalsStyle = medalFit
+    ? ({
+        "--ub-medal-fit-size": `${medalFit.size}px`,
+        "--ub-medal-fit-gap": `${medalFit.gap}px`,
+      } as CSSProperties)
+    : undefined;
 
   return (
     <button
       type="button"
-      className="userbox"
+      className={`userbox ${medalMode === "wrap" ? "userbox--medals-wrap" : ""}`}
       onClick={() => navigate(`/profile/${userId}`)}
       aria-label={`Open profile for ${profile.username}`}
     >
@@ -106,7 +164,7 @@ export default function UserBox({ userId }: UserBoxProps) {
       )}
       <div className="userbox__info">
         <div className="userbox__name">{profile.username}</div>
-        <div className="userbox__medals">
+        <div className="userbox__medals" ref={medalsRef} style={medalsStyle}>
           {medals.length === 0 ? (
             <div className="userbox__medal userbox__medal--empty">—</div>
           ) : (

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:dtts": "vite --host 0.0.0.0 --open /game/dont-touch-the-spikes",
     "build": "tsc -b && vite build && npm run verify:crossy-embed",
     "verify:crossy-embed": "node scripts/verify-crossy-embed.mjs",
     "sync:crossy-web": "node scripts/sync-crossy-web.mjs",
