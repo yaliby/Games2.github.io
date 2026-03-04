@@ -1,4 +1,4 @@
-﻿﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
@@ -422,7 +422,13 @@ export default function Header() {
             <div style={styles.brandWrap}>
               <img src={SITE_LOGO_SRC} alt="" style={styles.brandLogo} />
               <h2 style={styles.brandText}>
-                <ImageFontText text="YALIBY.COM" className="header-brand-image-font" scale={0.122} gapRem={0.085} spaceRem={0.5} />
+                <ImageFontText
+                  text="YALIBY.COM"
+                  className="header-brand-image-font"
+                  scale={0.122}
+                  gapRem={0.09}
+                  spaceRem={0.72}
+                />
               </h2>
             </div>
           </div>
@@ -449,7 +455,13 @@ export default function Header() {
             >
               <img src={SITE_LOGO_SRC} alt="לוגו האתר" style={styles.brandLogo} />
               <h2 style={styles.brandText}>
-                <ImageFontText text="YALIBY.COM" className="header-brand-image-font" scale={0.122} gapRem={0.085} spaceRem={0.5} />
+                <ImageFontText
+                  text="YALIBY.COM"
+                  className="header-brand-image-font"
+                  scale={0.122}
+                  gapRem={0.09}
+                  spaceRem={0.72}
+                />
               </h2>
             </div>
 
@@ -909,12 +921,13 @@ const styles: Record<string, React.CSSProperties> = {
     position: "sticky",
     top: 0,
     zIndex: 999,
-    padding: "14px 16px",
+    padding: "14px 20px 14px 16px",
     backdropFilter: "blur(14px)",
     WebkitBackdropFilter: "blur(14px)",
     background:
       "linear-gradient(180deg, rgba(10,12,18,0.82) 0%, rgba(10,12,18,0.55) 100%)",
     borderBottom: "1px solid rgba(255,255,255,0.08)",
+    overflow: "visible",
   },
 
   headerInner: {
@@ -924,6 +937,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+    flexWrap: "wrap",
+    minWidth: 0,
   },
 
   leftGroup: {
@@ -938,7 +953,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "flex-end",
     gap: 10,
-    minWidth: 240,
+    minWidth: 0,
+    flexShrink: 0,
   },
 
   userInfoWrap: {

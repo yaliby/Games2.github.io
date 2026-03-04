@@ -39,6 +39,7 @@ function mutateBusySet(prev: Set<string>, id: string, busy: boolean): Set<string
 
 export default function SuggestionsPanel() {
   const [open, setOpen] = useState(false);
+  const [, setScrollTick] = useState(0);
   const [sort, setSort] = useState<SuggestionSort>("top");
   const [rows, setRows] = useState<SuggestionEntry[]>([]);
   const [loadingFeed, setLoadingFeed] = useState(false);
@@ -85,8 +86,9 @@ export default function SuggestionsPanel() {
     };
   }, []);
 
+  const shouldSubscribe = open;
   useEffect(() => {
-    if (!open) return;
+    if (!shouldSubscribe) return;
     setLoadingFeed(true);
     setFeedError("");
     const unsub = subscribeSuggestions(
@@ -103,7 +105,7 @@ export default function SuggestionsPanel() {
     );
 
     return () => unsub();
-  }, [open, sort]);
+  }, [shouldSubscribe, sort]);
 
   useEffect(() => {
     if (!open) return;
@@ -112,6 +114,23 @@ export default function SuggestionsPanel() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let rafId = 0;
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        setScrollTick((t) => t + 1);
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -146,12 +165,13 @@ export default function SuggestionsPanel() {
   const textLength = text.trim().length;
   const canSend = Boolean(user) && textLength >= 4 && !sending;
   const sortedRows = useMemo(() => rows, [rows]);
+  const drawerTopPx = open ? Math.max(0, headerHeight - window.scrollY) : 0;
   const layerStyle = useMemo(
-    () =>
-      ({
-        "--suggestions-header-offset": `${headerHeight}px`,
-      }) as CSSProperties,
-    [headerHeight]
+    (): CSSProperties => ({
+      "--suggestions-header-offset": `${headerHeight}px`,
+      ...(open ? { "--suggestions-drawer-top": `${drawerTopPx}px` } : {}),
+    }),
+    [headerHeight, open, drawerTopPx]
   );
 
   const submitSuggestion = async () => {
@@ -250,6 +270,9 @@ export default function SuggestionsPanel() {
     }
   };
 
+  const drawerClassName = ["suggestions-drawer", open && "is-open"].filter(Boolean).join(" ");
+  const overlayClassName = ["suggestions-overlay", open && "is-open"].filter(Boolean).join(" ");
+
   return (
     <>
       <button
@@ -264,7 +287,7 @@ export default function SuggestionsPanel() {
       </button>
 
       <div
-        className={`suggestions-overlay ${open ? "is-open" : ""}`}
+        className={overlayClassName}
         style={layerStyle}
         onClick={() => setOpen(false)}
         aria-hidden={!open}
@@ -272,7 +295,7 @@ export default function SuggestionsPanel() {
 
       <aside
         id="suggestions-drawer"
-        className={`suggestions-drawer ${open ? "is-open" : ""}`}
+        className={drawerClassName}
         style={layerStyle}
         role="dialog"
         aria-modal="true"

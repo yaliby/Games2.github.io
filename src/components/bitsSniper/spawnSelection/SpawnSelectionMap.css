@@ -1,0 +1,82 @@
+.spawn-selection-container {
+  position: relative;
+  width: 100%;
+  min-width: 260px;
+  min-height: 280px;
+  aspect-ratio: 1;
+  max-width: 420px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(120, 190, 255, 0.4);
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.5);
+}
+
+.spawn-selection-map-image {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(18, 35, 55, 0.98);
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(22, 42, 65, 0.95),
+      rgba(22, 42, 65, 0.95) 8px,
+      rgba(28, 52, 78, 0.95) 8px,
+      rgba(28, 52, 78, 0.95) 16px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(22, 42, 65, 0.95),
+      rgba(22, 42, 65, 0.95) 8px,
+      rgba(28, 52, 78, 0.95) 8px,
+      rgba(28, 52, 78, 0.95) 16px
+    );
+}
+
+/* When no texture yet: visible arena placeholder so the map area is clear and clickable */
+.spawn-selection-container.no-map-image .spawn-selection-map-image {
+  background-color: rgba(15, 30, 48, 0.98);
+  background-image:
+    linear-gradient(rgba(40, 70, 100, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(40, 70, 100, 0.25) 1px, transparent 1px),
+    repeating-linear-gradient(
+      0deg,
+      rgba(20, 38, 58, 0.95),
+      rgba(20, 38, 58, 0.95) 8px,
+      rgba(26, 48, 72, 0.95) 8px,
+      rgba(26, 48, 72, 0.95) 16px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(20, 38, 58, 0.95),
+      rgba(20, 38, 58, 0.95) 8px,
+      rgba(26, 48, 72, 0.95) 8px,
+      rgba(26, 48, 72, 0.95) 16px
+    );
+  background-size: 24px 24px, 24px 24px, 8px 8px, 8px 8px;
+  background-position: 0 0, 0 0, 0 0, 0 0;
+}
+
+.spawn-selection-container.no-map-image .spawn-selection-map-image::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border: 2px solid rgba(80, 160, 220, 0.5);
+  border-radius: 8px;
+  background: rgba(25, 50, 80, 0.4);
+  pointer-events: none;
+}
+
+.spawn-selection-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.spawn-selection-overlay:focus {
+  outline: none;
+}

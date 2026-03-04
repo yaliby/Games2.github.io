@@ -134,7 +134,7 @@ export default function Home() {
 
       <section className="home-content">
         <div className="games-grid">
-          {games.map(game => (
+          {games.map((game) => (
             <GameCard key={game.id} game={game} />
           ))}
         </div>

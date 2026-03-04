@@ -271,7 +271,12 @@ main {
 }
 
 .header-brand-image-font .image-font-char {
-  filter: brightness(1.24) saturate(1.16) contrast(1.06);
+  filter:
+    brightness(1.45)
+    saturate(1.22)
+    contrast(1.08)
+    drop-shadow(0 0 6px rgba(255, 220, 140, 0.55))
+    drop-shadow(0 0 18px rgba(0, 0, 0, 0.7));
 }
 
 .header-brand-image-font .image-font-dot {
@@ -407,7 +412,7 @@ main {
 .site-entry-intro__logo {
   position: fixed;
   left: 50%;
-  top: 50%;
+  top: 42%;
   width: clamp(16rem, 47vmin, 23rem);
   aspect-ratio: 1 / 1;
   object-fit: cover;
@@ -429,10 +434,24 @@ main {
   display: contents;
 }
 
+.site-entry-intro__skip-label {
+  position: fixed;
+  top: clamp(0.85rem, 2.6vh, 1.4rem);
+  right: clamp(1rem, 3.5vw, 2.4rem);
+  padding: 0.12rem 0.4rem;
+  --image-font-scale: 0.14;
+  --image-font-gap: 0.16rem;
+  --image-font-space: 0.85rem;
+  color: rgba(255, 220, 145, 0.95);
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: none;
+}
+
 .site-entry-intro__char {
   position: fixed;
   left: calc(50% + (var(--char-offset, 0) * var(--site-entry-char-step)));
-  top: calc(50% + clamp(16rem, 47vmin, 23rem) * 0.62);
+  top: calc(42% + clamp(16rem, 47vmin, 23rem) * 0.62);
   width: calc(var(--glyph-w) * var(--site-entry-glyph-scale));
   height: calc(var(--glyph-h) * var(--site-entry-glyph-scale));
   background-image: url("/img/HabsFont.png");
@@ -510,6 +529,25 @@ main {
   }
 }
 
+.site-entry-intro.is-lift .site-entry-intro__skip-label {
+  animation-name: site-entry-skip-out;
+  animation-duration: 980ms;
+  animation-timing-function: cubic-bezier(0.2, 0.82, 0.22, 1);
+  animation-fill-mode: both;
+  animation-delay: 0ms;
+}
+
+@keyframes site-entry-skip-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-118vh);
+  }
+}
+
 .site-entry-intro.is-lift .site-entry-intro__logo {
   top: 50%;
   animation-name: site-entry-logo-flow-up;
@@ -539,6 +577,7 @@ main {
 @media (prefers-reduced-motion: reduce) {
   .site-entry-intro__logo,
   .site-entry-intro__char,
+  .site-entry-intro__skip-label,
   .site-entry-intro__veil {
     transition-duration: 240ms;
   }
@@ -550,7 +589,7 @@ main {
   }
 
   .site-entry-intro.is-lift .site-entry-intro__logo {
-    top: 50%;
+    top: 42%;
     animation-name: site-entry-logo-flow-up;
     animation-duration: 240ms;
     animation-timing-function: cubic-bezier(0.2, 0.82, 0.22, 1);

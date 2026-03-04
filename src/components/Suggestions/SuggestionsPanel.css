@@ -65,7 +65,7 @@
 
 .suggestions-overlay {
   position: fixed;
-  top: var(--suggestions-header-offset, 64px);
+  top: var(--suggestions-drawer-top, var(--suggestions-header-offset, 64px));
   right: 0;
   bottom: 0;
   left: 0;
@@ -87,11 +87,11 @@
 
 .suggestions-drawer {
   position: fixed;
-  top: var(--suggestions-header-offset, 64px);
+  top: var(--suggestions-drawer-top, var(--suggestions-header-offset, 64px));
   right: 0;
   z-index: 980;
   width: min(33rem, calc(100vw - 0.4rem));
-  height: calc(100dvh - var(--suggestions-header-offset, 64px));
+  height: calc(100dvh - var(--suggestions-drawer-top, var(--suggestions-header-offset, 64px)));
   background:
     radial-gradient(34rem circle at 100% 0%, rgba(106, 174, 255, 0.22), transparent 58%),
     linear-gradient(180deg, rgba(9, 17, 34, 0.985), rgba(8, 14, 29, 0.99));

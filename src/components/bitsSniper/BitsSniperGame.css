@@ -1,33 +1,100 @@
 @import url("https://fonts.googleapis.com/css2?family=Oxanium:wght@400;500;600;700;800&display=swap");
 
+/* ── Design tokens (Bits Sniper) ───────────────────────────────────────── */
+.bits-sniper-page,
+.bits-sniper-shell,
+.bits-sniper-stage-wrap {
+  --bs-accent: #5eb8ff;
+  --bs-accent-dim: rgba(94, 184, 255, 0.45);
+  --bs-accent-soft: rgba(94, 184, 255, 0.12);
+  --bs-surface: rgba(6, 14, 26, 0.94);
+  --bs-surface-elevated: rgba(10, 22, 42, 0.96);
+  --bs-border: rgba(100, 172, 240, 0.28);
+  --bs-border-strong: rgba(120, 190, 255, 0.5);
+  --bs-text: #e8f2ff;
+  --bs-text-muted: rgba(200, 228, 255, 0.82);
+  --bs-danger: #ff4a4a;
+  --bs-danger-soft: rgba(255, 74, 74, 0.25);
+  --bs-success: #4ae88c;
+  --bs-glow: 0 0 20px rgba(94, 184, 255, 0.35);
+  --bs-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+  --bs-radius: 14px;
+  --bs-radius-sm: 10px;
+  --bs-transition: 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --bs-transition-fast: 0.12s ease-out;
+}
+
 .bits-sniper-page {
-  min-height: 100%;
+  min-height: 100vh;
   width: 100%;
   display: grid;
   place-items: start center;
-  padding: 1.1rem 0.8rem 2rem;
+  padding: calc(78px + 1.1rem) 0.8rem 2rem;
   background:
-    radial-gradient(130% 65% at 18% -8%,  rgba(60,160,255,0.14), transparent 52%),
-    radial-gradient(90%  56% at 84% 108%, rgba(255,100,60,0.13),  transparent 58%),
-    linear-gradient(180deg, #050d16 0%, #020509 100%);
-  color: #edf4ff;
+    radial-gradient(140% 70% at 12% -5%, rgba(50, 140, 255, 0.18), transparent 48%),
+    radial-gradient(95% 60% at 88% 110%, rgba(255, 90, 50, 0.12), transparent 55%),
+    linear-gradient(175deg, #060e18 0%, #03070c 50%, #020508 100%);
+  color: var(--bs-text);
   font-family: "Oxanium", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .bits-sniper-shell {
-  width: min(1080px, 100%);
-  border-radius: 22px;
-  border: 1px solid rgba(95,162,222,0.30);
-  padding: 0.88rem;
+  width: 100%;
+  max-width: 1180px;
+  min-width: 0;
+  border-radius: 20px;
+  border: 1px solid var(--bs-border-strong);
+  padding: 0.9rem;
   background:
-    linear-gradient(148deg, rgba(8,18,32,0.97), rgba(5,10,18,0.96)),
-    radial-gradient(100% 100% at 72% 0%, rgba(90,178,255,0.06), transparent 58%);
+    linear-gradient(152deg, var(--bs-surface-elevated), var(--bs-surface)),
+    radial-gradient(100% 100% at 70% 0%, var(--bs-accent-soft), transparent 55%);
   box-shadow:
-    0 22px 58px rgba(0,0,0,0.60),
-    inset 0 1px 0 rgba(190,228,255,0.14);
+    var(--bs-shadow-lg),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: grid;
-  gap: 0.72rem;
+  gap: 0.75rem;
   position: relative;
+  transition: box-shadow var(--bs-transition);
+}
+.bits-sniper-shell:focus-within {
+  box-shadow: var(--bs-shadow-lg), var(--bs-glow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.bits-sniper-shell--floating {
+  position: fixed;
+  z-index: 100;
+  margin: 0;
+}
+
+.bits-sniper-shell-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px 22px 0 0;
+  background: rgba(12,28,52,0.6);
+  border-bottom: 1px solid rgba(95,162,222,0.25);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.bits-sniper-shell-drag:hover {
+  background: rgba(18,42,75,0.75);
+}
+.bits-sniper-shell-drag-dots {
+  font-size: 0.85rem;
+  letter-spacing: 0.2em;
+  color: rgba(160,200,255,0.5);
+  pointer-events: none;
+}
+
+.bits-sniper-shell--has-drag {
+  padding-top: 2.5rem;
 }
 
 /* ── Intro overlay ─────────────────────────────────────────────────────── */
@@ -39,36 +106,46 @@
   align-items: center;
   justify-content: center;
   padding: 1.2rem;
-  background: radial-gradient(140% 140% at 10% 0%, rgba(90,160,255,0.24), transparent 50%),
-              radial-gradient(140% 140% at 90% 100%, rgba(255,120,80,0.2), transparent 55%),
-              rgba(3,8,16,0.95);
-  animation: bits-sniper-fade-in 0.26s ease-out;
+  background:
+    radial-gradient(140% 140% at 8% 0%, var(--bs-accent-soft), transparent 48%),
+    radial-gradient(140% 140% at 92% 100%, rgba(255, 100, 60, 0.08), transparent 52%),
+    rgba(2, 6, 14, 0.97);
+  backdrop-filter: blur(4px);
+  animation: bits-sniper-fade-in 0.28s ease-out;
 }
 .bits-sniper-intro-card {
   width: min(540px, 100%);
-  border-radius: 18px;
-  border: 1px solid rgba(140,190,255,0.5);
-  background: radial-gradient(120% 180% at 0% 0%, rgba(60,140,255,0.25), transparent 60%),
-              radial-gradient(120% 180% at 100% 100%, rgba(255,130,90,0.2), transparent 65%),
-              rgba(5,14,26,0.98);
-  box-shadow: 0 26px 70px rgba(0,0,0,0.8);
-  padding: 1.1rem 1.3rem;
-  color: #e9f3ff;
+  max-height: 100%;
+  border-radius: var(--bs-radius);
+  border: 1px solid var(--bs-border-strong);
+  background:
+    linear-gradient(158deg, var(--bs-surface-elevated), var(--bs-surface)),
+    radial-gradient(120% 160% at 0% 0%, var(--bs-accent-soft), transparent 55%);
+  box-shadow: var(--bs-shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 1.25rem 1.5rem;
+  color: var(--bs-text);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  animation: bits-sniper-card-in 0.34s cubic-bezier(0.2, 0.8, 0.22, 1);
+  gap: 0.6rem;
+  overflow: auto;
+  animation: bits-sniper-card-in 0.36s cubic-bezier(0.22, 0.78, 0.26, 1);
 }
 .bits-sniper-intro-card h2 {
   margin: 0;
-  font-size: 1.6rem;
-  letter-spacing: 0.08em;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  background: linear-gradient(135deg, #fff 0%, #c8e4ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .bits-sniper-intro-card p {
-  margin: 0.25rem 0 0.4rem;
-  font-size: 0.9rem;
-  color: rgba(205,225,250,0.9);
+  margin: 0.2rem 0 0.35rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--bs-text-muted);
 }
 
 .bits-sniper-disclaimer-overlay {
@@ -170,31 +247,285 @@
 }
 .bits-sniper-intro-fullscreen {
   border-radius: 999px;
-  border: 1px solid rgba(148, 208, 255, 0.72);
-  background: linear-gradient(145deg, rgba(35, 126, 202, 0.9), rgba(45, 158, 232, 0.95));
+  border: 1px solid var(--bs-border-strong);
+  background: linear-gradient(145deg, rgba(30, 110, 200, 0.92), rgba(40, 150, 235, 0.95));
   color: #eef8ff;
-  padding: 0.5rem 1rem;
-  font: 700 0.82rem/1 "Oxanium","Segoe UI",sans-serif;
+  padding: 0.52rem 1.1rem;
+  font: 700 0.8rem/1 "Oxanium", "Segoe UI", sans-serif;
   letter-spacing: 0.08em;
   cursor: pointer;
-  box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  transition: transform var(--bs-transition-fast), box-shadow var(--bs-transition-fast), filter var(--bs-transition-fast);
 }
 .bits-sniper-intro-fullscreen:hover {
-  filter: brightness(1.08);
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(40, 140, 255, 0.3);
+}
+.bits-sniper-intro-fullscreen:active {
+  transform: translateY(0);
 }
 .bits-sniper-intro-start {
   border-radius: 999px;
-  border: 1px solid rgba(130,230,190,0.9);
-  background: linear-gradient(135deg,#63f6b5,#4fd8ff);
-  color: #041316;
-  padding: 0.5rem 1.4rem;
-  font: 700 0.9rem/1 "Oxanium","Segoe UI",sans-serif;
-  letter-spacing: 0.11em;
+  border: 1px solid rgba(80, 230, 160, 0.85);
+  background: linear-gradient(135deg, #52e8a8, #48c8f0);
+  color: #031810;
+  padding: 0.55rem 1.5rem;
+  font: 700 0.88rem/1 "Oxanium", "Segoe UI", sans-serif;
+  letter-spacing: 0.1em;
   cursor: pointer;
-  box-shadow: 0 12px 28px rgba(0,0,0,0.55);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  transition: transform var(--bs-transition-fast), box-shadow var(--bs-transition-fast), filter var(--bs-transition-fast);
 }
 .bits-sniper-intro-start:hover {
-  filter: brightness(1.08);
+  filter: brightness(1.12);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(50, 200, 140, 0.35);
+}
+.bits-sniper-intro-start:active {
+  transform: translateY(0);
+}
+
+.bits-sniper-intro-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.bits-sniper-intro-tab {
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--bs-border);
+  background: var(--bs-surface);
+  color: var(--bs-text-muted);
+  font: 600 0.78rem/1 "Oxanium", "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: background var(--bs-transition), border-color var(--bs-transition), color var(--bs-transition);
+}
+.bits-sniper-intro-tab:hover {
+  background: rgba(18, 45, 85, 0.8);
+  color: var(--bs-text);
+}
+.bits-sniper-intro-tab.is-active {
+  background: rgba(28, 85, 155, 0.9);
+  border-color: var(--bs-accent);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(94, 184, 255, 0.25);
+}
+.bits-sniper-intro-step {
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(140,200,255,0.5);
+  background: rgba(20,70,130,0.8);
+  color: #d8ecff;
+  font: 600 0.76rem/1 "Oxanium","Segoe UI",sans-serif;
+  cursor: pointer;
+  transition: filter 0.14s;
+}
+.bits-sniper-intro-step:hover {
+  filter: brightness(1.1);
+}
+.bits-sniper-map-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.bits-sniper-map-choices button {
+  padding: 0.32rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(100,170,230,0.4);
+  background: rgba(8,26,48,0.7);
+  color: rgba(200,228,255,0.9);
+  font: 600 0.72rem/1 "Oxanium","Segoe UI",sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.bits-sniper-map-choices button.is-active {
+  background: rgba(40,110,190,0.85);
+  border-color: rgba(140,200,255,0.8);
+  color: #fff;
+}
+.bits-sniper-intro-setting--spawn-map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.bits-sniper-intro-spawn-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(180,210,245,0.88);
+}
+.bits-sniper-intro-spawn-legend {
+  margin: 0;
+  font-size: 0.72rem;
+  color: rgba(160,200,240,0.8);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.bits-sniper-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.bits-sniper-legend-dot.is-player {
+  background: #4da6ff;
+  box-shadow: 0 0 6px rgba(77,166,255,0.6);
+}
+.bits-sniper-legend-dot.is-enemy {
+  background: #ff6b4a;
+  box-shadow: 0 0 6px rgba(255,107,74,0.6);
+}
+.bits-sniper-weapon-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.bits-sniper-weapon-pool-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(110,170,220,0.4);
+  background: rgba(10,28,50,0.7);
+  color: rgba(210,235,255,0.9);
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.bits-sniper-weapon-pool-item:has(input:checked) {
+  background: rgba(35,95,165,0.85);
+  border-color: rgba(130,200,255,0.7);
+}
+.bits-sniper-weapon-pool-item input {
+  accent-color: #6ec3ff;
+}
+
+.bits-sniper-shell--fluid {
+  width: 100%;
+  max-width: none;
+}
+.bits-sniper-stage-wrap--custom-size {
+  max-width: 100%;
+}
+.bits-sniper-stage-wrap--click-to-lock {
+  cursor: pointer;
+}
+
+/* שכבת UI של המשחק: גודל חלון (S/M/L) + ידיות גרירה – ברמת המשחק */
+/* גרירה וגודל מסך – ציר Z הכי קידמי (מעל כל ה-UI) */
+.bits-sniper-game-resize-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+.bits-sniper-game-resize-ui > * {
+  pointer-events: auto;
+}
+
+.bits-sniper-resize-handle {
+  position: absolute;
+  border: none;
+  padding: 0;
+  background: transparent;
+  z-index: 201;
+}
+.bits-sniper-resize-handle:hover {
+  background: rgba(80,160,255,0.25);
+}
+
+/* ידיות צד – רצועה אנכית שמאל/ימין */
+.bits-sniper-resize-handle--left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+.bits-sniper-resize-handle--right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+
+/* פינות תחתונות – גרירה להגדלת/הקטנת הקונטיינר (מקדימה ב-Z) */
+.bits-sniper-resize-handle--bottom-left,
+.bits-sniper-resize-handle--bottom-right {
+  z-index: 202;
+  width: 22px;
+  height: 22px;
+  border-radius: 0 8px 0 0;
+  background: rgba(20,50,90,0.35);
+}
+.bits-sniper-resize-handle--bottom-left {
+  left: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+.bits-sniper-resize-handle--bottom-right {
+  right: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+  border-radius: 8px 0 0 0;
+}
+.bits-sniper-resize-handle--bottom-left:hover,
+.bits-sniper-resize-handle--bottom-right:hover {
+  background: rgba(60,130,220,0.4);
+}
+
+/* S/M/L – הכי מקדימה בציר Z (מעל כל שאר ה-UI) */
+.bits-sniper-size-controls {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 2rem;
+  z-index: 210;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.bits-sniper-size-chip {
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--bs-radius-sm);
+  border: 1px solid var(--bs-border);
+  background: var(--bs-surface);
+  color: var(--bs-text-muted);
+  font: 600 0.7rem/1 "Oxanium", "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: background var(--bs-transition), border-color var(--bs-transition), color var(--bs-transition);
+}
+.bits-sniper-size-chip:hover {
+  background: rgba(18, 45, 85, 0.85);
+  color: var(--bs-text);
+}
+.bits-sniper-size-chip.is-active {
+  background: rgba(32, 90, 160, 0.9);
+  border-color: var(--bs-accent);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(94, 184, 255, 0.2);
+}
+.bits-sniper-coords {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  z-index: 4;
+  font-size: 0.64rem;
+  color: rgba(160,200,255,0.6);
+  pointer-events: none;
+  font-family: monospace;
+}
+.bits-sniper-move-state {
+  font-size: 0.66rem;
+  color: rgba(180,210,250,0.7);
+  letter-spacing: 0.03em;
+}
+.bits-sniper-topright-timer {
+  letter-spacing: 0.04em;
+  color: rgba(180,220,255,0.9);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────── */
@@ -202,31 +533,33 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
-  border-radius: 12px;
-  border: 1px solid rgba(102, 172, 234, 0.34);
-  background: linear-gradient(145deg, rgba(8, 20, 36, 0.88), rgba(5, 12, 22, 0.84));
-  padding: 0.56rem 0.66rem;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+  border-radius: var(--bs-radius-sm);
+  border: 1px solid var(--bs-border);
+  background: linear-gradient(148deg, var(--bs-surface-elevated), var(--bs-surface));
+  padding: 0.6rem 0.75rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .bits-sniper-header h1 {
   margin: 0;
-  font-size: 1.22rem;
+  font-size: 1.18rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: linear-gradient(135deg, #ffe070, #ffb050, #ff7a30);
+  background: linear-gradient(135deg, #ffd86a, #ff9e40, #ff6a28);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  text-shadow: 0 0 30px rgba(255, 180, 80, 0.2);
 }
 
 .bits-sniper-header p {
-  margin: 0.28rem 0 0;
-  color: rgba(192,218,248,0.70);
-  font-size: 0.79rem;
+  margin: 0.22rem 0 0;
+  color: var(--bs-text-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
 }
 
 .bits-sniper-header-actions {
@@ -241,28 +574,30 @@
 }
 
 .bits-sniper-stat {
-  min-width: 74px;
-  border-radius: 10px;
-  border: 1px solid rgba(95,160,222,0.24);
-  background: rgba(4,12,24,0.70);
-  padding: 0.35rem 0.52rem 0.40rem;
+  min-width: 76px;
+  border-radius: var(--bs-radius-sm);
+  border: 1px solid var(--bs-border);
+  background: var(--bs-surface);
+  padding: 0.38rem 0.55rem 0.42rem;
   text-align: center;
+  transition: border-color var(--bs-transition-fast), box-shadow var(--bs-transition-fast);
 }
 
 .bits-sniper-stat span {
   display: block;
-  font-size: 0.57rem;
-  letter-spacing: 0.13em;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(148,196,238,0.70);
+  color: var(--bs-text-muted);
 }
 
 .bits-sniper-stat strong {
   display: block;
-  margin-top: 0.10rem;
-  font-size: 1.08rem;
+  margin-top: 0.12rem;
+  font-size: 1.06rem;
   line-height: 1;
   font-weight: 700;
+  color: var(--bs-text);
 }
 
 /* ── Stage ───────────────────────────────────────────────────────────── */
@@ -314,12 +649,12 @@
   width: 100%;
   min-height: 340px;
   aspect-ratio: 16 / 9;
-  border-radius: 16px;
-  border: 1px solid rgba(116,190,255,0.36);
-  background: #030810;
+  border-radius: var(--bs-radius);
+  border: 1px solid var(--bs-border-strong);
+  background: #040a12;
   box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,0.06),
-    0 18px 38px rgba(0,0,0,0.64);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 20px 44px rgba(0, 0, 0, 0.6);
 }
 
 .bits-sniper-stage canvas {
@@ -327,18 +662,21 @@
   width: 100%;
   height: 100%;
   cursor: crosshair;
-  filter: contrast(1.24) saturate(1.2) brightness(1.08);
+  filter: contrast(1.2) saturate(1.15) brightness(1.05);
 }
 
-/* ── Crosshair (FPS style: center dot + cross) ────────────────────────── */
+/* ── Crosshair (CS-style: four arms, gap driven by accuracy) ──────────── */
 .bits-sniper-crosshair {
   position: absolute;
-  left: 50%; top: 50%;
-  width: 28px; height: 28px;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
   pointer-events: none;
   transform: translate(-50%, -50%);
   transform-origin: center;
-  transition: transform 0.05s linear;
+  transition: transform 0.06s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
 .bits-sniper-crosshair::before,
@@ -348,9 +686,9 @@
   inset: 0;
   margin: auto;
   box-shadow:
-    0 0 6px rgba(100,200,255,0.9),
-    0 0 2px rgba(0,0,0,0.9);
-  animation: bits-sniper-crosshair-glow 1.1s ease-in-out infinite;
+    0 0 8px rgba(94, 184, 255, 0.6),
+    0 0 2px rgba(0, 0, 0, 0.95);
+  animation: bits-sniper-crosshair-glow 1.4s ease-in-out infinite;
 }
 
 .bits-sniper-crosshair::before {
@@ -360,12 +698,12 @@
   transform: translateX(-50%);
   background: linear-gradient(
     to bottom,
-    rgba(255,255,255,0.92) 0%,
-    rgba(255,255,255,0.92) 35%,
-    transparent 35%,
-    transparent 65%,
-    rgba(255,255,255,0.92) 65%,
-    rgba(255,255,255,0.92) 100%
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(255, 255, 255, 0.98) 28%,
+    transparent 28%,
+    transparent 72%,
+    rgba(255, 255, 255, 0.98) 72%,
+    rgba(255, 255, 255, 0.98) 100%
   );
 }
 .bits-sniper-crosshair::after {
@@ -375,13 +713,50 @@
   transform: translateY(-50%);
   background: linear-gradient(
     to right,
-    rgba(255,255,255,0.92) 0%,
-    rgba(255,255,255,0.92) 35%,
-    transparent 35%,
-    transparent 65%,
-    rgba(255,255,255,0.92) 65%,
-    rgba(255,255,255,0.92) 100%
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(255, 255, 255, 0.98) 28%,
+    transparent 28%,
+    transparent 72%,
+    rgba(255, 255, 255, 0.98) 72%,
+    rgba(255, 255, 255, 0.98) 100%
   );
+}
+
+/* Pistol – כוונת קטנה ומהירה, זרועות קצרות יותר. */
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair {
+  width: 24px;
+  height: 24px;
+}
+
+/* AK – קצת עבה יותר, מודגשת לספריי. */
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair::before,
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair::after {
+  box-shadow:
+    0 0 8px rgba(90,200,255,0.95),
+    0 0 3px rgba(0,0,0,0.95);
+}
+
+/* Shotgun – טבעת עבה המראה את אזור הפיזור. */
+.bits-sniper-stage-wrap--whipper .bits-sniper-crosshair {
+  width: 40px;
+  height: 40px;
+}
+.bits-sniper-stage-wrap--whipper .bits-sniper-crosshair::before,
+.bits-sniper-stage-wrap--whipper .bits-sniper-crosshair::after {
+  content: "";
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  border: 2px solid rgba(220,240,255,0.9);
+  box-shadow: 0 0 12px rgba(120,210,255,0.8);
+  background: transparent;
+}
+
+/* Sniper – כוונת קטנה ודקה; במצב ADS נשארת קומפקטית. */
+.bits-sniper-stage-wrap--cracker .bits-sniper-crosshair {
+  width: 22px;
+  height: 22px;
 }
 
 .bits-sniper-crosshair--ads {
@@ -396,20 +771,26 @@
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 8;
-  border: 1px solid rgba(140,218,255,0.46);
-  background: linear-gradient(148deg, rgba(34,124,196,0.96), rgba(44,154,225,0.98));
-  color: #021020;
+  border: 1px solid var(--bs-border-strong);
+  background: linear-gradient(152deg, rgba(32, 118, 200, 0.96), rgba(42, 148, 228, 0.98));
+  color: #021018;
   border-radius: 999px;
-  padding: 0.62rem 1.2rem;
-  font: 700 0.78rem/1 "Oxanium","Segoe UI",sans-serif;
-  letter-spacing: 0.08em;
+  padding: 0.6rem 1.25rem;
+  font: 700 0.8rem/1 "Oxanium", "Segoe UI", sans-serif;
+  letter-spacing: 0.1em;
   cursor: pointer;
-  box-shadow: 0 4px 18px rgba(40,140,255,0.36);
-  transition: filter 0.14s, transform 0.1s;
-  animation: bits-sniper-cta-glow 1.9s ease-in-out infinite;
+  box-shadow: 0 6px 20px rgba(30, 120, 220, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: filter var(--bs-transition-fast), transform var(--bs-transition-fast), box-shadow var(--bs-transition);
+  animation: bits-sniper-cta-glow 2s ease-in-out infinite;
 }
-.bits-sniper-lock-btn:hover  { filter:brightness(1.1); transform:translate(-50%, calc(-50% - 1px)); }
-.bits-sniper-lock-btn:active { transform:translate(-50%, -50%); }
+.bits-sniper-lock-btn:hover {
+  filter: brightness(1.12);
+  transform: translate(-50%, calc(-50% - 2px));
+  box-shadow: 0 8px 28px rgba(50, 150, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.bits-sniper-lock-btn:active {
+  transform: translate(-50%, -50%);
+}
 
 .bits-sniper-paused-pill {
   position: absolute;
@@ -480,21 +861,21 @@
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
-  border: 1px solid rgba(140,200,255,0.4);
-  border-radius: 10px;
-  background: rgba(8,22,42,0.85);
-  color: #a8d4ff;
-  font-size: 1.1rem;
+  border: 1px solid var(--bs-border);
+  border-radius: var(--bs-radius-sm);
+  background: var(--bs-surface);
+  color: var(--bs-accent);
+  font-size: 1.05rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background var(--bs-transition), color var(--bs-transition), border-color var(--bs-transition);
 }
 .bits-sniper-fullscreen-btn:hover {
-  background: rgba(20,50,90,0.9);
+  background: rgba(22, 55, 95, 0.95);
   color: #fff;
-  border-color: rgba(160,220,255,0.6);
+  border-color: var(--bs-accent);
 }
 
 .bits-sniper-fs-fab {
@@ -527,24 +908,124 @@
   position: absolute;
   inset: 0;
   z-index: 11;
-  background: rgba(2, 8, 16, 0.58);
-  backdrop-filter: blur(3px);
+  background: rgba(2, 6, 14, 0.65);
+  backdrop-filter: blur(10px);
   display: grid;
   place-items: center;
   padding: 1rem;
-  animation: bits-sniper-fade-in 0.2s ease-out;
+  animation: bits-sniper-fade-in 0.22s ease-out;
 }
 
 .bits-sniper-settings-panel {
   width: min(520px, 100%);
-  border-radius: 16px;
-  border: 1px solid rgba(126, 184, 238, 0.5);
-  background: linear-gradient(148deg, rgba(8, 18, 32, 0.98), rgba(4, 10, 18, 0.96));
-  box-shadow: 0 20px 44px rgba(0,0,0,0.56);
-  padding: 0.9rem;
+  max-height: 100%;
+  border-radius: var(--bs-radius);
+  border: 1px solid var(--bs-border-strong);
+  background: linear-gradient(152deg, var(--bs-surface-elevated), var(--bs-surface));
+  box-shadow: var(--bs-shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 1rem;
   display: grid;
-  gap: 0.72rem;
-  animation: bits-sniper-modal-in 0.24s cubic-bezier(0.16, 0.78, 0.25, 1);
+  gap: 0.75rem;
+  overflow: auto;
+  animation: bits-sniper-modal-in 0.28s cubic-bezier(0.22, 0.78, 0.26, 1);
+}
+
+/* ── Simple Pause overlay ─────────────────────────────────────────────── */
+.bits-sniper-pause-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 14, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  animation: bits-sniper-fade-in 0.2s ease-out;
+}
+
+.bits-sniper-pause-card {
+  min-width: 280px;
+  max-width: 380px;
+  border-radius: var(--bs-radius);
+  padding: 1.15rem 1.4rem;
+  background: linear-gradient(152deg, var(--bs-surface-elevated), var(--bs-surface));
+  border: 1px solid var(--bs-border-strong);
+  box-shadow: var(--bs-shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: grid;
+  gap: 0.7rem;
+  text-align: center;
+  animation: bits-sniper-modal-in 0.28s cubic-bezier(0.22, 0.78, 0.26, 1);
+}
+
+.bits-sniper-pause-card h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(196,224,255,0.96);
+}
+
+.bits-sniper-pause-card p {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: rgba(200,220,244,0.86);
+}
+
+.bits-sniper-pause-card button {
+  border-radius: 999px;
+  border: 1px solid rgba(110,180,245,0.7);
+  background: linear-gradient(145deg, rgba(22,110,210,0.95), rgba(30,140,232,0.98));
+  color: #eef7ff;
+  padding: 0.42rem 0.9rem;
+  font: 600 0.78rem/1 "Oxanium","Segoe UI",sans-serif;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+  transition: filter 0.12s, transform 0.08s;
+}
+
+.bits-sniper-pause-card button + button {
+  margin-top: 0.4rem;
+}
+
+.bits-sniper-pause-card button:hover {
+  filter: brightness(1.08);
+}
+
+.bits-sniper-pause-card button:active {
+  transform: translateY(1px);
+}
+
+/* ── Themed scrollbars for in-game panels (intro + settings) ───────────── */
+.bits-sniper-intro-card,
+.bits-sniper-settings-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(110,170,230,0.85) rgba(4,12,22,0.85);
+}
+
+.bits-sniper-intro-card::-webkit-scrollbar,
+.bits-sniper-settings-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.bits-sniper-intro-card::-webkit-scrollbar-track,
+.bits-sniper-settings-panel::-webkit-scrollbar-track {
+  background: radial-gradient(120% 200% at 0% 0%, rgba(40,90,150,0.35), transparent 60%),
+              rgba(3,10,18,0.95);
+  border-radius: 999px;
+}
+
+.bits-sniper-intro-card::-webkit-scrollbar-thumb,
+.bits-sniper-settings-panel::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(130,200,255,0.95), rgba(60,140,220,0.9));
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(4,10,18,0.95);
+}
+
+.bits-sniper-intro-card::-webkit-scrollbar-thumb:hover,
+.bits-sniper-settings-panel::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(160,220,255,1), rgba(86,170,244,0.98));
 }
 
 .bits-sniper-settings-head {
@@ -694,38 +1175,15 @@
   height: 2px;
 }
 
-.bits-sniper-shield-wrap {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: 16px;
-  border: 2px solid rgba(60,190,255,0.5);
-  transition: box-shadow 0.1s, border-color 0.1s;
-}
-.bits-sniper-shield-label {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(4,22,48,0.9);
-  border-radius: 10px;
-  padding: 6px 16px;
-  color: #70deff;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  border: 1px solid rgba(60,180,255,0.35);
-  animation: bits-sniper-shield-pulse 1.04s ease-in-out infinite;
-}
-
 .bits-sniper-hit-ind {
   position: absolute;
-  top: 50%;
   left: 50%;
-  width: 0;
-  height: 0;
+  top: 50%;
+  width: 10px;
+  height: 72px;
+  transform-origin: 50% 100%;
   pointer-events: none;
+  z-index: 8;
 }
 .bits-sniper-hit-ind-bar {
   position: absolute;
@@ -735,34 +1193,98 @@
   height: 36px;
   background: linear-gradient(180deg, rgba(255,80,80,0.95), rgba(255,40,40,0.7));
   border-radius: 4px;
-  box-shadow: 0 0 8px rgba(255,60,60,0.6);
+  z-index: 8;
 }
 
 .bits-sniper-death-overlay {
   position: absolute;
   inset: 0;
+  z-index: 9;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(40,0,0,0.82);
-  border-radius: 16px;
+  gap: 0.3rem;
+  border-radius: var(--bs-radius);
   pointer-events: none;
-  animation: bits-sniper-fade-in 0.2s ease-out;
+  background: rgba(8, 2, 2, 0.55);
+  backdrop-filter: blur(4px);
+  animation: bits-sniper-fade-in 0.25s ease-out;
 }
 .bits-sniper-death-title {
-  font-size: 2.4rem;
+  font-size: 2.2rem;
   font-weight: 800;
-  color: #ff5050;
-  letter-spacing: 0.08em;
-  text-shadow: 0 0 20px rgba(255,60,60,0.6);
-  animation: bits-sniper-death-enter 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  color: var(--bs-danger);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 0 24px rgba(255, 74, 74, 0.5);
+  flex: 0 0 auto;
+  animation: bits-sniper-death-enter 0.35s cubic-bezier(0.22, 0.78, 0.26, 1);
 }
 .bits-sniper-death-timer {
-  margin-top: 12px;
-  font-size: 1.05rem;
-  color: #ffaaa0;
-  letter-spacing: 0.03em;
+  margin-top: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 160, 150, 0.95);
+  letter-spacing: 0.04em;
+}
+
+.bits-sniper-shield-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  border-radius: 16px;
+  border: 2px solid rgba(60,190,255,0.4);
+  transition: box-shadow 0.12s, border-color 0.12s;
+}
+.bits-sniper-shield-label {
+  position: absolute;
+  top: clamp(60px, 10vh, 100px);
+  left: 50%;
+  transform: translateX(-50%);
+  font: 700 0.72rem/1 "Oxanium","Segoe UI",sans-serif;
+  color: rgba(120,220,255,0.95);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 8px rgba(60,190,255,0.5);
+}
+
+/* ── Kill feed ────────────────────────────────────────────────────────── */
+.bits-sniper-kill-feed {
+  position: absolute;
+  top: clamp(5rem, 9vh, 6.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+  max-width: 90%;
+}
+.bits-sniper-kill-feed-item {
+  padding: 0.32rem 0.7rem;
+  border-radius: var(--bs-radius-sm);
+  background: var(--bs-surface);
+  border: 1px solid var(--bs-border);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--bs-text-muted);
+  letter-spacing: 0.02em;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: bits-sniper-kill-feed-in 0.25s cubic-bezier(0.22, 0.76, 0.28, 1);
+}
+.bits-sniper-kill-feed-item.is-headshot {
+  border-color: rgba(255, 180, 80, 0.55);
+  color: #ffe8c0;
+  box-shadow: 0 4px 14px rgba(255, 160, 60, 0.2);
+}
+
+/* Settings focus outline */
+.bits-sniper-settings-row.is-focused {
+  outline: 2px solid rgba(100,200,255,0.6);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 /* ── HUD (player center) ──────────────────────────────────────────────── */
@@ -776,14 +1298,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(0.38rem, 1.2vh, 0.72rem);
+  gap: clamp(0.4rem, 1.2vh, 0.75rem);
   min-width: clamp(280px, 46vw, 640px);
-  padding: clamp(0.44rem, 1.5vh, 0.72rem) clamp(0.6rem, 1.2vw, 1rem);
-  border-radius: 14px;
-  border: 1px solid rgba(126, 198, 248, 0.42);
-  background: linear-gradient(165deg, rgba(7, 18, 34, 0.88), rgba(3, 10, 20, 0.84));
-  box-shadow: 0 10px 28px rgba(0,0,0,0.34);
-  animation: bits-sniper-hud-rise 0.26s cubic-bezier(0.22, 0.76, 0.28, 1);
+  padding: clamp(0.5rem, 1.5vh, 0.78rem) clamp(0.65rem, 1.2vw, 1.1rem);
+  border-radius: var(--bs-radius);
+  border: 1px solid var(--bs-border-strong);
+  background: linear-gradient(168deg, var(--bs-surface-elevated), var(--bs-surface));
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  animation: bits-sniper-hud-rise 0.3s cubic-bezier(0.22, 0.76, 0.28, 1);
 }
 
 .bits-sniper-hp-row {
@@ -800,17 +1325,17 @@
 .bits-sniper-hp-track {
   width: clamp(170px, 26vw, 360px);
   height: clamp(12px, 1.5vw, 16px);
-  background: rgba(22,8,8,0.82);
-  border: 1px solid rgba(255,96,96,0.44);
-  border-radius: 6px;
+  background: rgba(18, 6, 6, 0.9);
+  border: 1px solid var(--bs-danger-soft);
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: inset 0 1px 5px rgba(0,0,0,0.5);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 .bits-sniper-hp-fill {
   height: 100%;
-  border-radius: 5px;
-  transition: width 0.12s ease;
-  box-shadow: 0 0 10px currentColor;
+  border-radius: 7px;
+  transition: width 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  box-shadow: 0 0 12px currentColor;
 }
 .bits-sniper-hp-value {
   color: #f0f8ff;
@@ -831,24 +1356,24 @@
 .bits-sniper-weapon-slot {
   display: flex;
   align-items: center;
-  gap: clamp(0.2rem, 0.5vw, 0.35rem);
-  border: 1.5px solid rgba(104,170,232,0.44);
-  border-radius: 10px;
-  background: rgba(6,18,34,0.85);
-  padding: clamp(0.3rem, 0.95vw, 0.52rem) clamp(0.42rem, 0.95vw, 0.72rem);
-  color: rgba(214,238,255,0.82);
-  font-size: clamp(0.68rem, 0.95vw, 0.86rem);
+  gap: clamp(0.22rem, 0.5vw, 0.38rem);
+  border: 1px solid var(--bs-border);
+  border-radius: var(--bs-radius-sm);
+  background: var(--bs-surface);
+  padding: clamp(0.32rem, 0.95vw, 0.54rem) clamp(0.45rem, 0.95vw, 0.75rem);
+  color: var(--bs-text-muted);
+  font-size: clamp(0.7rem, 0.95vw, 0.86rem);
   font-weight: 600;
-  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
-  opacity: 0.65;
+  transition: border-color var(--bs-transition), background var(--bs-transition), opacity var(--bs-transition), box-shadow var(--bs-transition);
+  opacity: 0.7;
 }
 .bits-sniper-weapon-slot.is-active {
-  border-color: rgba(108,232,255,0.94);
-  background: rgba(24,84,146,0.72);
+  border-color: var(--bs-accent);
+  background: rgba(20, 70, 130, 0.75);
   color: #f0f9ff;
   opacity: 1;
-  box-shadow: 0 0 16px rgba(80,180,255,0.44);
-  animation: bits-sniper-slot-active 1.4s ease-in-out infinite;
+  box-shadow: 0 0 18px rgba(94, 184, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: bits-sniper-slot-active 1.6s ease-in-out infinite;
 }
 .bits-sniper-weapon-emoji {
   font-size: clamp(0.84rem, 1.12vw, 1.02rem);
@@ -906,8 +1431,8 @@
 }
 
 @keyframes bits-sniper-crosshair-glow {
-  0%,100% { opacity: 0.92; filter: drop-shadow(0 0 1px rgba(125,212,255,0.42)); }
-  50% { opacity: 1; filter: drop-shadow(0 0 3px rgba(125,212,255,0.58)); }
+  0%, 100% { opacity: 0.94; }
+  50% { opacity: 1; box-shadow: 0 0 10px rgba(94, 184, 255, 0.5), 0 0 2px rgba(0, 0, 0, 0.95); }
 }
 
 @keyframes bits-sniper-cta-glow {
@@ -941,13 +1466,18 @@
 }
 
 @keyframes bits-sniper-hud-rise {
-  from { opacity: 0; transform: translate(-50%, 10px); }
+  from { opacity: 0; transform: translate(-50%, 14px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
+@keyframes bits-sniper-kill-feed-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 @keyframes bits-sniper-slot-active {
-  0%,100% { box-shadow: 0 0 12px rgba(80,180,255,0.36); }
-  50% { box-shadow: 0 0 18px rgba(80,196,255,0.6); }
+  0%, 100% { box-shadow: 0 0 14px rgba(94, 184, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+  50% { box-shadow: 0 0 22px rgba(94, 184, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
 }
 
 @keyframes bits-sniper-topright-in {
@@ -955,7 +1485,37 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── HUD top-right ───────────────────────────────────────────────────── */
+/* ── HUD top-right: קונטיינר מיני־מפה + TIME/K/D (COD/CS:GO style) ────── */
+.bits-sniper-corner-minimap {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  right: 12px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.bits-sniper-corner-minimap .bits-sniper-topright {
+  position: static;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.75rem;
+  animation: bits-sniper-topright-in 0.32s cubic-bezier(0.22, 0.78, 0.26, 1);
+}
+
+.bits-sniper-minimap-wrap {
+  flex-shrink: 0;
+  border-radius: var(--bs-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--bs-border-strong);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: var(--bs-surface);
+}
+
 .bits-sniper-topright {
   position: absolute;
   z-index: 6;
@@ -964,16 +1524,17 @@
   pointer-events: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background: rgba(5,16,32,0.92);
-  border: 1px solid rgba(96,176,234,0.38);
-  border-radius: 12px;
-  padding: 8px 14px;
-  font-size: 0.8rem;
+  gap: 5px;
+  background: var(--bs-surface);
+  border: 1px solid var(--bs-border);
+  border-radius: var(--bs-radius-sm);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: #b8defa;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-  animation: bits-sniper-topright-in 0.3s cubic-bezier(0.2, 0.78, 0.22, 1);
+  color: var(--bs-text-muted);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(6px);
+  animation: bits-sniper-topright-in 0.32s cubic-bezier(0.22, 0.78, 0.26, 1);
 }
 .bits-sniper-topright-bots {
   letter-spacing: 0.04em;
@@ -983,20 +1544,240 @@
   font-size: 0.9rem;
 }
 
+/* ── Tactical map overlay (M key) ──────────────────────────────────────── */
+.bits-sniper-tactical-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: bits-sniper-fade-in 0.18s ease-out;
+}
+.bits-sniper-tactical-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 14, 0.82);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  border-radius: var(--bs-radius);
+}
+.bits-sniper-tactical-map-layer {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--bs-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--bs-border-strong);
+  box-shadow: var(--bs-shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.bits-sniper-tactical-map-image {
+  display: block;
+  background-size: 100% 100%;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
+  background-color: rgba(12,24,42,0.95);
+}
+.bits-sniper-tactical-map-placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  background: linear-gradient(135deg, rgba(20,45,80,0.9), rgba(8,20,40,0.95));
+}
+.bits-sniper-tactical-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bits-sniper-tactical-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.bits-sniper-tactical-marker--player-arrow {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 14px solid #4da6ff;
+  filter: drop-shadow(0 0 4px rgba(77,166,255,0.8));
+}
+.bits-sniper-tactical-marker--enemy {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff6b4a;
+  box-shadow: 0 0 6px rgba(255,107,74,0.8);
+}
+.bits-sniper-tactical-marker--spawn {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,220,100,0.9);
+  font-size: 0.6rem;
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bits-sniper-tactical-ui {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+.bits-sniper-tactical-ui .bits-sniper-tactical-close {
+  pointer-events: auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(140,200,255,0.5);
+  background: rgba(8,26,50,0.9);
+  color: #c8e4ff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.bits-sniper-tactical-ui .bits-sniper-tactical-close:hover {
+  background: rgba(30,80,140,0.95);
+  color: #fff;
+}
+.bits-sniper-tactical-title {
+  font: 700 0.72rem/1 "Oxanium","Segoe UI",sans-serif;
+  letter-spacing: 0.12em;
+  color: rgba(180,220,255,0.95);
+}
+
+/* ── Minimap widget (HUD) ─────────────────────────────────────────────── */
+.bits-sniper-minimap-widget {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--bs-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--bs-border-strong);
+  background: var(--bs-surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.bits-sniper-minimap-widget__zoom-wrapper {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.bits-sniper-minimap-widget__map {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-color: rgba(10, 28, 50, 0.95);
+}
+.bits-sniper-minimap-widget__placeholder {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(18,45,85,0.9), rgba(6,20,45,0.95));
+}
+.bits-sniper-minimap-widget__markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bits-sniper-minimap-widget__teammate {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4da6ff;
+  transform: translate(-50%, -50%);
+}
+.bits-sniper-minimap-widget__enemy {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff6b4a;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 4px rgba(255,107,74,0.7);
+}
+.bits-sniper-minimap-widget__enemy-index {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.5rem;
+  color: #fff;
+  text-shadow: 0 0 2px #000;
+}
+.bits-sniper-minimap-widget__objective {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffd700;
+  transform: translate(-50%, -50%);
+  font-size: 0.5rem;
+  color: #1a1a1a;
+}
+.bits-sniper-minimap-widget__player-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bits-sniper-minimap-widget__player {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 12px solid #4da6ff;
+  filter: drop-shadow(0 0 3px rgba(77,166,255,0.8));
+}
+.bits-sniper-minimap-widget__debug-circle {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(255,200,80,0.5);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.bits-sniper-minimap-widget__debug-dot {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ff0;
+  box-shadow: 0 0 4px #ff0;
+}
+
 /* ── Footer ──────────────────────────────────────────────────────────── */
 .bits-sniper-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
-  border-radius: 12px;
-  border: 1px solid rgba(102, 172, 234, 0.3);
-  background: linear-gradient(145deg, rgba(5, 14, 26, 0.88), rgba(4, 10, 20, 0.85));
-  padding: 0.52rem 0.62rem;
-  box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.3);
+  border-radius: var(--bs-radius-sm);
+  border: 1px solid var(--bs-border);
+  background: linear-gradient(148deg, var(--bs-surface-elevated), var(--bs-surface));
+  padding: 0.55rem 0.7rem;
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
-.bits-sniper-footer p { margin:0; font-size:0.74rem; color:rgba(182,213,244,0.76); }
+.bits-sniper-footer p {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--bs-text-muted);
+  letter-spacing: 0.02em;
+}
 
 .bits-sniper-footer-info {
   display: flex;
@@ -1058,6 +1839,7 @@
     min-width: min(94vw, 560px);
     padding: 0.46rem 0.56rem;
   }
+  .bits-sniper-corner-minimap { top: 8px; right: 8px; gap: 4px; }
   .bits-sniper-topright { top: clamp(6.2rem, 18vw, 8rem); right: 12px; }
   .bits-sniper-footer { padding: 0.45rem 0.52rem; }
   .bits-sniper-fs-fab { top: 10px; right: 10px; }
@@ -1106,6 +1888,7 @@
   .bits-sniper-shield-label,
   .bits-sniper-death-overlay,
   .bits-sniper-death-title,
+  .bits-sniper-corner-minimap .bits-sniper-topright,
   .bits-sniper-hud,
   .bits-sniper-weapon-slot.is-active,
   .bits-sniper-topright { animation:none; }

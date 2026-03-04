@@ -1,4 +1,4 @@
-﻿import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 
 import Header from "../components/Header";
@@ -26,6 +26,7 @@ import Game6767 from "../components/6767/Game6767";
 import DontTouchTheSpikesGame from "../components/DontTouchTheSpikes/DontTouchTheSpikesGame";
 import BitsSniperGame from "../components/bitsSniper/BitsSniperGame";
 import RaidHeroGame from "../components/RaidHearo/RaidHeroGame";
+import ImageFontText from "../components/ImageFontText";
 
 import Login from "../loginRegistry/Login";
 import Register from "../loginRegistry/Register";
@@ -142,6 +143,8 @@ export default function App() {
   const ownsLockRef = useRef(false);
   const allowHomeIntroOnInitialLoadRef = useRef(location.pathname === "/");
   const introPlayedRef = useRef(false);
+  const entryIntroLiftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const entryIntroHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSecondaryTab, setIsSecondaryTab] = useState(false);
   const [showEntryIntro, setShowEntryIntro] = useState(false);
   const [entryIntroLift, setEntryIntroLift] = useState(false);
@@ -196,21 +199,64 @@ export default function App() {
     const centerHold = prefersReducedMotion ? 80 : SITE_ENTRY_INTRO_CENTER_HOLD_MS;
     const moveDuration = prefersReducedMotion ? 240 : SITE_ENTRY_INTRO_MOVE_DURATION_MS;
 
-    const liftTimer = window.setTimeout(() => {
+    entryIntroLiftTimerRef.current = window.setTimeout(() => {
       setEntryIntroLift(true);
     }, centerHold);
 
-    const hideTimer = window.setTimeout(() => {
+    entryIntroHideTimerRef.current = window.setTimeout(() => {
       setShowEntryIntro(false);
       setEntryIntroLift(false);
       introPlayedRef.current = true;
     }, centerHold + moveDuration);
 
     return () => {
-      window.clearTimeout(liftTimer);
-      window.clearTimeout(hideTimer);
+      if (entryIntroLiftTimerRef.current) window.clearTimeout(entryIntroLiftTimerRef.current);
+      if (entryIntroHideTimerRef.current) window.clearTimeout(entryIntroHideTimerRef.current);
+      entryIntroLiftTimerRef.current = null;
+      entryIntroHideTimerRef.current = null;
     };
   }, [isHomeRoute, isNotFound, isSecret]);
+
+  // בלחיצה על מקש או קליק עכבר במסך הפתיחה – מדלגים מיד על האנימציה
+  useEffect(() => {
+    if (!showEntryIntro || entryIntroLift) return;
+
+    const triggerLiftAndHide = () => {
+      if (entryIntroLiftTimerRef.current) window.clearTimeout(entryIntroLiftTimerRef.current);
+      if (entryIntroHideTimerRef.current) window.clearTimeout(entryIntroHideTimerRef.current);
+      entryIntroLiftTimerRef.current = null;
+      entryIntroHideTimerRef.current = null;
+
+      setEntryIntroLift(true);
+
+      const moveDuration = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 240
+        : SITE_ENTRY_INTRO_MOVE_DURATION_MS;
+
+      entryIntroHideTimerRef.current = window.setTimeout(() => {
+        setShowEntryIntro(false);
+        setEntryIntroLift(false);
+        introPlayedRef.current = true;
+        entryIntroHideTimerRef.current = null;
+      }, moveDuration);
+    };
+
+    const handleKeyDown = () => {
+      triggerLiftAndHide();
+    };
+
+    const handleClick = () => {
+      triggerLiftAndHide();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { once: true });
+    window.addEventListener("click", handleClick, { once: true });
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("click", handleClick);
+    };
+  }, [showEntryIntro, entryIntroLift]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -360,6 +406,9 @@ export default function App() {
         <div className={`site-entry-intro${entryIntroLift ? " is-lift" : ""}`} aria-hidden="true">
           <div className="site-entry-intro__veil" />
           <img src={SITE_LOGO_SRC} alt="" className="site-entry-intro__logo" />
+          <div className="site-entry-intro__skip-label">
+            <ImageFontText text="PRESS TO SKIP" ariaLabel="Press any key or click to skip intro" />
+          </div>
           <div className="site-entry-intro__wordmark">
             {SITE_ENTRY_WORDMARK_GLYPHS.map((item, index) => {
               const glyph = SITE_ENTRY_GLYPH_RECTS[item.char];
