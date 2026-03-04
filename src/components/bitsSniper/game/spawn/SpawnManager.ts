@@ -23,8 +23,12 @@ export class SpawnManager {
   private readonly cfg: SpawnManagerConfig;
   private points: SpawnPoint[] = [];
 
-  constructor(cfg: SpawnManagerConfig) {
-    this.cfg = cfg;
+  constructor(config: SpawnManagerConfig) {
+    this.cfg = config;
+  }
+
+  getConfig(): SpawnManagerConfig {
+    return this.cfg;
   }
 
   setSpawnPoints(points: SpawnPoint[]) {

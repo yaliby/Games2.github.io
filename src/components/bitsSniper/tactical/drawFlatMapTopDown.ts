@@ -10,7 +10,6 @@ const FLOOR_COL2 = "#9a9270";
 const WALL_COL = "#6e6848";
 const WALL_EDGE_COL = "#8e8668";
 
-const ARENA_HALF = 72;
 const WALL_THICK = 2.4;
 
 /**

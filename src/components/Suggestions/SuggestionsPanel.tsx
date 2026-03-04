@@ -170,7 +170,7 @@ export default function SuggestionsPanel() {
     (): CSSProperties => ({
       "--suggestions-header-offset": `${headerHeight}px`,
       ...(open ? { "--suggestions-drawer-top": `${drawerTopPx}px` } : {}),
-    }),
+    } as CSSProperties),
     [headerHeight, open, drawerTopPx]
   );
 

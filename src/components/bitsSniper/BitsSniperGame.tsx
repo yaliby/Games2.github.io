@@ -5,7 +5,6 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -28,14 +27,11 @@ import { SpawnSelectionMap, type SpawnPoint } from "./spawnSelection/SpawnSelect
 import { createSpawnVisualGroup, disposeSpawnVisualGroup } from "./spawnSelection/SpawnVisuals";
 import {
   ARENA_HALF,
-  FORCE_PROCEDURAL_DUST2,
   USE_FLAT_PLAYGROUND,
   buildMap,
   createFlatPlayground,
   createProceduralDust2Blockout,
-  type MapBuildResult,
   type MapKeyPoint,
-  type MapKeyPointKind,
 } from "./BitsSniperMaps";
 
 //  Constants 
@@ -44,8 +40,6 @@ const DEBUG_MINIMAP_POSITION = false;
 const MINIMAP_ZOOM = 1;
 /** גודל המיני־מפה בפיקסלים (פינה ימנית עליונה, בסגנון COD/CS:GO). */
 const MINIMAP_SIZE = 200;
-/** World X,Z for the 4 bot spawn options in intro (same order as BOT_FLAT_SPAWNS in effect). */
-const INTRO_BOT_SPAWN_WORLD: [number, number][] = [[14, 6], [14, -6], [-14, 10], [-14, -10]];
 const PLAYER_HEIGHT    = 1.65;
 const PLAYER_RADIUS    = 0.38;
 const MOVE_SPEED       = 9.2;
@@ -353,20 +347,9 @@ async function loadFpsAssetPack(): Promise<FpsAssetPack> {
   };
   const textureLoader = new THREE.TextureLoader();
   const audioLoader = new THREE.AudioLoader();
-  const fbxLoader = new FBXLoader();
   const mtlLoader = new MTLLoader();
   const objLoader = new OBJLoader();
   const gltfLoader = new GLTFLoader();
-
-  const loadMutantClip = async (key: BotAnimName, relativePath: string) => {
-    try {
-      const clipSource = await fbxLoader.loadAsync(buildAssetUrl(relativePath));
-      const clip = clipSource.animations?.[0];
-      if (clip) pack.mutantAnims[key] = clip;
-    } catch {
-      // Keep fallback animation behavior if one of the files is missing.
-    }
-  };
 
   const loadViewModel = async (viewModel: WeaponDef["viewModel"], relativePath: string) => {
     try {
@@ -712,11 +695,6 @@ const BOT_SPAWN_ZONES: SpawnZone[] = [
   [  6, -10, 12, 20],
   [-12,  26, 24, 18],
 ];
-
-function pointInSpawnZone(zone: SpawnZone, y: number): THREE.Vector3 {
-  const [zx, zz, zw, zd] = zone;
-  return new THREE.Vector3(rng(zx, zx + zw), y, rng(zz, zz + zd));
-}
 
 const BOT_NAMES  = ["KoloBot","YoloEgg","SnipeHen","CrackBot","FryBot","Scrambles","Clucky"];
 const BOT_COLORS = ["#e84a4a","#e87a40","#e8c44a","#40e880","#40b0e8","#a040e8","#e840b0"]
@@ -1408,7 +1386,7 @@ export default function BitsSniperGame() {
   // ─────────────────────────────────────────────────────────────
   // Game-level singletons (state manager + event bus + settings)
   // ─────────────────────────────────────────────────────────────
-  const [gameState, setGameState] = useState<GameStateSnapshot | null>(null);
+  const [_gameState, setGameState] = useState<GameStateSnapshot | null>(null);
   const gameBusRef = useRef<GameEventBus | null>(null);
   const gsmRef = useRef<GameStateManager | null>(null);
   const plmRef = useRef<PointerLockManager | null>(null);
@@ -1472,8 +1450,8 @@ export default function BitsSniperGame() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [flatSpawnIdx, setFlatSpawnIdx] = useState(0);
-  const [botSpawnIdx, setBotSpawnIdx] = useState(() => {
+  const [flatSpawnIdx, _setFlatSpawnIdx] = useState(0);
+  const [botSpawnIdx, _setBotSpawnIdx] = useState(() => {
     const s = loadSettingsFromStorage();
     return typeof s.botSpawnIdx === "number" && s.botSpawnIdx >= 0 && s.botSpawnIdx <= 3 ? s.botSpawnIdx : 1;
   });
@@ -1486,12 +1464,6 @@ export default function BitsSniperGame() {
   const [customEnemySpawns, setCustomEnemySpawns] = useState<SpawnPoint[]>([]);
   /** Ref set on Start Match so the game effect uses these spawns for this session. */
   const customSpawnsForSessionRef = useRef<{ player: { x: number; z: number } | null; enemies: { x: number; z: number }[] }>({ player: null, enemies: [] });
-  const FLAT_MINIMAP_POINTS = [
-    { x: 24, y: 50, label: "Left" },
-    { x: 76, y: 50, label: "Right" },
-    { x: 50, y: 26, label: "Front" },
-    { x: 50, y: 74, label: "Back" },
-  ] as const;
   const [adsSens, setAdsSens] = useState(1);
   const [masterVolume, setMasterVolume] = useState(1);
   const [selectedMapId, setSelectedMapId] = useState<MapId>(USE_FLAT_PLAYGROUND ? "flat" : "arena");
@@ -1504,7 +1476,7 @@ export default function BitsSniperGame() {
   const [botPositionsForTactical, setBotPositionsForTactical] = useState<{ x: number; z: number }[]>([]);
   const [tacticalMapOpen, setTacticalMapOpen] = useState(false);
   const [tacticalMapImage, setTacticalMapImage] = useState<string | null>(null);
-  const [playerYaw, setPlayerYaw] = useState(0);
+  const [_playerYaw, setPlayerYaw] = useState(0);
   const [playerForward, setPlayerForward] = useState<{ x: number; z: number }>({ x: 0, z: -1 });
   const [debugEnemyMap, setDebugEnemyMap] = useState<{
     worldX: number;
@@ -1514,7 +1486,7 @@ export default function BitsSniperGame() {
     forwardX: number;
     forwardZ: number;
   } | null>(null);
-  const [matchEnded, setMatchEnded] = useState(false);
+  const [_matchEnded, setMatchEnded] = useState(false);
   const [killFeed, setKillFeed] = useState<KillFeedEntry[]>([]);
   const sessionStartedRef = useRef(false);
   const showIntroRef = useRef(true);
@@ -2304,7 +2276,6 @@ export default function BitsSniperGame() {
     const projImpact = new THREE.Vector3();
     const projRay = new THREE.Ray();
     const projDir = new THREE.Vector3();
-    const rayToActor = new THREE.Vector3();
     const rayHitPoint = new THREE.Vector3();
     const rayPointTmp = new THREE.Vector3();
     const hsRayEnd = new THREE.Vector3();
@@ -2312,7 +2283,6 @@ export default function BitsSniperGame() {
     const prStart = new THREE.Vector3();
     const prStep = new THREE.Vector3();
     const prEnd = new THREE.Vector3();
-    const prRel = new THREE.Vector3();
     const _botWorldPos = new THREE.Vector3();
     const _playerWorldPos = new THREE.Vector3();
     const _playerWorldQuat = new THREE.Quaternion();
@@ -2595,7 +2565,6 @@ export default function BitsSniperGame() {
     );
     scene.add(spawnVisualGroup);
 
-    const PLAYER_FIXED_SPAWN = new THREE.Vector3(-10, PLAYER_HEIGHT, 0);
     const BOT_FIXED_SPAWN    = new THREE.Vector3( 10, BOT_HEIGHT, 0);
     const PLAYER_FLAT_SPAWNS: THREE.Vector3[] = [
       new THREE.Vector3(-10, PLAYER_HEIGHT,   0),

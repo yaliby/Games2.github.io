@@ -893,7 +893,6 @@ function buildChartFromAnalysis(
   // ── Build phrase grid ────────────────────────────────────
   // 4-bar phrases aligned to beat grid; phrase boundaries also
   // snap to detected section changes and IOI breaks.
-  const phraseSec = beatSec * 16; // 4 bars
   const rawBounds = new Set<number>([playStart, playEnd]);
   for (const t of analysis.sectionBoundaries) if (t > playStart && t < playEnd) rawBounds.add(t);
   for (const t of analysis.phraseBreaks)      if (t > playStart && t < playEnd) rawBounds.add(t);
@@ -937,7 +936,6 @@ function buildChartFromAnalysis(
   let currentBias: MotionBias = "zigzag";
   let currentEnergy   = 0.5;
   let currentBarInPhrase = 0;
-  let barStartTime     = playStart;
   let lastNoteTime     = -999;
 
   // Fakeout state: after a run, occasionally silence a beat
@@ -962,7 +960,6 @@ function buildChartFromAnalysis(
       currentEnergy    = phrase.energy;
 
       // Bar 0 of this phrase
-      barStartTime = phrase.start;
       currentBarInPhrase = 0;
 
       // Motif recall: reuse bias from phrase (pi - 4) if available
@@ -1148,13 +1145,6 @@ function createRng(seed: number) {
   let s = seed >>> 0;
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / RNG_MODULUS; };
 }
-function getSectionForTime(t: number, boundaries: number[]) {
-  for (let i = 0; i < boundaries.length - 1; i++) {
-    if (t < boundaries[i + 1]) return i;
-  }
-  return Math.max(0, boundaries.length - 2);
-}
-
 
 
 
@@ -2062,7 +2052,7 @@ function StageEditor({onClose}:{onClose:()=>void}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[repaintOverlay]);
 
-  const sePUp=useCallback((e:RPointerEvent<HTMLDivElement>)=>{
+  const sePUp=useCallback((_e:RPointerEvent<HTMLDivElement>)=>{
     const d=activeDrag.current; activeDrag.current=null;
     if(!d) return;
 
@@ -2890,7 +2880,7 @@ export default function RaidHeroGame() {
 
   // State
   const [view, setView]                       = useState<ViewState>(() => createViewState(engineRef.current, initialGoodWindow, TRACK_HEIGHT, HIT_LINE_Y));
-  const [audioReady, setAudioReady]           = useState(false);
+  const [_audioReady, setAudioReady]           = useState(false);
   const [audioError, setAudioError]           = useState<string | null>(null);
   const [useFallback, setUseFallback]         = useState(false);
   const [showStartMenu, setShowStartMenu]     = useState(true);

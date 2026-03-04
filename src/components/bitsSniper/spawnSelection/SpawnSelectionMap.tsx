@@ -25,7 +25,6 @@ export interface SpawnSelectionMapProps {
 }
 
 const POINT_RADIUS = 22;
-const POINT_RADIUS_HOVER = 28;
 
 function generateId(): string {
   return `spawn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
