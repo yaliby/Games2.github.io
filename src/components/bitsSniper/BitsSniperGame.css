@@ -22,6 +22,8 @@
   --bs-radius-sm: 10px;
   --bs-transition: 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --bs-transition-fast: 0.12s ease-out;
+  /* סקלת HUD ברירת מחדל – מותאמת מגודל חלון המשחק (S/M/L) דרך inline style */
+  --bits-sniper-hud-scale: 1;
 }
 
 .bits-sniper-page {
@@ -673,9 +675,10 @@
   width: 28px;
   height: 28px;
   pointer-events: none;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(var(--crosshair-scale, 1));
   transform-origin: center;
   transition: transform 0.06s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
@@ -688,7 +691,8 @@
   box-shadow:
     0 0 8px rgba(94, 184, 255, 0.6),
     0 0 2px rgba(0, 0, 0, 0.95);
-  animation: bits-sniper-crosshair-glow 1.4s ease-in-out infinite;
+  /* בלי אנימציית glow כדי למנוע "הבהובים" בכוונת */
+  animation: none;
 }
 
 .bits-sniper-crosshair::before {
@@ -722,35 +726,170 @@
   );
 }
 
-/* Pistol – כוונת קטנה ומהירה, זרועות קצרות יותר. */
-.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair {
-  width: 24px;
-  height: 24px;
+/* Pistol + AK – כוונת FPS: ארבע זרועות + רווח במרכז (כמו CS/Valorant), קונטור עדין. */
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair,
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair {
+  filter: none;
+  backface-visibility: hidden;
+  isolation: isolate;
 }
-
-/* AK – קצת עבה יותר, מודגשת לספריי. */
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair {
+  width: 22px;
+  height: 22px;
+}
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair {
+  width: 26px;
+  height: 26px;
+}
+/* ארבע זרועות: לבן בקצוות, רווח במרכז; קונטור שחור דק לראות על כל רקע */
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair::before,
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair::after,
 .bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair::before,
 .bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair::after {
-  box-shadow:
-    0 0 8px rgba(90,200,255,0.95),
-    0 0 3px rgba(0,0,0,0.95);
+  content: "";
+  position: absolute;
+  margin: auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  animation: none;
+}
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair::before,
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    #fff 0%,
+    #fff 40%,
+    transparent 40%,
+    transparent 60%,
+    #fff 60%,
+    #fff 100%
+  );
+}
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair::after,
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair::after {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    #fff 0%,
+    #fff 40%,
+    transparent 40%,
+    transparent 60%,
+    #fff 60%,
+    #fff 100%
+  );
 }
 
-/* Shotgun – טבעת עבה המראה את אזור הפיזור. */
+/* אפקט כיווץ ושחרור בירי – אקדח ו-AK; טווח זום גרפי רחב */
+.bits-sniper-stage-wrap--rifle .bits-sniper-crosshair--squeeze,
+.bits-sniper-stage-wrap--scrambler .bits-sniper-crosshair--squeeze {
+  animation: bits-sniper-crosshair-squeeze 0.14s cubic-bezier(0.12, 1, 0.35, 1.35);
+  transition: none;
+}
+
+@keyframes bits-sniper-crosshair-squeeze {
+  0% {
+    transform: translate(-50%, -50%) scale(var(--crosshair-scale, 1));
+  }
+  14% {
+    transform: translate(-50%, -50%) scale(calc(var(--crosshair-scale, 1) * 0.26));
+  }
+  75% {
+    transform: translate(-50%, -50%) scale(calc(var(--crosshair-scale, 1) * 1.32));
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(var(--crosshair-scale, 1));
+  }
+}
+
+/* Shotgun – כוונת בסגנון COD: ארבע "סוגריים" + נקודה מרכזית */
 .bits-sniper-stage-wrap--whipper .bits-sniper-crosshair {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
 }
 .bits-sniper-stage-wrap--whipper .bits-sniper-crosshair::before,
 .bits-sniper-stage-wrap--whipper .bits-sniper-crosshair::after {
   content: "";
-  inset: auto;
-  width: 100%;
-  height: 100%;
-  border-radius: 999px;
-  border: 2px solid rgba(220,240,255,0.9);
-  box-shadow: 0 0 12px rgba(120,210,255,0.8);
-  background: transparent;
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+  animation: none;
+}
+/* חלקים עליונים/תחתונים של הכוונת */
+.bits-sniper-stage-wrap--whipper .bits-sniper-crosshair::before {
+  background:
+    /* עליון */
+    linear-gradient(
+      to right,
+      transparent 0%,
+      transparent 30%,
+      rgba(255,255,255,1) 30%,
+      rgba(255,255,255,1) 45%,
+      transparent 45%,
+      transparent 55%,
+      rgba(255,255,255,1) 55%,
+      rgba(255,255,255,1) 70%,
+      transparent 70%,
+      transparent 100%
+    ) top center / 100% 3px no-repeat,
+    /* תחתון */
+    linear-gradient(
+      to right,
+      transparent 0%,
+      transparent 30%,
+      rgba(255,255,255,1) 30%,
+      rgba(255,255,255,1) 45%,
+      transparent 45%,
+      transparent 55%,
+      rgba(255,255,255,1) 55%,
+      rgba(255,255,255,1) 70%,
+      transparent 70%,
+      transparent 100%
+    ) bottom center / 100% 3px no-repeat;
+}
+/* חלקים ימני/שמאלי + נקודה מרכזית קטנה */
+.bits-sniper-stage-wrap--whipper .bits-sniper-crosshair::after {
+  background:
+    /* שמאלי */
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 30%,
+      rgba(255,255,255,1) 30%,
+      rgba(255,255,255,1) 45%,
+      transparent 45%,
+      transparent 55%,
+      rgba(255,255,255,1) 55%,
+      rgba(255,255,255,1) 70%,
+      transparent 70%,
+      transparent 100%
+    ) left center / 3px 100% no-repeat,
+    /* ימני */
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 30%,
+      rgba(255,255,255,1) 30%,
+      rgba(255,255,255,1) 45%,
+      transparent 45%,
+      transparent 55%,
+      rgba(255,255,255,1) 55%,
+      rgba(255,255,255,1) 70%,
+      transparent 70%,
+      transparent 100%
+    ) right center / 3px 100% no-repeat,
+    /* נקודה במרכז */
+    radial-gradient(circle at center, rgba(255,255,255,0.98) 0, rgba(255,255,255,0.98) 1px, transparent 1px);
 }
 
 /* Sniper – כוונת קטנה ודקה; במצב ADS נשארת קומפקטית. */
@@ -762,6 +901,65 @@
 .bits-sniper-crosshair--ads {
   width: 20px;
   height: 20px;
+}
+
+/* מצב ADS של צלף – כוונת קטנה ונקייה יותר במרכז */
+.bits-sniper-crosshair--sniper-ads {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Sniper scope overlay (full-screen scope) ─────────────────────────── */
+.bits-sniper-scope-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+.bits-sniper-scope-overlay--on {
+  opacity: 1;
+}
+
+.bits-sniper-scope-ring {
+  position: relative;
+  width: min(60vh, 80vw);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  border: 2px solid rgba(220, 240, 255, 0.9);
+  box-shadow:
+    0 0 24px rgba(140, 210, 255, 0.9),
+    0 0 0 9999px rgba(0, 0, 0, 0.92);
+  background: radial-gradient(circle at center,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0) 68%,
+    rgba(0, 0, 0, 0.35) 80%,
+    rgba(0, 0, 0, 0.8) 100%);
+}
+
+.bits-sniper-scope-line {
+  position: absolute;
+  background: rgba(220, 240, 255, 0.85);
+  box-shadow: 0 0 10px rgba(140, 210, 255, 0.9);
+}
+
+.bits-sniper-scope-line--vert {
+  width: 2px;
+  height: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.bits-sniper-scope-line--horiz {
+  height: 2px;
+  width: 100%;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 /* ── Lock button ─────────────────────────────────────────────────────── */
@@ -1293,7 +1491,8 @@
   z-index: 6;
   bottom: clamp(0.85rem, 2.4vh, 1.7rem);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(var(--bits-sniper-hud-scale));
+  transform-origin: bottom center;
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -1309,6 +1508,12 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(8px);
   animation: bits-sniper-hud-rise 0.3s cubic-bezier(0.22, 0.76, 0.28, 1);
+}
+
+/* התאמה מיוחדת ל-S: HUD קומפקטי יותר ומרכזי פחות רחב */
+.bits-sniper-hud.bits-sniper-hud--small {
+  min-width: min(80vw, 480px);
+  padding: 0.4rem 0.6rem;
 }
 
 .bits-sniper-hp-row {
@@ -1602,12 +1807,38 @@
   border-bottom: 14px solid #4da6ff;
   filter: drop-shadow(0 0 4px rgba(77,166,255,0.8));
 }
+.bits-sniper-tactical-marker--player-arrow::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 5px rgba(255,255,255,0.95);
+}
 .bits-sniper-tactical-marker--enemy {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #ff6b4a;
-  box-shadow: 0 0 6px rgba(255,107,74,0.8);
+  position: relative;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 14px solid #ff6b4a;
+  filter: drop-shadow(0 0 4px rgba(255,107,74,0.85));
+}
+.bits-sniper-tactical-marker--enemy::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 5px rgba(255,255,255,0.96);
 }
 .bits-sniper-tactical-marker--spawn {
   width: 8px;
@@ -1703,12 +1934,25 @@
 }
 .bits-sniper-minimap-widget__enemy {
   position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff6b4a;
+  width: 0;
+  height: 0;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 4px rgba(255,107,74,0.7);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 12px solid #ff6b4a;
+  filter: drop-shadow(0 0 3px rgba(255,107,74,0.8));
+}
+.bits-sniper-minimap-widget__enemy::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 4px rgba(255,255,255,0.95);
 }
 .bits-sniper-minimap-widget__enemy-index {
   position: absolute;
@@ -1742,6 +1986,18 @@
   border-right: 5px solid transparent;
   border-bottom: 12px solid #4da6ff;
   filter: drop-shadow(0 0 3px rgba(77,166,255,0.8));
+}
+.bits-sniper-minimap-widget__player::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 0 4px rgba(255,255,255,0.95);
 }
 .bits-sniper-minimap-widget__debug-circle {
   position: absolute;

@@ -22,7 +22,7 @@ export type MiniMapProps = {
   teammates?: { x: number; z: number }[];
   objectives?: { x: number; z: number; label?: string }[];
   showEnemies?: boolean;
-  enemies?: { x: number; z: number }[];
+  enemies?: { x: number; z: number; forwardX?: number; forwardZ?: number }[];
   size?: number;
   zoom?: number;
   debugPosition?: boolean;
@@ -157,6 +157,9 @@ export function MiniMapComponent({
             const pos = worldToScreen(e.x, e.z);
             const c = clampToCircle(pos.x, pos.y);
             const out = !isInRadius(pos.x, pos.y);
+            const fx = e.forwardX ?? 0;
+            const fz = e.forwardZ ?? 1;
+            const arrowDegEnemy = (Math.atan2(fx, fz) * 180) / Math.PI;
             return (
               <div
                 key={i}
@@ -164,7 +167,7 @@ export function MiniMapComponent({
                 style={{
                   left: c.x,
                   top: c.y,
-                  transform: "translate(-50%, -50%)",
+                  transform: `translate(-50%, -50%) rotate(${arrowDegEnemy + 180}deg)`,
                   opacity: out ? 0.5 : 1,
                 }}
                 title="Enemy"

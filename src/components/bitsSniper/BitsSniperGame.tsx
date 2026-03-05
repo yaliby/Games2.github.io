@@ -82,7 +82,8 @@ const ADS_FOV: Record<WeaponDef["viewModel"], number> = {
   pistol: 52,
   ak47: 48,
   shotgun: 58,
-  sniper: 38,
+  // צלף – זום אגרסיבי הרבה יותר
+  sniper: 22,
 };
 const GROUND_ACCEL     = 19;
 const AIR_ACCEL        = 4.2;
@@ -220,7 +221,8 @@ const WEAPONS: WeaponDef[] = [
   {
     id:"whipper",  label:"Shotgun",   emoji:"SG",
     viewModel:"shotgun",
-    damage:13, fireRate:1.08, spread:0.118, pellets:8, range:31,
+    // ספריי רחב יותר – פחות נזק לכל כדור, יותר פיזור
+    damage:11, fireRate:1.08, spread:0.16, pellets:8, range:31,
     ammo:6,  maxAmmo:6,  reloadTime:2.8,
     projColor:"#ffe066", projSpeed:42, hitMode:"hitscan", speedMult:2.0, splash:false, splashR:0, splashDmg:0,
     auto:false, bodyHex:"#996655", barrelLen:0.36, barrelR:0.068,
@@ -327,7 +329,7 @@ const VIEWMODEL_GLB_PATHS: Record<WeaponDef["viewModel"], string> = {
   pistol: "bits-sniper-fps/assets/guns/pistol/pistol.glb",
   ak47: "bits-sniper-fps/assets/guns/ak47/ak47.glb",
   shotgun: "bits-sniper-fps/assets/guns/shotgun/shotgun.glb",
-  sniper: "bits-sniper-fps/assets/guns/sniper/sniper.glb",
+  sniper: "bits-sniper-fps/assets/guns/sniper/sniper_animated.glb",
 };
 
 function buildAssetUrl(relativePath: string) {
@@ -989,17 +991,22 @@ const IMPORTED_VM_CONFIG: Record<WeaponDef["viewModel"], ImportedVmConfig> = {
     scale: 0.009,
     position: [0.04, -0.13, -0.03],
     rotationDeg: [5, 185, 0],
+    flashOffsetX: 0.25,
+    flashOffsetY: -0.15,
+    flashOffsetZ:-1,
     pose: {
       baseX: 0.23, baseY: -0.19, baseZ: -0.44, baseRotY: -0.18,
       muzzleX: 0.22, muzzleY: -0.16, muzzleZ: -0.92,
     },
   },
   sniper: {
-    scale: 0.05,
-    position: [0.04, -0.02, 0.0],
+    scale: 0.016,
+    // bringing the sniper even closer into the player's POV
+    // and slightly lower relative to the camera
+    position: [0.04, -0.07, 0.05],
     rotationDeg: [5, 185, 0],
     pose: {
-      baseX: 0.22, baseY: -0.205, baseZ: -0.52, baseRotY: -0.21,
+      baseX: 0.22, baseY: -0.25, baseZ: -0.32, baseRotY: -0.21,
       muzzleX: 0.22, muzzleY: -0.16, muzzleZ: -1.08,
     },
   },
@@ -1023,6 +1030,16 @@ const MERGED_CLIP_SPLITS: Partial<Record<WeaponDef["viewModel"], MergedClipSplit
     reload: [0.1833, 0.4167],// 1.10s -> 2.50s  (single-shell insert)
   },
 };
+
+// טווחי שניות יעודיים לאנימציות הסנייפר (על ציר זמן הקליפ המקורי)
+const SNIPER_CLIP_SECONDS = {
+  idle:   { start: 0, end: 0.20 },   // פוזה כמעט סטטית בתחילת הקליפ
+  shoot:  { start: 0, end: 1.53 },   // ירייה בודדת
+  reload: { start: 0, end: 3.24 },   // רילואד מלא
+} as const;
+
+// כמה שניקח את הסנייפר עוד קצת "קדימה" בעומק התמונה בזמן רילואד (רחוק מהשחקן)
+const SNIPER_RELOAD_BACK_EXTRA = -0.3;
 
 function normalizeClipName(name: string) {
   return name.toLowerCase().replace(/[\s_-]+/g, "");
@@ -1215,6 +1232,31 @@ function makeViewmodel(
             shootClip = shootClip ?? buildSubclipFromNormalizedRange(single, "fire", split.shoot);
             reloadClip = reloadClip ?? buildSubclipFromNormalizedRange(single, "reload", split.reload);
           }
+          // Sniper: ב-all-anims לוקחים רק טווחים מוגדרים לפי SNIPER_CLIP_SECONDS
+          if (wp.viewModel === "sniper") {
+            const dur = Math.max(0.001, single.duration);
+            const shootEndNorm  = clamp01(SNIPER_CLIP_SECONDS.shoot.end / dur);
+            const reloadEndNorm = clamp01(SNIPER_CLIP_SECONDS.reload.end / dur);
+            const idleEndNorm   = clamp01(SNIPER_CLIP_SECONDS.idle.end / dur);
+            // Idle: קטע קצר מאוד בהתחלה, כמעט סטטי
+            idleClip = idleClip ?? buildSubclipFromNormalizedRange(
+              single,
+              "idle",
+              [0, idleEndNorm],
+            );
+            // Shoot: כל האנימציה הרלוונטית מ-0 ועד סוף טווח הירי
+            shootClip = shootClip ?? buildSubclipFromNormalizedRange(
+              single,
+              "fire",
+              [0, shootEndNorm],
+            );
+            // Reload: 0–3.24s
+            reloadClip = reloadClip ?? buildSubclipFromNormalizedRange(
+              single,
+              "reload",
+              [0, reloadEndNorm],
+            );
+          }
           if (wp.viewModel === "shotgun") {
             // Keep shotgun hands in a static hold pose between triggers.
             freezeIdlePose = true;
@@ -1227,6 +1269,11 @@ function makeViewmodel(
             reloadClip = reloadClip ?? single;
           }
         }
+      }
+
+      // לסנייפר: גם אם יש קליפים מופרדים, נשמור על idle כ-pose קפוא (ללא לולאת אנימציה מתמדת)
+      if (wp.viewModel === "sniper") {
+        freezeIdlePose = true;
       }
 
       // Last-resort fallbacks so imported weapon always animates somehow.
@@ -1469,14 +1516,20 @@ export default function BitsSniperGame() {
   const [masterVolume, setMasterVolume] = useState(1);
   const [selectedMapId, setSelectedMapId] = useState<MapId>(USE_FLAT_PLAYGROUND ? "flat" : "arena");
   const [crosshairBloom, setCrosshairBloom] = useState(0);
+  /** טריגר לאפקט כיווץ/שחרור בכוונת (אקדח + AK) – מוגדר ב־performance.now() בירי */
+  const [crosshairSqueezeAt, setCrosshairSqueezeAt] = useState(0);
+  const setCrosshairSqueezeAtRef = useRef<(t: number) => void>(() => {});
+  setCrosshairSqueezeAtRef.current = setCrosshairSqueezeAt;
   const [lowHpFx, setLowHpFx] = useState(0);
   const [isCrouching, setIsCrouching] = useState(false);
   const [isSliding, setIsSliding] = useState(false);
   const [roundTime, setRoundTime] = useState(MATCH_DURATION_SECS);
   const [playerCoords, setPlayerCoords] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
-  const [botPositionsForTactical, setBotPositionsForTactical] = useState<{ x: number; z: number }[]>([]);
+  const [botPositionsForTactical, setBotPositionsForTactical] = useState<{ x: number; z: number; forwardX: number; forwardZ: number }[]>([]);
   const [tacticalMapOpen, setTacticalMapOpen] = useState(false);
   const [tacticalMapImage, setTacticalMapImage] = useState<string | null>(null);
+  /** H – הצגת אווטליין של היטבוקסים (אויבים + אלמנטים של המפה) */
+  const showHitboxOutlinesRef = useRef(false);
   const [_playerYaw, setPlayerYaw] = useState(0);
   const [playerForward, setPlayerForward] = useState<{ x: number; z: number }>({ x: 0, z: -1 });
   const [debugEnemyMap, setDebugEnemyMap] = useState<{
@@ -1664,11 +1717,11 @@ export default function BitsSniperGame() {
         sessionStartedRef.current = true;
         setSessionStarted(true);
         setShowSettings(false);
-      } else if (wasLocked && runStateRef.current === "playing") {
+      } else if (wasLocked && runStateRef.current === "playing" && !dead) {
         pauseGame({ keepLock: false });
       }
     });
-  }, [pauseGame]);
+  }, [pauseGame, dead]);
 
   /**
    * Request pointer lock. Must be called from a user gesture (e.g. click on stage/canvas).
@@ -2140,6 +2193,11 @@ export default function BitsSniperGame() {
       return clamp(Math.max(base * 1.25, clipDur * 0.5), base, 2.2);
     }
     function getShootPlaybackDuration(wp: WeaponDef) {
+      if (wp.viewModel === "sniper") {
+        // הארכת האנימציה הקיימת של הסנייפר כך שתתנגן יותר לאט (כ~2.0 שניות)
+        const clipDur = getVmAnimRig()?.actions.shoot?.getClip().duration ?? 1.53;
+        return Math.max(2.0, clipDur);
+      }
       if (wp.viewModel === "shotgun") {
         const clipDur = getVmAnimRig()?.actions.shoot?.getClip().duration ?? 0.72;
         return clamp(clipDur * 0.92, 0.72, 1.28);
@@ -2273,7 +2331,7 @@ export default function BitsSniperGame() {
 
     //  Projectiles 
     const projectiles: Projectile[] = [];
-    const projGeo = new THREE.SphereGeometry(0.09,6,6);
+    const projGeo = new THREE.CylinderGeometry(0.03,0.03,0.5,6);
     const projImpact = new THREE.Vector3();
     const projRay = new THREE.Ray();
     const projDir = new THREE.Vector3();
@@ -2331,11 +2389,20 @@ export default function BitsSniperGame() {
       origin: THREE.Vector3, dir: THREE.Vector3, wp: WeaponDef,
       fromBot: boolean, sourceName: string
     ){
-      const mat = new THREE.MeshBasicMaterial({color:wp.projColor});
+      const mat = new THREE.MeshBasicMaterial({
+        color: wp.projColor,
+        transparent: true,
+        opacity: 0.9,
+      });
       const m   = new THREE.Mesh(projGeo,mat);
-      m.position.copy(origin); scene.add(m);
+      m.position.copy(origin);
+      // לייצר "טרייסר" – גליל מיושר לכיוון התנועה
+      const forward = dir.clone().normalize();
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), forward);
+      scene.add(m);
       projectiles.push({
-        mesh:m, vel:dir.clone().normalize().multiplyScalar(wp.projSpeed * PROJECTILE_SPEED_MULT * wp.speedMult),
+        mesh:m,
+        vel:forward.multiplyScalar(wp.projSpeed * PROJECTILE_SPEED_MULT * wp.speedMult),
         fromBot, sourceName, damage:wp.damage, range:wp.range, traveled:0,
         splash:wp.splash, splashR:wp.splashR, splashDmg:wp.splashDmg,
       });
@@ -2849,6 +2916,43 @@ export default function BitsSniperGame() {
       bots.push(bot);
     }
 
+    //  Hitbox outline overlay (H) – אווטליין היטבוקסים לאויבים ואלמנטי מפה
+    const outlineGroup = new THREE.Group();
+    outlineGroup.visible = false;
+    const botOutlineMat = new THREE.LineBasicMaterial({ color: 0x00ff88, depthTest: false });
+    const mapOutlineMat = new THREE.LineBasicMaterial({ color: 0xff8822, depthTest: false });
+    const botOutlineMeshes: THREE.LineSegments[] = [];
+    for (let i = 0; i < BOT_COUNT; i++) {
+      const capGeo = new THREE.CylinderGeometry(BOT_RADIUS, BOT_RADIUS, BOT_HEIGHT * 2, 12);
+      const edgeGeo = new THREE.EdgesGeometry(capGeo);
+      capGeo.dispose();
+      const line = new THREE.LineSegments(edgeGeo, botOutlineMat.clone());
+      outlineGroup.add(line);
+      botOutlineMeshes.push(line);
+    }
+    const boxSize = new THREE.Vector3();
+    const boxCenter = new THREE.Vector3();
+    for (const box of collidables) {
+      box.getSize(boxSize);
+      box.getCenter(boxCenter);
+      const g = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
+      const eg = new THREE.EdgesGeometry(g);
+      g.dispose();
+      const line = new THREE.LineSegments(eg, mapOutlineMat.clone());
+      line.position.copy(boxCenter);
+      outlineGroup.add(line);
+    }
+    const keyPointOutlineMat = new THREE.LineBasicMaterial({ color: 0xffcc00, depthTest: false });
+    for (const kp of keyPoints) {
+      const sg = new THREE.SphereGeometry(kp.radius, 10, 8);
+      const seg = new THREE.EdgesGeometry(sg);
+      sg.dispose();
+      const line = new THREE.LineSegments(seg, keyPointOutlineMat.clone());
+      line.position.copy(kp.position);
+      outlineGroup.add(line);
+    }
+    scene.add(outlineGroup);
+
     //  Player actions 
     function traceWorldHitDistance(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number){
       let best = maxDist;
@@ -2943,6 +3047,8 @@ export default function BitsSniperGame() {
     }
 
     const keys: Record<string,boolean> = {};
+    let rightMouseHeld = false;
+    let sniperAimLockUntil = 0;
     const playerAmmoByWeapon = WEAPONS.map((wp)=>wp.maxAmmo);
     let velX = 0, velY = 0, velZ = 0, onGround = USE_FLAT_PLAYGROUND;
     let flyMode = false;
@@ -3037,12 +3143,20 @@ export default function BitsSniperGame() {
         const baseInterval = 1 / wp.fireRate;
         const animInterval = (isShotgunVm && shootPlaybackDuration)
           ? shootPlaybackDuration * 0.95
-          : 0;
+          : (isSniperVm && shootPlaybackDuration ? shootPlaybackDuration : 0);
         S.fireTimer = now + Math.max(baseInterval, animInterval);
       }
       S.ammo = Math.max(0, S.ammo-1);
       playerAmmoByWeapon[S.wpIdx] = S.ammo;
       setAmmo(S.ammo);
+      // Sniper: יוצא ממצב כוונת בזמן הירייה עד סוף האנימציה
+      if (isSniperVm) {
+        S.aiming = false;
+        setIsAiming(false);
+        const fallbackShootWindow = Math.max(0.12, 1 / Math.max(0.001, wp.fireRate) * 0.85);
+        const shootWindow = shootPlaybackDuration ?? fallbackShootWindow;
+        sniperAimLockUntil = now + shootWindow;
+      }
       if(S.ammo===0){
         const fallbackShootWindow = Math.max(0.12, 1 / Math.max(0.001, wp.fireRate) * 0.85);
         const shootWindow = shootPlaybackDuration ?? fallbackShootWindow;
@@ -3060,9 +3174,14 @@ export default function BitsSniperGame() {
             durationSec: shellDuration,
           };
         } else {
-          const reloadDuration = getEffectiveReloadDuration(wp);
+          let reloadDuration = getEffectiveReloadDuration(wp);
+          if (isSniperVm) {
+            // רילואד מלא של סנייפר – ארוך ואיטי יותר
+            const clipDur = getVmAnimRig()?.actions.reload?.getClip().duration ?? reloadDuration;
+            reloadDuration = clamp(Math.max(reloadDuration * 1.5, clipDur * 1.1), reloadDuration, 4.2);
+          }
           S.reloading=true; S.reloadTimer=now+reloadDuration; setReloading(true);
-          pendingVmReload = { wpIdx: S.wpIdx, fromEmpty: true, triggerAt: now + delay };
+          pendingVmReload = { wpIdx: S.wpIdx, fromEmpty: true, triggerAt: now + delay, durationSec: reloadDuration };
         }
       }
       // --- CS-style deterministic recoil state ---------------------------------
@@ -3075,13 +3194,15 @@ export default function BitsSniperGame() {
       const recoilStep = pattern[patternIdx] ?? { yaw: 0, pitch: 0 };
       S.sprayIndex = Math.min(S.sprayIndex + 1, pattern.length - 1);
       S.lastShotTs = now;
+      if (isPistolVm || wp.viewModel === "ak47") setCrosshairSqueezeAtRef.current(performance.now());
 
-      vmKickT = isPistolVm ? 0.2 : isShotgunVm ? 0.24 : isSniperVm ? 0.27 : 0.14;   // trigger viewmodel recoil kick
-      const recoilBackStep = isPistolVm ? 0.046 : isShotgunVm ? 0.072 : isSniperVm ? 0.084 : 0.024;
-      const recoilPitchStep = isPistolVm ? 0.1 : isShotgunVm ? 0.155 : isSniperVm ? 0.19 : 0.055;
-      const recoilRollStep = isPistolVm ? 0.095 : isShotgunVm ? 0.12 : isSniperVm ? 0.09 : 0.05;
-      const recoilBackCap = isShotgunVm || isSniperVm ? 0.16 : 0.11;
-      const recoilPitchCap = isShotgunVm ? 0.36 : isSniperVm ? 0.44 : 0.28;
+      vmKickT = isPistolVm ? 0.2 : isShotgunVm ? 0.24 : isSniperVm ? 0.32 : 0.14;   // trigger viewmodel recoil kick
+      // Recoil animation steps – מחוזק במיוחד עבור הסנייפר (אנימציה בלבד, לא פיזיקה/פגיעה)
+      const recoilBackStep = isPistolVm ? 0.046 : isShotgunVm ? 0.072 : isSniperVm ? 0.12 : 0.024;
+      const recoilPitchStep = isPistolVm ? 0.1 : isShotgunVm ? 0.155 : isSniperVm ? 0.26 : 0.055;
+      const recoilRollStep = isPistolVm ? 0.095 : isShotgunVm ? 0.12 : isSniperVm ? 0.11 : 0.05;
+      const recoilBackCap = isShotgunVm ? 0.16 : isSniperVm ? 0.22 : 0.11;
+      const recoilPitchCap = isShotgunVm ? 0.36 : isSniperVm ? 0.6 : 0.28;
       vmRecoilBack = clamp(vmRecoilBack + recoilBackStep, 0, recoilBackCap);
       vmRecoilPitch = clamp(vmRecoilPitch + recoilPitchStep, 0, recoilPitchCap);
       vmRecoilRoll = clamp(
@@ -3113,6 +3234,10 @@ export default function BitsSniperGame() {
         wp.spread * SHOT_SPREAD_MULT *
         (S.aiming ? ADS_SPREAD_MULT : HIP_SPREAD_MULT);
       let inac = baseInaccuracy;
+      // לצלף: ללא כוונת (no ADS) הירי הרבה פחות מדויק
+      if (!S.aiming && isSniperVm) {
+        inac *= 2.4;
+      }
       inac *= 0.25; // shrink from legacy bloom values
       if (!onGround) {
         inac *= 3.3;
@@ -3122,7 +3247,7 @@ export default function BitsSniperGame() {
       if (S.crouching) inac *= 0.5;
       const sprayFactor = clamp(S.sprayIndex / 10, 0, 1.2);
       inac *= 1 + sprayFactor * 0.6;
-      if (isShotgunVm) inac *= 1.8;
+      if (isShotgunVm) inac *= 2.2;
 
       const sampleInaccuracy = () => {
         const r = inac * Math.sqrt(Math.random());
@@ -3235,6 +3360,11 @@ export default function BitsSniperGame() {
       vmSwitchDrawT = 1;
       if (vmMuzzleFlash) vmMuzzleFlash.visible = false;
       if (vmMuzzleFlashLight) vmMuzzleFlashLight.intensity = 0;
+      if (S.ammo === 0) {
+        requestAnimationFrame(() => {
+          if (S.wpIdx === idx && S.ammo === 0 && !S.reloading) doReload();
+        });
+      }
     }
 
     function respawnPlayer(){
@@ -3297,7 +3427,9 @@ export default function BitsSniperGame() {
       }
       if(isStageResizingRef.current) return;
       if(e.button===2){
-        if(document.pointerLockElement===renderer.domElement){
+        rightMouseHeld = true;
+        // בזמן רילואד של הצלף לא נכנסים למצב כוונת
+        if(document.pointerLockElement===renderer.domElement && !S.reloading){
           S.aiming = true;
           setIsAiming(true);
         }
@@ -3314,6 +3446,7 @@ export default function BitsSniperGame() {
     const onMouseUpTrack   = (e:MouseEvent)=>{
       if(e.button===0) keys["MouseLeft"]=false;
       if(e.button===2){
+        rightMouseHeld = false;
         S.aiming = false;
         setIsAiming(false);
       }
@@ -3342,6 +3475,11 @@ export default function BitsSniperGame() {
     };
 
     const onKeyDown = (e:KeyboardEvent)=>{
+      if(e.code==="KeyH" && !e.repeat){
+        e.preventDefault();
+        showHitboxOutlinesRef.current = !showHitboxOutlinesRef.current;
+        return;
+      }
       if(e.code==="KeyM" && !e.repeat){
         e.preventDefault();
         setTacticalMapOpen((open)=> !open);
@@ -3367,8 +3505,6 @@ export default function BitsSniperGame() {
       }
       if(e.code==="Escape" && !e.repeat){
         e.preventDefault();
-        // גם ESC לא יפתח/יסגור Pause בזמן אלימיניישן
-        if (S.dead) return;
         if (runStateRef.current === "paused" && (performance.now() - pausedAtRef.current) > 350) {
           resumeGame();
         }
@@ -3897,6 +4033,7 @@ export default function BitsSniperGame() {
 
     //  Main loop 
     let rafId=0, lastT=performance.now(), hudT=0, minimapDebugAccum=0;
+    let adsBlend = 0;
     let didFlatSpawnSnap = false;
 
     const animate=(now:number)=>{
@@ -3947,6 +4084,15 @@ export default function BitsSniperGame() {
         rafId=requestAnimationFrame(animate); return;
       }
 
+      // H – אווטליין היטבוקסים (אויבים + מפה)
+      outlineGroup.visible = showHitboxOutlinesRef.current;
+      if (showHitboxOutlinesRef.current) {
+        for (let i = 0; i < bots.length; i++) {
+          botOutlineMeshes[i].position.copy(bots[i].mesh.position);
+          botOutlineMeshes[i].visible = !bots[i].dead;
+        }
+      }
+
       // תיקון ספאון ראשוני בפלאט ורלד – לפני כל פיזיקה/גרביטציה.
       // אם הוגדר Spawn ידני במפת הספאונים, משתמשים בו; אחרת נופלים חזרה לספאון שנבחר (levelPlayerSpawns).
       if (USE_FLAT_PLAYGROUND && !didFlatSpawnSnap && !S.dead) {
@@ -3977,6 +4123,11 @@ export default function BitsSniperGame() {
           S.hp = Math.min(MAX_HEALTH, S.hp + gain);
           if(S.hp > MAX_HEALTH - 0.12) S.hp = MAX_HEALTH;
         }
+      }
+
+      // אם על נשק עם 0 כדורים ולא ברילוד (למשל חזרנו מנשק אחר) – מתחיל רילוד אוטומטי
+      if (!S.dead && !S.reloading && S.ammo === 0 && WEAPONS[S.wpIdx].maxAmmo > 0) {
+        doReload();
       }
 
       // Reload finish
@@ -4387,19 +4538,49 @@ export default function BitsSniperGame() {
         vmReloadT = Math.max(0, vmReloadT - dt * vmReloadProfile.settleSpeed);
       }
       const reloadArc = Math.sin(vmReloadT * Math.PI);
+      const isSniperVm = WEAPONS[S.wpIdx].viewModel === "sniper";
       const wobbleEnvelope = Math.max(0, 1 - Math.abs(vmReloadT - 0.5) * 2);
       const reloadWobble = Math.sin(vmReloadT * Math.PI * vmReloadProfile.wobbleFreq) * wobbleEnvelope;
       const emptyBoost = vmReloadFromEmpty ? 1.14 : 1;
-      vmGroup.position.set(
-        vmBaseX + bobX + reloadArc * vmReloadProfile.side * emptyBoost + reloadWobble * vmReloadProfile.wobble * 0.24,
-        vmBaseY + bobY - vmRecoilY - (recoilBloom*0.01) - reloadArc * vmReloadProfile.down * emptyBoost + vmDrawYOffset,
-        vmBaseZ + reloadArc * vmReloadProfile.back * emptyBoost + vmRecoilBack + vmDrawZOffset,
-      );
-      vmGroup.rotation.set(
-        reloadArc * vmReloadProfile.pitch * emptyBoost + reloadWobble * vmReloadProfile.wobble * 0.52 + vmRecoilPitch + vmDrawPitch,
-        vmBaseRotY + reloadWobble * vmReloadProfile.yaw * emptyBoost,
-        -reloadArc * vmReloadProfile.roll * emptyBoost + reloadWobble * vmReloadProfile.wobble + vmRecoilRoll + vmDrawRoll,
-      );
+      // בזמן רילואד של סנייפר – המודל "נשאב" טיפה פנימה בעומק (רחוק מהשחקן),
+      // וברגע שהאנימציה מסתיימת הוא חוזר למיקום הבסיסי (reloadArc חוזר ל־0).
+      const sniperReloadZOffset =
+        isSniperVm
+          ? reloadArc * SNIPER_RELOAD_BACK_EXTRA
+          : 0;
+      if (isSniperVm) {
+        // לצלף: בזמן רילואד מזיזים את המודל כמעט רק קדימה/אחורה בעומק,
+        // בלי סיבוב גדול של כל הנשק (אין roll/yaw/pitch אגרסיביים).
+        vmGroup.position.set(
+          vmBaseX + bobX,
+          vmBaseY + bobY - vmRecoilY - (recoilBloom * 0.01) + vmDrawYOffset,
+          vmBaseZ
+            + reloadArc * vmReloadProfile.back * emptyBoost
+            + sniperReloadZOffset
+            + vmRecoilBack
+            + vmDrawZOffset,
+        );
+        vmGroup.rotation.set(
+          vmRecoilPitch + vmDrawPitch,
+          vmBaseRotY,
+          vmRecoilRoll + vmDrawRoll,
+        );
+      } else {
+        vmGroup.position.set(
+          vmBaseX + bobX + reloadArc * vmReloadProfile.side * emptyBoost + reloadWobble * vmReloadProfile.wobble * 0.24,
+          vmBaseY + bobY - vmRecoilY - (recoilBloom*0.01) - reloadArc * vmReloadProfile.down * emptyBoost + vmDrawYOffset,
+          vmBaseZ
+            + reloadArc * vmReloadProfile.back * emptyBoost
+            + sniperReloadZOffset
+            + vmRecoilBack
+            + vmDrawZOffset,
+        );
+        vmGroup.rotation.set(
+          reloadArc * vmReloadProfile.pitch * emptyBoost + reloadWobble * vmReloadProfile.wobble * 0.52 + vmRecoilPitch + vmDrawPitch,
+          vmBaseRotY + reloadWobble * vmReloadProfile.yaw * emptyBoost,
+          -reloadArc * vmReloadProfile.roll * emptyBoost + reloadWobble * vmReloadProfile.wobble + vmRecoilRoll + vmDrawRoll,
+        );
+      }
       updateVmAnim(dt, nowSec);
 
       if(moving && onGround){
@@ -4418,23 +4599,49 @@ export default function BitsSniperGame() {
 
       //  Camera FOV for ADS (zoom on right-click) 
       const fovBoost = S.aiming ? 0 : clamp((horizontalSpeed / MOVE_SPEED) * (S.running ? 4.5 : 2.1), 0, 5.8);
+      // מעבר חלק יותר בין FOV רגיל ל-ADS – תחושה שהכוונת מתקרבת לפנים
       const adsFov = ADS_FOV[WEAPONS[S.wpIdx].viewModel];
-      const targetFov = (S.aiming ? adsFov : 72) + fovBoost;
+      const baseFov = 72 + fovBoost;
+      const targetAdsFov = adsFov + fovBoost;
+      const targetAdsBlend = S.aiming ? 1 : 0;
+      // מעבר חלק מאוד בין מצב רגיל ל-ADS (ease-in-out)
+      adsBlend += (targetAdsBlend - adsBlend) * Math.min(1, dt * 6);
+      const easedAdsBlend = adsBlend * adsBlend * (3 - 2 * adsBlend); // smoothstep
+      const targetFov = baseFov + (targetAdsFov - baseFov) * easedAdsBlend;
       if (Math.abs(camera.fov - targetFov) > 0.01) {
         camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 10);
         camera.updateProjectionMatrix();
       }
 
       //  Render world, then overlay viewmodel (no extra minimap render; MiniMap uses same texture)
-      renderer.autoClear=true;
+      renderer.autoClear = true;
       composer.render();
-      renderer.autoClear=false;
+      renderer.autoClear = false;
       renderer.clearDepth();
-      renderer.render(vmScene, vmCamera);
+      // בזמן כוונת צלף (ADS עם sniper) לא מציירים את מודל הנשק – רק את העולם
+      const suppressViewmodel = S.aiming && WEAPONS[S.wpIdx].viewModel === "sniper";
+      if (!suppressViewmodel) {
+        renderer.render(vmScene, vmCamera);
+      }
 
-      if(hudT>0.1){
-        hudT=0;
-        setPlayerHp(Math.max(0,S.hp));
+      // החזרה אוטומטית למצב כוונת לסנייפר – רק אחרי סוף אנימציית הירי,
+      // אם השחקן עדיין מחזיק קליק ימני, ורק כשלא ברילואד.
+      if (
+        WEAPONS[S.wpIdx].viewModel === "sniper" &&
+        !S.dead &&
+        !S.reloading &&
+        rightMouseHeld &&
+        !S.aiming &&
+        nowSec >= sniperAimLockUntil
+      ) {
+        S.aiming = true;
+        setIsAiming(true);
+      }
+
+      // עדכון נתוני HUD ומפות – בתדירות גבוהה יותר כדי לסנכרן חצים (שחקן+בוטים)
+      if (hudT > 0.04) {
+        hudT = 0;
+        setPlayerHp(Math.max(0, S.hp));
         setAmmo(S.ammo);
         yawObj.getWorldPosition(_playerWorldPos);
         yawObj.getWorldQuaternion(_playerWorldQuat);
@@ -4449,7 +4656,12 @@ export default function BitsSniperGame() {
         setBotPositionsForTactical(
           bots.map((b) => {
             b.mesh.getWorldPosition(_botWorldPos);
-            return { x: _botWorldPos.x, z: _botWorldPos.z };
+            // כמו לשחקן: כיוון הבוט נלקח מה-quaternion העולמי של המודל
+            b.mesh.getWorldQuaternion(_playerWorldQuat);
+            _playerForward.set(0, 0, -1).applyQuaternion(_playerWorldQuat);
+            const fwdX = _playerForward.x;
+            const fwdZ = _playerForward.z;
+            return { x: _botWorldPos.x, z: _botWorldPos.z, forwardX: fwdX, forwardZ: fwdZ };
           }),
         );
         if (DEBUG_MINIMAP_POSITION) {
@@ -4518,19 +4730,34 @@ export default function BitsSniperGame() {
   const baseCrosshair =
     wp.viewModel === "pistol"  ? 0.8  :
     wp.viewModel === "ak47"    ? 1.0  :
-    wp.viewModel === "shotgun" ? 1.2  :
+    // שוטגן – כוונת בסיסית רחבה יותר כדי לשקף את הספריי
+    wp.viewModel === "shotgun" ? 1.4  :
     /* sniper */                 0.7;
   const bloomMult =
     wp.viewModel === "pistol"  ? 0.46 :
     wp.viewModel === "ak47"    ? 0.62 :
-    wp.viewModel === "shotgun" ? 0.78 :
+    // שוטגן – הגאפ של הכוונת מגיב חזק יותר ל-bloom
+    wp.viewModel === "shotgun" ? 0.95 :
     /* sniper */                 0.5;
   const crosshairScale = clamp(
     (isAiming && wp.viewModel === "sniper" ? 0.6 : baseCrosshair) + crosshairBloom * bloomMult,
     0.45,
     wp.viewModel === "shotgun" ? 2.6 : 2.1,
   );
+  // הכוונת תמיד מוצגת לכל הנשקים חוץ מהסנייפר (שיש לו סקופ ייעודי),
+  // ללא תלות בפוינטר-לוק כדי למנוע מצבים "רנדומליים" שבהם הכוונת נעלמת בשוטגן/אקדח.
+  const showCrosshair = !dead && wp.viewModel !== "sniper";
   const roundClock = formatTimer(roundTime);
+
+  // HUD scale – מתאים את גודל ה-HP/אינוונטורי לרוחב חלון המשחק (S/M/L)
+  const HUD_BASE_WIDTH = 960;
+  const hudScale =
+    stageSizePreset === "small"  ? 0.7  :
+    stageSizePreset === "medium" ? 1.0  :
+    stageSizePreset === "large"  ? 1.15 :
+    stageSize && stageSize.width
+      ? clamp(stageSize.width / HUD_BASE_WIDTH, 0.7, 1.2)
+      : 1;
 
   const introTacticalConfig = getTacticalConfig(selectedMapId || "flat");
   const introBounds = introTacticalConfig.worldBounds;
@@ -4557,6 +4784,7 @@ export default function BitsSniperGame() {
         ref={shellRef}
         className={`bits-sniper-shell${stageSize ? "" : " bits-sniper-shell--fluid"}${shellPosition ? " bits-sniper-shell--floating" : ""}${!isFullscreen ? " bits-sniper-shell--has-drag" : ""}`}
         style={{
+          ...( { "--bits-sniper-hud-scale": hudScale } as React.CSSProperties ),
           ...(shellPosition ? { left: shellPosition.x, top: shellPosition.y } : {}),
           ...(stageSize
             ? {
@@ -4758,21 +4986,21 @@ export default function BitsSniperGame() {
                 <button
                   type="button"
                   className={`bits-sniper-size-chip${stageSizePreset==="small" ? " is-active" : ""}`}
-                  onClick={()=>applyStagePreset("small")}
+                  onClick={(e)=>{ e.stopPropagation(); applyStagePreset("small"); }}
                 >
                   S
                 </button>
                 <button
                   type="button"
                   className={`bits-sniper-size-chip${stageSizePreset==="medium" ? " is-active" : ""}`}
-                  onClick={()=>applyStagePreset("medium")}
+                  onClick={(e)=>{ e.stopPropagation(); applyStagePreset("medium"); }}
                 >
                   M
                 </button>
                 <button
                   type="button"
                   className={`bits-sniper-size-chip${stageSizePreset==="large" ? " is-active" : ""}`}
-                  onClick={()=>applyStagePreset("large")}
+                  onClick={(e)=>{ e.stopPropagation(); applyStagePreset("large"); }}
                 >
                   L
                 </button>
@@ -4792,13 +5020,33 @@ export default function BitsSniperGame() {
             </div>
           )}
 
-          {/* Crosshair (FPS-style center) */}
-          {isLocked&&!dead&&(
+          {/* Crosshair (FPS-style center); אפקט כיווץ/שחרור באקדח ו-AK */}
+          {showCrosshair && (
             <div
-              className={`bits-sniper-crosshair${isAiming ? " bits-sniper-crosshair--ads" : ""}`}
-              style={{ transform: `translate(-50%, -50%) scale(${crosshairScale})` }}
+              key={crosshairSqueezeAt}
+              className={`bits-sniper-crosshair${
+                isAiming && wp.viewModel === "sniper"
+                  ? " bits-sniper-crosshair--sniper-ads"
+                  : isAiming && wp.viewModel !== "shotgun"
+                    ? " bits-sniper-crosshair--ads"
+                    : ""
+              }${crosshairSqueezeAt > 0 && (wp.id === "rifle" || wp.id === "scrambler") ? " bits-sniper-crosshair--squeeze" : ""}`}
+              style={{ ["--crosshair-scale" as string]: crosshairScale } as React.CSSProperties}
               aria-hidden
             />
+          )}
+
+          {/* Sniper scope overlay – טבעת צלף מלאה עם השחרה מסביב (נכנסת ויוצאת באנימציית fade) */}
+          {isLocked && !dead && wp.viewModel === "sniper" && (
+            <div
+              className={`bits-sniper-scope-overlay${isAiming ? " bits-sniper-scope-overlay--on" : ""}`}
+              aria-hidden
+            >
+              <div className="bits-sniper-scope-ring">
+                <div className="bits-sniper-scope-line bits-sniper-scope-line--vert" />
+                <div className="bits-sniper-scope-line bits-sniper-scope-line--horiz" />
+              </div>
+            </div>
           )}
 
           {/* Damage flash */}
@@ -4984,9 +5232,9 @@ export default function BitsSniperGame() {
           )}
 
           {/* HUD - bottom left (HP, weapons, ammo) */}
-          {isLocked&&!dead&&(
+          {isLocked && !dead && !(isAiming && wp.viewModel === "sniper") && (
             <>
-            <div className="bits-sniper-hud">
+            <div className={`bits-sniper-hud${stageSizePreset==="small" ? " bits-sniper-hud--small" : ""}`}>
               <div className="bits-sniper-hp-row">
                 <span className="bits-sniper-hp-icon" aria-hidden>HP</span>
                 <div className="bits-sniper-hp-track">

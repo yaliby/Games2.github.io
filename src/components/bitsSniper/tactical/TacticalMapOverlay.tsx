@@ -4,21 +4,14 @@ import {
 } from "./TacticalMapConfig";
 import { getFlatMapDataURL } from "./drawFlatMapTopDown";
 
-export type TacticalMarker = {
-  kind: "player" | "teammate" | "enemy" | "spawn" | "objective";
-  worldX: number;
-  worldZ: number;
-  label?: string;
-};
-
 type Props = {
   mapId: string;
   /** Optional: override map image (e.g. snapshot rendered from Three.js) */
   mapImageOverride?: string;
   /** World X/Z; arrow from forwardX/forwardZ (getWorldQuaternion then (0,0,-1).applyQuaternion) */
   player: { x: number; z: number; forwardX?: number; forwardZ?: number };
-  /** Enemy positions must be world X/Z from getWorldPosition() only */
-  enemies: { x: number; z: number }[];
+  /** Enemy positions + forward dir on XZ */
+  enemies: { x: number; z: number; forwardX?: number; forwardZ?: number }[];
   showSpawnPoints?: boolean;
   onClose: () => void;
 };
@@ -92,14 +85,21 @@ export function TacticalMapOverlay({
           }}
           title="You"
         />
-        {/* Enemies */}
+        {/* Enemies – חצים עם כיוון אמיתי, כמו השחקן */}
         {enemies.map((e, i) => {
           const p = toPct(e.x, e.z);
+          const ex = e.forwardX ?? 0;
+          const ez = e.forwardZ ?? 1;
+          const enemyDeg = (Math.atan2(ex, ez) * 180) / Math.PI;
           return (
             <div
               key={i}
               className="bits-sniper-tactical-marker bits-sniper-tactical-marker--enemy"
-              style={{ left: p.left, top: p.top }}
+              style={{
+                left: p.left,
+                top: p.top,
+                transform: `translate(-50%, -50%) rotate(${enemyDeg + 180}deg)`,
+              }}
               title="Enemy"
             />
           );
