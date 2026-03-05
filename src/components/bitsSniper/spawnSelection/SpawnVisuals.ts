@@ -4,6 +4,7 @@
  */
 import * as THREE from "three";
 
+// Small offset so the ring doesn't Z-fight with the floor
 const FLOOR_OFFSET = 0.02;
 const RING_INNER = 0.4;
 const RING_OUTER = 1.0;
@@ -56,11 +57,7 @@ export function createSpawnVisualGroup(
     mesh.position.set(pos.x, y, pos.z);
     mesh.name = `spawn-player-${i}`;
     group.add(mesh);
-
     if (debug) {
-      const axes = new THREE.AxesHelper(1.2);
-      axes.position.set(pos.x, y + 0.5, pos.z);
-      group.add(axes);
       console.log(`[SpawnVisual] Player ${i} world position:`, { x: pos.x, y: floorY, z: pos.z });
     }
   });
@@ -76,9 +73,6 @@ export function createSpawnVisualGroup(
     group.add(mesh);
 
     if (debug) {
-      const axes = new THREE.AxesHelper(1.2);
-      axes.position.set(pos.x, y + 0.5, pos.z);
-      group.add(axes);
       console.log(`[SpawnVisual] Enemy ${i} world position:`, { x: pos.x, y: floorY, z: pos.z });
     }
   });

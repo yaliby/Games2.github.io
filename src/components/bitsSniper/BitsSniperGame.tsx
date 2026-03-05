@@ -41,6 +41,7 @@ const MINIMAP_ZOOM = 1;
 /** גודל המיני־מפה בפיקסלים (פינה ימנית עליונה, בסגנון COD/CS:GO). */
 const MINIMAP_SIZE = 200;
 const PLAYER_HEIGHT    = 1.65;
+const PLAYER_SPAWN_LIFT = 0.9; // extra height above spawn point when spawning
 const PLAYER_RADIUS    = 0.38;
 const MOVE_SPEED       = 9.2;
 const RUN_MULT         = 1.70;
@@ -596,12 +597,12 @@ function getPresetStageSize(preset: Exclude<StageSizePreset, "custom" | "fluid">
 
 function getInitialStagePreset(): StageSizePreset {
   if (typeof window !== "undefined" && window.innerWidth < 720) return "fluid";
-  return "small";
+  return "medium";
 }
 
 function getInitialStageSize(): StageSize | null {
   if (typeof window !== "undefined" && window.innerWidth < 720) return null;
-  return getPresetStageSize("small");
+  return getPresetStageSize("medium");
 }
 
 function formatTimer(totalSeconds: number) {
@@ -2595,13 +2596,19 @@ export default function BitsSniperGame() {
     }
 
     if (USE_FLAT_PLAYGROUND) {
-      yawObj.position.copy(getChosenPlayerSpawnPosition());
-      yawObj.position.y = PLAYER_HEIGHT;
+      // בפלט־ורלד: אם יש Spawn מותאם אישית – נשתמש בו, אחרת נשתמש בספאון שנבחר (levelPlayerSpawns/דיפולט).
+      const custom = customSpawnsForSessionRef.current;
+      const initialSafe = custom.player
+        ? new THREE.Vector3(custom.player.x, PLAYER_HEIGHT, custom.player.z)
+        : getChosenPlayerSpawnPosition();
+      yawObj.position.copy(initialSafe);
       snapPlayerToSafeSpawn();
     } else {
       yawObj.position.copy(pickInitialPlayerSpawn());
       snapPlayerToSafeSpawn();
     }
+    // Raise initial spawn slightly so the player appears above the ring
+    yawObj.position.y += PLAYER_SPAWN_LIFT;
 
     function getPlayerSpawnCandidate(idx: number): THREE.Vector3 {
       if (levelPlayerSpawns.length > 0) {
@@ -2641,8 +2648,8 @@ export default function BitsSniperGame() {
 
     function pickInitialPlayerSpawn(): THREE.Vector3 {
       if (USE_FLAT_PLAYGROUND) {
-        // בפלייגראונד – בוחרים ספאון אקראי מרשימת הספאונים המוגדרים.
-        return pickFlatPlayerSpawn();
+        // בפלייגראונד – ספאון ראשוני זהה למה שנחשב כ-\"chosen\" (כולל Spawn מותאם אישית אם הוגדר).
+        return getChosenPlayerSpawnPosition();
       }
       let fallback = getPlayerSpawnCandidate(playerSpawnSeed);
       for (let i = 0; i < 48; i++) {
@@ -3243,6 +3250,7 @@ export default function BitsSniperGame() {
       S.slideCooldown = 0;
       S.lastDamageTs = performance.now()/1000;
       yawObj.position.copy(pickPlayerSpawn());
+      yawObj.position.y += PLAYER_SPAWN_LIFT;
       facePlayerTowardCenter();
       velX=0; velY=0; velZ=0; onGround=false;
       coyoteTimer=0; jumpBufferTimer=0;
@@ -3345,6 +3353,8 @@ export default function BitsSniperGame() {
         return;
       }
       if(e.code==="KeyP" && !e.repeat){
+        // אין Pause במסך האלימיניישן (כשמתים)
+        if (S.dead) return;
         // P toggles a "soft pause" that keeps pointer lock; menu is navigated with a virtual cursor.
         e.preventDefault();
         if (runStateRef.current === "playing") {
@@ -3357,6 +3367,8 @@ export default function BitsSniperGame() {
       }
       if(e.code==="Escape" && !e.repeat){
         e.preventDefault();
+        // גם ESC לא יפתח/יסגור Pause בזמן אלימיניישן
+        if (S.dead) return;
         if (runStateRef.current === "paused" && (performance.now() - pausedAtRef.current) > 350) {
           resumeGame();
         }
@@ -3935,11 +3947,16 @@ export default function BitsSniperGame() {
         rafId=requestAnimationFrame(animate); return;
       }
 
-      // תיקון ספאון ראשוני בפלאט ורלד – לפני כל פיזיקה/גרביטציה. משתמש בספאון שנבחר (levelPlayerSpawns), לא דורס.
+      // תיקון ספאון ראשוני בפלאט ורלד – לפני כל פיזיקה/גרביטציה.
+      // אם הוגדר Spawn ידני במפת הספאונים, משתמשים בו; אחרת נופלים חזרה לספאון שנבחר (levelPlayerSpawns).
       if (USE_FLAT_PLAYGROUND && !didFlatSpawnSnap && !S.dead) {
-        const safe = getChosenPlayerSpawnPosition();
+        const custom = customSpawnsForSessionRef.current;
+        const safe = custom.player
+          ? new THREE.Vector3(custom.player.x, PLAYER_HEIGHT, custom.player.z)
+          : getChosenPlayerSpawnPosition();
         yawObj.position.set(safe.x, safe.y, safe.z);
         snapPlayerToSafeSpawn();
+        yawObj.position.y += PLAYER_SPAWN_LIFT;
         velX = 0; velY = 0; velZ = 0;
         onGround = true;
         didFlatSpawnSnap = true;

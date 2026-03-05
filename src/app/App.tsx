@@ -184,6 +184,13 @@ export default function App() {
   const isProfileRoute = location.pathname.startsWith("/profile/");
   const isNotFound = !knownRoutes.has(location.pathname) && !isProfileRoute;
 
+  // גלילה לראש העמוד כשנכנסים לעמודי משחק (כולל Bits Sniper)
+  useEffect(() => {
+    if (location.pathname.startsWith("/game/")) {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
+  }, [location.pathname]);
+
   useEffect(() => {
     if (!allowHomeIntroOnInitialLoadRef.current || !isHomeRoute || isSecret || isNotFound) {
       setShowEntryIntro(false);
