@@ -2,6 +2,8 @@ export type GameSettings = {
   lookSensitivity: number;
   adsSensitivity: number;
   masterVolume: number;
+  /** מוזיקת רקע (0–1): 1 = 100% בסליידר = נפח מקסימלי נמוך; המשתמש מנמיך משם */
+  bgMusicVolume: number;
   selectedMapId: string | null;
   /** Indices into WEAPONS array that bots are allowed to use (e.g. [0,1,2,3] = all). */
   botWeaponPool: number[];
@@ -16,6 +18,7 @@ export function getDefaultSettings(): GameSettings {
     lookSensitivity: 0.0022,
     adsSensitivity: 1.0,
     masterVolume: 1.0,
+    bgMusicVolume: 1,
     selectedMapId: null,
     botWeaponPool: [0, 1, 2, 3],
     botSpawnIdx: 1,
@@ -31,6 +34,9 @@ export function loadSettingsFromStorage(): GameSettings {
     const merged = { ...getDefaultSettings(), ...parsed };
     if (!Array.isArray(merged.botWeaponPool) || merged.botWeaponPool.length === 0) merged.botWeaponPool = getDefaultSettings().botWeaponPool;
     if (typeof merged.botSpawnIdx !== "number" || merged.botSpawnIdx < 0 || merged.botSpawnIdx > 3) merged.botSpawnIdx = getDefaultSettings().botSpawnIdx;
+    if (typeof merged.masterVolume !== "number" || merged.masterVolume < 0 || merged.masterVolume > 1) merged.masterVolume = 1;
+    if (typeof merged.bgMusicVolume !== "number" || merged.bgMusicVolume < 0 || merged.bgMusicVolume > 1) merged.bgMusicVolume = 1;
+    if (merged.bgMusicVolume === 0.28) merged.bgMusicVolume = 1;
     return merged;
   } catch {
     return getDefaultSettings();

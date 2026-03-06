@@ -4,9 +4,6 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import "./BitsSniperGame.css";
 import { GameEventBus } from "./game/core/GameEventBus.ts";
@@ -26,872 +23,140 @@ import { MiniMapComponent } from "./minimap/MiniMapComponent";
 import { SpawnSelectionMap, type SpawnPoint } from "./spawnSelection/SpawnSelectionMap";
 import { createSpawnVisualGroup, disposeSpawnVisualGroup } from "./spawnSelection/SpawnVisuals";
 import {
-  ARENA_HALF,
   USE_FLAT_PLAYGROUND,
   buildMap,
-  createFlatPlayground,
-  createProceduralDust2Blockout,
   type MapKeyPoint,
 } from "./BitsSniperMaps";
+import {
+  DEBUG_MINIMAP_POSITION,
+  DEBUG_COLLIDERS,
+  MINIMAP_ZOOM,
+  MINIMAP_SIZE,
+  PLAYER_HEIGHT,
+  PLAYER_SPAWN_LIFT,
+  PLAYER_RADIUS,
+  MOVE_SPEED,
+  RUN_MULT,
+  JUMP_VEL,
+  GRAVITY,
+  CROUCH_MOVE_MULT,
+  CROUCH_CAMERA_DROP,
+  SLIDE_DURATION_SECS,
+  SLIDE_COOLDOWN_SECS,
+  SLIDE_SPEED_MULT,
+  LANDING_KICK_MULT,
+  LOOK_SENS_BASE,
+  VCURSOR_SENS,
+  BOT_COUNT,
+  BOT_RADIUS,
+  BOT_HEIGHT,
+  BOT_EGG_R,
+  RESPAWN_SECS,
+  SPAWN_INVINCIBLE,
+  MAX_HEALTH,
+  BOT_MAX_HEALTH,
+  LOOK_SENS_MIN,
+  LOOK_SENS_MAX,
+  LOOK_SENS_STEP,
+  ADS_SENS_MIN,
+  ADS_SENS_MAX,
+  ADS_SENS_STEP,
+  MASTER_VOL_MIN,
+  MASTER_VOL_MAX,
+  MASTER_VOL_STEP,
+  BG_MUSIC_MAX_GAIN,
+  ADS_LOOK_SENS_MULT,
+  ADS_MOVE_MULT,
+  ADS_SPREAD_MULT,
+  HIP_SPREAD_MULT,
+  GROUND_ACCEL,
+  AIR_ACCEL,
+  GROUND_BRAKE,
+  AIR_BRAKE,
+  AIR_DRAG,
+  COYOTE_TIME_SECS,
+  JUMP_BUFFER_SECS,
+  JUMP_RELEASE_CUT,
+  PROJECTILE_SPEED_MULT,
+  SHOT_SPREAD_MULT,
+  BOT_INACCURACY,
+  RECOIL_RESET_SECS,
+  BOT_ACCEL,
+  BOT_BRAKE,
+  BOT_SPEED_WALK,
+  BOT_SPEED_RUN,
+  BOT_YAW_LERP,
+  BOT_MODEL_FACING_OFFSET,
+  HP_REGEN_DELAY_SECS,
+  HP_REGEN_EXP_RATE,
+  LOW_HP_WARN_THRESHOLD,
+  POSTFX_BLOOM_STRENGTH,
+  POSTFX_BLOOM_RADIUS,
+  POSTFX_BLOOM_THRESHOLD,
+  POSTFX_EXPOSURE,
+  MATCH_DURATION_SECS,
+  KILL_FEED_TTL_SECS,
+  HEADSHOT_MULT,
+  BOT_HEAD_Y_OFFSET,
+  FLAT_SPAWN_HALF,
+  STAGE_ASPECT,
+  SHELL_PADDING_PX,
+  PLAYER_SPAWN_ZONES,
+  BOT_SPAWN_ZONES,
+} from "./constants/gameConstants";
+import type {
+  WeaponDef,
+  BotState,
+  Projectile,
+  HitInd,
+  KillFeedEntry,
+  VmPose,
+  MapId,
+  FpsAssetPack,
+  ViewModelAsset,
+  StageSizePreset,
+  StageSize,
+  BotAnimName,
+  VmAnimName,
+  ImportedVmConfig,
+  MuzzleRatio,
+  ObjectBounds,
+} from "./types/gameTypes";
+import { clamp, rng } from "./utils/mathUtils";
+import { segmentHitsCapsule } from "./utils/capsuleUtils";
+import {
+  formatTimer,
+  getStageWidthBounds,
+  makeStageSize,
+  getPresetStageSize,
+  getInitialStagePreset,
+  getInitialStageSize,
+} from "./utils/stageUtils";
+import {
+  WEAPONS,
+  getWeaponHeadshotMult,
+  getWeaponDamageAtDistance,
+  RECOIL_PATTERNS,
+  getReloadAnimProfile,
+  ADS_FOV,
+} from "./weapons/weaponDefs";
+import { getFpsAssetPackOnce, EMPTY_FPS_ASSET_PACK, resetFpsAssetPackPromise } from "./assets/fpsAssetLoader";
+import { BOT_NAMES, BOT_COLORS, makeBotMesh, updateBotHpLabel } from "./bots/botUtils";
+import {
+  createDeathDebrisState,
+  updateDeathDebris,
+  spawnBotDeathParts,
+  hitDebrisByRay,
+  tryHitDebrisWithProjectile,
+  type DeathDebrisState,
+} from "./enemyDeathManager";
 
-//  Constants 
-const DEBUG_MINIMAP_POSITION = false;
-/** Minimap zoom: 1 = full map, 2 = 2x zoom (less world visible). */
-const MINIMAP_ZOOM = 1;
-/** גודל המיני־מפה בפיקסלים (פינה ימנית עליונה, בסגנון COD/CS:GO). */
-const MINIMAP_SIZE = 200;
-const PLAYER_HEIGHT    = 1.65;
-const PLAYER_SPAWN_LIFT = 0.9; // extra height above spawn point when spawning
-const PLAYER_RADIUS    = 0.38;
-const MOVE_SPEED       = 9.2;
-const RUN_MULT         = 1.70;
-const JUMP_VEL         = 8.8;
-const GRAVITY          = 22;
-const CROUCH_MOVE_MULT = 0.58;
-const CROUCH_CAMERA_DROP = 0.38;
-const SLIDE_DURATION_SECS = 0.72;
-const SLIDE_COOLDOWN_SECS = 1.2;
-const SLIDE_SPEED_MULT = 2.05;
-const LANDING_KICK_MULT = 0.018;
-const LOOK_SENS_BASE   = 0.0022;
-
-const VCURSOR_SENS = 1.0; // virtual cursor sensitivity while pointer-locked menus are open
-
-const BOT_COUNT        = 1;
-const BOT_RADIUS       = 0.50;  // Bot capsule radius (gameplay)
-const BOT_HEIGHT       = 0.95;  // Bot capsule half-height (full ≈ 1.9)
-const BOT_EGG_R        = 0.62;  // Fallback procedural bot visual radius
-const RESPAWN_SECS     = 3.5;
-const SPAWN_INVINCIBLE = 1.5;    // seconds of god-mode after spawn
-const MAX_HEALTH       = 100;
-const BOT_MAX_HEALTH   = 80;
-const LOOK_SENS_MIN    = 0.0012;
-const LOOK_SENS_MAX    = 0.0035;
-const LOOK_SENS_STEP   = 0.0002;
-const ADS_SENS_MIN     = 0.4;
-const ADS_SENS_MAX     = 1.6;
-const ADS_SENS_STEP    = 0.05;
-const MASTER_VOL_MIN   = 0;
-const MASTER_VOL_MAX   = 1;
-const MASTER_VOL_STEP  = 0.05;
-const ADS_LOOK_SENS_MULT = 0.56;
-const ADS_MOVE_MULT    = 0.76;
-const ADS_SPREAD_MULT  = 0.52;
-const HIP_SPREAD_MULT  = 1.38;
-const ADS_FOV: Record<WeaponDef["viewModel"], number> = {
-  pistol: 52,
-  ak47: 48,
-  shotgun: 58,
-  // צלף – זום אגרסיבי הרבה יותר
-  sniper: 22,
-};
-const GROUND_ACCEL     = 19;
-const AIR_ACCEL        = 4.2;
-const GROUND_BRAKE     = 15.5;
-const AIR_BRAKE        = 2.8;
-const AIR_DRAG         = 2.0;
-const COYOTE_TIME_SECS = 0.12;
-const JUMP_BUFFER_SECS = 0.11;
-const JUMP_RELEASE_CUT = 0.56;
-const PROJECTILE_SPEED_MULT = 5.8;
-const SHOT_SPREAD_MULT = 0.62;
-const BOT_INACCURACY   = 0.045;
-const RECOIL_RESET_SECS = 0.32;
-const DEG2RAD = Math.PI / 180;
-
-type RecoilStep = { yaw: number; pitch: number };
-
-// Very lightweight, CS-style recoil patterns per weapon.
-// Values are in radians and describe how much the shot direction (and camera) drifts per consecutive shot.
-const RECOIL_PATTERNS: Record<string, RecoilStep[]> = {
-  rifle: [
-    { yaw: 0 * DEG2RAD, pitch: -0.35 * DEG2RAD },
-    { yaw: 0.08 * DEG2RAD, pitch: -0.4 * DEG2RAD },
-    { yaw: 0.12 * DEG2RAD, pitch: -0.45 * DEG2RAD },
-    { yaw: 0.16 * DEG2RAD, pitch: -0.5 * DEG2RAD },
-    { yaw: 0.12 * DEG2RAD, pitch: -0.55 * DEG2RAD },
-    { yaw: 0.06 * DEG2RAD, pitch: -0.6 * DEG2RAD },
-    { yaw: 0 * DEG2RAD, pitch: -0.65 * DEG2RAD },
-    { yaw: -0.06 * DEG2RAD, pitch: -0.7 * DEG2RAD },
-    { yaw: -0.14 * DEG2RAD, pitch: -0.75 * DEG2RAD },
-    { yaw: -0.18 * DEG2RAD, pitch: -0.8 * DEG2RAD },
-    { yaw: -0.16 * DEG2RAD, pitch: -0.85 * DEG2RAD },
-    { yaw: -0.1 * DEG2RAD, pitch: -0.88 * DEG2RAD },
-  ],
-  scrambler: [
-    { yaw: 0 * DEG2RAD, pitch: -0.4 * DEG2RAD },
-    { yaw: 0.1 * DEG2RAD, pitch: -0.45 * DEG2RAD },
-    { yaw: 0.14 * DEG2RAD, pitch: -0.5 * DEG2RAD },
-    { yaw: 0.18 * DEG2RAD, pitch: -0.52 * DEG2RAD },
-    { yaw: 0.16 * DEG2RAD, pitch: -0.55 * DEG2RAD },
-    { yaw: 0.08 * DEG2RAD, pitch: -0.6 * DEG2RAD },
-    { yaw: 0 * DEG2RAD, pitch: -0.64 * DEG2RAD },
-    { yaw: -0.06 * DEG2RAD, pitch: -0.68 * DEG2RAD },
-    { yaw: -0.12 * DEG2RAD, pitch: -0.7 * DEG2RAD },
-    { yaw: -0.18 * DEG2RAD, pitch: -0.74 * DEG2RAD },
-    { yaw: -0.2 * DEG2RAD, pitch: -0.78 * DEG2RAD },
-    { yaw: -0.16 * DEG2RAD, pitch: -0.82 * DEG2RAD },
-    { yaw: -0.1 * DEG2RAD, pitch: -0.86 * DEG2RAD },
-    { yaw: -0.04 * DEG2RAD, pitch: -0.9 * DEG2RAD },
-  ],
-  whipper: [
-    { yaw: 0 * DEG2RAD, pitch: -0.5 * DEG2RAD },
-    { yaw: 0.06 * DEG2RAD, pitch: -0.6 * DEG2RAD },
-    { yaw: -0.06 * DEG2RAD, pitch: -0.7 * DEG2RAD },
-    { yaw: 0.08 * DEG2RAD, pitch: -0.8 * DEG2RAD },
-  ],
-  sniper: [
-    { yaw: 0 * DEG2RAD, pitch: -0.18 * DEG2RAD },
-    { yaw: 0.02 * DEG2RAD, pitch: -0.22 * DEG2RAD },
-  ],
-};
-const BOT_ACCEL        = 14;
-const BOT_BRAKE        = 12;
-const BOT_SPEED_WALK   = 2.8;
-const BOT_SPEED_RUN    = 5.8;
-const BOT_YAW_LERP     = 6.5;
-const BOT_MODEL_FACING_OFFSET = 0;
-const HP_REGEN_DELAY_SECS = 3.0;
-const HP_REGEN_EXP_RATE = 0.05;
-const LOW_HP_WARN_THRESHOLD = 34;
-const POSTFX_BLOOM_STRENGTH = 0.78;
-const POSTFX_BLOOM_RADIUS = 0.5;
-const POSTFX_BLOOM_THRESHOLD = 0.65;
-const POSTFX_EXPOSURE = 1.24;
-const MATCH_DURATION_SECS = 180;
-const KILL_FEED_TTL_SECS = 4.2;
-const HEADSHOT_MULT = 1.65;
-const BOT_HEAD_Y_OFFSET = BOT_HEIGHT * 0.34;
-const FLAT_SPAWN_HALF = 46;
-const STAGE_ASPECT = 16 / 9;
-const STAGE_PRESET_WIDTHS = {
-  small: 760,
-  medium: 980,
-  large: 1220,
-} as const;
-/** Padding of the shell (section) horizontally – used to compute shell width when stage has custom size (≈ 0.9rem × 2) */
-const SHELL_PADDING_PX = 30;
-
-//  Weapon definitions 
-interface WeaponDef {
-  id: string; label: string; emoji: string;
-  viewModel: "pistol" | "ak47" | "shotgun" | "sniper";
-  damage: number; fireRate: number; spread: number;
-  pellets: number; range: number;
-  ammo: number; maxAmmo: number; reloadTime: number;
-  projColor: string; projSpeed: number;
-  hitMode: "projectile" | "hitscan";
-  speedMult: number;
-  splash: boolean; splashR: number; splashDmg: number;
-  auto: boolean;
-  // viewmodel colours
-  bodyHex: string; barrelLen: number; barrelR: number;
-}
-
-interface ReloadAnimProfile {
-  side: number;
-  down: number;
-  back: number;
-  pitch: number;
-  roll: number;
-  yaw: number;
-  wobble: number;
-  wobbleFreq: number;
-  settleSpeed: number;
-  tacticalTime: number;
-}
-
-const WEAPONS: WeaponDef[] = [
-  {
-    id:"rifle",    label:"Pistol",  emoji:"P",
-    viewModel:"pistol",
-    damage:24, fireRate:3.9, spread:0.0105, pellets:1, range:88,
-    ammo:16, maxAmmo:16, reloadTime:1.15,
-    projColor:"#ffe8b0", projSpeed:66, hitMode:"hitscan", speedMult:3.25, splash:false, splashR:0, splashDmg:0,
-    auto:false, bodyHex:"#6a9ab8", barrelLen:0.72, barrelR:0.038,
-  },
-  {
-    id:"scrambler", label:"AK-47", emoji:"AK",
-    viewModel:"ak47",
-    damage:17, fireRate:7.9, spread:0.026, pellets:1, range:110,
-    ammo:30, maxAmmo:30, reloadTime:1.8,
-    projColor:"#ffe070", projSpeed:57, hitMode:"hitscan", speedMult:2.72, splash:false, splashR:0, splashDmg:0,
-    auto:true, bodyHex:"#a87840", barrelLen:0.50, barrelR:0.048,
-  },
-  {
-    id:"whipper",  label:"Shotgun",   emoji:"SG",
-    viewModel:"shotgun",
-    // ספריי רחב יותר – פחות נזק לכל כדור, יותר פיזור
-    damage:11, fireRate:1.08, spread:0.16, pellets:8, range:31,
-    ammo:6,  maxAmmo:6,  reloadTime:2.8,
-    projColor:"#ffe066", projSpeed:42, hitMode:"hitscan", speedMult:2.0, splash:false, splashR:0, splashDmg:0,
-    auto:false, bodyHex:"#996655", barrelLen:0.36, barrelR:0.068,
-  },
-  {
-    id:"cracker",  label:"Sniper",   emoji:"SN",
-    viewModel:"sniper",
-    damage:108, fireRate:0.7, spread:0.0018, pellets:1, range:220,
-    ammo:5,  maxAmmo:5,  reloadTime:2.7,
-    projColor:"#ff9944", projSpeed:60, hitMode:"hitscan", speedMult:3.55, splash:false, splashR:0, splashDmg:0,
-    auto:false, bodyHex:"#c06030", barrelLen:0.66, barrelR:0.055,
-  },
+const MAPS: { id: MapId; label: string }[] = [
+  { id: "flat",     label: "Flat Playground" },
+  { id: "arena",    label: "Shell Arena" },
+  { id: "dust2",    label: "Dust II (OBJ)" },
+  { id: "levelGlb", label: "Custom Level (GLB)" },
 ];
-
-const RELOAD_ANIMS: Record<string, ReloadAnimProfile> = {
-  rifle: {
-    side: 0.07, down: 0.16, back: 0.22,
-    pitch: 0.52, roll: 0.78, yaw: 0.085,
-    wobble: 0.1, wobbleFreq: 4.1, settleSpeed: 5.4, tacticalTime: 0.86,
-  },
-  scrambler: {
-    side: 0.035, down: 0.1, back: 0.14,
-    pitch: 0.3, roll: 0.46, yaw: 0.055,
-    wobble: 0.065, wobbleFreq: 5.2, settleSpeed: 6.2, tacticalTime: 0.64,
-  },
-  whipper: {
-    side: 0.1, down: 0.2, back: 0.26,
-    pitch: 0.6, roll: 1.22, yaw: 0.13,
-    wobble: 0.15, wobbleFreq: 3.4, settleSpeed: 4.8, tacticalTime: 1.02,
-  },
-  cracker: {
-    side: 0.13, down: 0.26, back: 0.34,
-    pitch: 0.74, roll: 1.45, yaw: 0.17,
-    wobble: 0.2, wobbleFreq: 2.8, settleSpeed: 4.1, tacticalTime: 1.2,
-  },
-};
-
-function getReloadAnimProfile(wpId: string): ReloadAnimProfile {
-  return RELOAD_ANIMS[wpId] ?? RELOAD_ANIMS.rifle;
-}
-
-type BotAnimName = "idle" | "walk" | "run" | "attack" | "die";
-type VmAnimName = "idle" | "shoot" | "reload";
-type StageSizePreset = "small" | "medium" | "large" | "fluid" | "custom";
-type StageSize = { width: number; height: number };
-type VmPose = {
-  baseX: number; baseY: number; baseZ: number; baseRotY: number;
-  muzzleX: number; muzzleY: number; muzzleZ: number;
-};
-
-type MapId = "flat" | "arena" | "dust2" | "levelGlb";
-
-const MAPS: { id: MapId; label: string }[] = USE_FLAT_PLAYGROUND
-  ? [
-      { id: "flat", label: "Flat Playground (stable)" },
-    ]
-  : [
-      { id: "arena",   label: "Shell Arena (built-in)" },
-      { id: "dust2",   label: "Dust II (OBJ)" },
-      { id: "levelGlb", label: "Custom Level (GLB)" },
-    ];
-
-type ViewModelAsset = {
-  template: THREE.Group;
-  animations: THREE.AnimationClip[];
-};
-
-type FpsAssetPack = {
-  mutantTemplate: THREE.Group | null;
-  mutantAnims: Partial<Record<BotAnimName, THREE.AnimationClip>>;
-  weaponModels: Partial<Record<WeaponDef["viewModel"], ViewModelAsset>>;
-  levelTemplate: THREE.Group | null;
-  muzzleFlashTemplate: THREE.Group | null;
-  shotSoundBuffer: AudioBuffer | null;
-  skyTexture: THREE.Texture | null;
-};
-
-const EMPTY_FPS_ASSET_PACK: FpsAssetPack = {
-  mutantTemplate: null,
-  mutantAnims: {},
-  weaponModels: {},
-  levelTemplate: null,
-  muzzleFlashTemplate: null,
-  shotSoundBuffer: null,
-  skyTexture: null,
-};
-
-const FPS_ASSET_PATHS = {
-  sky: "bits-sniper-fps/assets/sky.jpg",
-  mutantModel: "bits-sniper-fps/assets/animations/mutant.fbx",
-  mutantIdle: "bits-sniper-fps/assets/animations/mutant breathing idle.fbx",
-  mutantWalk: "bits-sniper-fps/assets/animations/mutant walking.fbx",
-  mutantRun: "bits-sniper-fps/assets/animations/mutant run.fbx",
-  mutantAttack: "bits-sniper-fps/assets/animations/mutant punch.fbx",
-  mutantDie: "bits-sniper-fps/assets/animations/mutant dying.fbx",
-  mapPackMtl: "bits-sniper-fps/assets/mapPack/source/de_dust2.mtl",
-  mapPackObj: "bits-sniper-fps/assets/mapPack/source/de_dust2.obj",
-  levelMap: "bits-sniper-fps/assets/level.glb",
-  muzzleFlash: "bits-sniper-fps/assets/muzzle_flash.glb",
-  ak47Shot: "bits-sniper-fps/assets/sounds/ak47_shot.wav",
-} as const;
-
-const VIEWMODEL_GLB_PATHS: Record<WeaponDef["viewModel"], string> = {
-  pistol: "bits-sniper-fps/assets/guns/pistol/pistol.glb",
-  ak47: "bits-sniper-fps/assets/guns/ak47/ak47.glb",
-  shotgun: "bits-sniper-fps/assets/guns/shotgun/shotgun.glb",
-  sniper: "bits-sniper-fps/assets/guns/sniper/sniper_animated.glb",
-};
-
-function buildAssetUrl(relativePath: string) {
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const encodedPath = relativePath.split("/").map(encodeURIComponent).join("/");
-  return `${normalizedBase}${encodedPath}`;
-}
-
-let currentMapId: MapId = USE_FLAT_PLAYGROUND ? "flat" : "arena";
-
-async function loadFpsAssetPack(): Promise<FpsAssetPack> {
-  const pack: FpsAssetPack = {
-    ...EMPTY_FPS_ASSET_PACK,
-    mutantAnims: {},
-    weaponModels: {},
-    muzzleFlashTemplate: null,
-  };
-  const textureLoader = new THREE.TextureLoader();
-  const audioLoader = new THREE.AudioLoader();
-  const mtlLoader = new MTLLoader();
-  const objLoader = new OBJLoader();
-  const gltfLoader = new GLTFLoader();
-
-  const loadViewModel = async (viewModel: WeaponDef["viewModel"], relativePath: string) => {
-    try {
-      const gltf = await gltfLoader.loadAsync(buildAssetUrl(relativePath));
-      pack.weaponModels[viewModel] = {
-        template: gltf.scene,
-        animations: gltf.animations ?? [],
-      };
-    } catch (err) {
-      if (viewModel === "ak47") {
-        console.warn("Failed loading AK47 model:", err);
-      }
-      // Optional weapon model; we fallback to procedural mesh for that slot.
-    }
-  };
-
-  const tasks: Promise<void>[] = [
-    // Bots use our procedural model only (no mutant FBX loaded).
-    (async () => {})(),
-    (async () => {
-      if (USE_FLAT_PLAYGROUND) {
-        // Fully flat, built-in playground (no external level files at all).
-        pack.levelTemplate = createFlatPlayground();
-        return;
-      }
-
-      if (currentMapId === "arena") {
-        // Procedural arena, still internal (no external level files).
-        pack.levelTemplate = createProceduralDust2Blockout();
-        return;
-      }
-
-      const tryLoadDust2 = async () => {
-        const sourceDir = buildAssetUrl("bits-sniper-fps/assets/mapPack/source/");
-        mtlLoader.setPath(sourceDir);
-        mtlLoader.setResourcePath(sourceDir);
-        const materials = await mtlLoader.loadAsync(FPS_ASSET_PATHS.mapPackMtl.split("/").pop() as string);
-        materials.preload();
-        objLoader.setMaterials(materials);
-        objLoader.setPath(sourceDir);
-        const mapObj = await objLoader.loadAsync(FPS_ASSET_PATHS.mapPackObj.split("/").pop() as string);
-        pack.levelTemplate = mapObj;
-      };
-
-      const tryLoadGlb = async () => {
-        const gltf = await gltfLoader.loadAsync(buildAssetUrl(FPS_ASSET_PATHS.levelMap));
-        pack.levelTemplate = gltf.scene;
-      };
-
-      try {
-        if (currentMapId === "dust2") {
-          await tryLoadDust2();
-        } else {
-          await tryLoadGlb();
-        }
-      } catch {
-        try {
-          if (currentMapId === "dust2") {
-            await tryLoadGlb();
-          } else {
-            await tryLoadDust2();
-          }
-        } catch {
-          // Keep procedural fallback map when external level files are missing.
-        }
-      }
-    })(),
-    // No mutant clips; procedural bot uses code-driven wobble.
-    ...((Object.entries(VIEWMODEL_GLB_PATHS) as Array<[WeaponDef["viewModel"], string]>)
-      .map(([viewModel, relativePath]) => loadViewModel(viewModel, relativePath))),
-    (async () => {
-      try {
-        const gltf = await gltfLoader.loadAsync(buildAssetUrl(FPS_ASSET_PATHS.muzzleFlash));
-        pack.muzzleFlashTemplate = gltf.scene;
-      } catch {
-        // Optional. A procedural flash fallback is used when missing.
-      }
-    })(),
-    (async () => {
-      try {
-        pack.shotSoundBuffer = await audioLoader.loadAsync(buildAssetUrl(FPS_ASSET_PATHS.ak47Shot));
-      } catch {
-        // Sound is optional.
-      }
-    })(),
-    (async () => {
-      try {
-        const sky = await textureLoader.loadAsync(buildAssetUrl(FPS_ASSET_PATHS.sky));
-        sky.colorSpace = THREE.SRGBColorSpace;
-        pack.skyTexture = sky;
-      } catch {
-        // Keep fallback background if texture is unavailable.
-      }
-    })(),
-  ];
-
-  await Promise.all(tasks);
-  return pack;
-}
-
-let fpsAssetPackPromise: Promise<FpsAssetPack> | null = null;
-function getFpsAssetPackOnce(mapId: MapId) {
-  currentMapId = mapId;
-  if (!fpsAssetPackPromise) {
-    fpsAssetPackPromise = loadFpsAssetPack();
-  }
-  return fpsAssetPackPromise;
-}
-
-//  Types 
-interface BotState {
-  id: number; mesh: THREE.Group; health: number; dead: boolean;
-  respawnTimer: number; velY: number; velX: number; velZ: number; onGround: boolean;
-  yaw: number; targetYaw: number; wpIdx: number; fireTimer: number;
-  strafeDir: number; strafeTimer: number; reloadTimer: number; ammo: number;
-  label: string; lastHudHealth: number;
-  animTime: number; animPhase: number;
-  mixer?: THREE.AnimationMixer;
-  animActions?: Partial<Record<BotAnimName, THREE.AnimationAction>>;
-  activeAnim?: BotAnimName;
-}
-interface Projectile {
-  mesh: THREE.Mesh; vel: THREE.Vector3; fromBot: boolean;
-  sourceName: string;
-  damage: number; range: number; traveled: number;
-  splash: boolean; splashR: number; splashDmg: number;
-}
-interface HitInd { angle: number; opacity: number }
-interface KillFeedEntry {
-  id: number;
-  text: string;
-  ttl: number;
-  headshot: boolean;
-}
-
-//  Small helpers 
-function clamp(v:number,lo:number,hi:number){ return Math.max(lo,Math.min(hi,v)) }
-function rng(lo:number,hi:number){ return lo+Math.random()*(hi-lo) }
-
-
-// ─────────────────────────────────────────────────────────────
-// Capsule math helpers (fast + allocation-free)
-// Used for smoother, more accurate hits than simple spheres.
-// ─────────────────────────────────────────────────────────────
-const _ssD1 = new THREE.Vector3();
-const _ssD2 = new THREE.Vector3();
-const _ssR  = new THREE.Vector3();
-const _ssC1 = new THREE.Vector3();
-const _ssC2 = new THREE.Vector3();
-const _capA = new THREE.Vector3();
-const _capB = new THREE.Vector3();
-
-function segmentSegmentClosestParams(
-  p1: THREE.Vector3,
-  q1: THREE.Vector3,
-  p2: THREE.Vector3,
-  q2: THREE.Vector3,
-  outC1?: THREE.Vector3,
-  outC2?: THREE.Vector3,
-): { distSq: number; s: number; t: number } {
-  // Christer Ericson, Real-Time Collision Detection (adapted)
-  _ssD1.copy(q1).sub(p1);
-  _ssD2.copy(q2).sub(p2);
-  _ssR.copy(p1).sub(p2);
-
-  const a = _ssD1.dot(_ssD1);
-  const e = _ssD2.dot(_ssD2);
-  const f = _ssD2.dot(_ssR);
-
-  let s = 0;
-  let t = 0;
-  const EPS = 1e-8;
-
-  if (a <= EPS && e <= EPS) {
-    if (outC1) outC1.copy(p1);
-    if (outC2) outC2.copy(p2);
-    return { distSq: p1.distanceToSquared(p2), s: 0, t: 0 };
-  }
-
-  if (a <= EPS) {
-    s = 0;
-    t = clamp(f / e, 0, 1);
-  } else {
-    const c = _ssD1.dot(_ssR);
-    if (e <= EPS) {
-      t = 0;
-      s = clamp(-c / a, 0, 1);
-    } else {
-      const b = _ssD1.dot(_ssD2);
-      const denom = a * e - b * b;
-      s = denom !== 0 ? clamp((b * f - c * e) / denom, 0, 1) : 0;
-      t = (b * s + f) / e;
-
-      if (t < 0) {
-        t = 0;
-        s = clamp(-c / a, 0, 1);
-      } else if (t > 1) {
-        t = 1;
-        s = clamp((b - c) / a, 0, 1);
-      }
-    }
-  }
-
-  if (outC1) outC1.copy(p1).addScaledVector(_ssD1, s);
-  if (outC2) outC2.copy(p2).addScaledVector(_ssD2, t);
-
-  return { distSq: outC1 && outC2 ? outC1.distanceToSquared(outC2) : 0, s, t };
-}
-
-function segmentHitsCapsule(
-  segA: THREE.Vector3,
-  segB: THREE.Vector3,
-  center: THREE.Vector3,
-  halfHeight: number,
-  radius: number,
-  outHitPoint: THREE.Vector3,
-): { hit: boolean; segS: number; axisT: number } {
-  _capA.set(center.x, center.y - halfHeight + radius, center.z);
-  _capB.set(center.x, center.y + halfHeight - radius, center.z);
-
-  const { distSq, s, t } = segmentSegmentClosestParams(segA, segB, _capA, _capB, _ssC1, _ssC2);
-  if (distSq <= radius * radius) {
-    outHitPoint.copy(_ssC1);
-    return { hit: true, segS: s, axisT: t };
-  }
-  return { hit: false, segS: 0, axisT: 0 };
-}
-
-function getStageWidthBounds(_aspect = STAGE_ASPECT) {
-  const minW = 320;
-  const maxW = 4096;
-  return { minW, maxW };
-}
-
-function makeStageSize(width: number, aspect = STAGE_ASPECT): StageSize {
-  return { width: Math.round(width), height: Math.round(width / aspect) };
-}
-
-function getPresetStageSize(preset: Exclude<StageSizePreset, "custom" | "fluid">): StageSize {
-  const { minW, maxW } = getStageWidthBounds();
-  const width = clamp(STAGE_PRESET_WIDTHS[preset], minW, maxW);
-  return makeStageSize(width);
-}
-
-function getInitialStagePreset(): StageSizePreset {
-  if (typeof window !== "undefined" && window.innerWidth < 720) return "fluid";
-  return "medium";
-}
-
-function getInitialStageSize(): StageSize | null {
-  if (typeof window !== "undefined" && window.innerWidth < 720) return null;
-  return getPresetStageSize("medium");
-}
-
-function formatTimer(totalSeconds: number) {
-  const safe = Math.max(0, Math.ceil(totalSeconds));
-  const mins = Math.floor(safe / 60);
-  const secs = safe % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
-}
-
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const r = Math.min(radius, width * 0.5, height * 0.5);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-}
-
-function getBotHudColor(ratio: number) {
-  if (ratio > 0.5) return "#2ee872";
-  if (ratio > 0.25) return "#f0c038";
-  return "#ee4038";
-}
-
-function updateBotHpLabel(mesh: THREE.Group, label: string, health: number) {
-  const ctx = mesh.userData.hpLabelCtx as CanvasRenderingContext2D | undefined;
-  const texture = mesh.userData.hpLabelTexture as THREE.CanvasTexture | undefined;
-  if (!ctx || !texture) return;
-
-  const ratio = clamp(health / BOT_MAX_HEALTH, 0, 1);
-  const hpValue = Math.max(0, Math.round(health));
-  const { width, height } = ctx.canvas;
-
-  ctx.clearRect(0, 0, width, height);
-
-  drawRoundedRect(ctx, 8, 6, width - 16, height - 12, 14);
-  ctx.fillStyle = "rgba(4, 12, 24, 0.88)";
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(126, 188, 244, 0.74)";
-  ctx.stroke();
-
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#e8f4ff";
-  ctx.font = "700 22px Oxanium, Segoe UI, sans-serif";
-  ctx.fillText(label, width * 0.5, 30);
-
-  const barX = 22;
-  const barY = 44;
-  const barW = width - 44;
-  const barH = 20;
-  drawRoundedRect(ctx, barX, barY, barW, barH, 8);
-  ctx.fillStyle = "rgba(16, 26, 42, 0.92)";
-  ctx.fill();
-
-  const fillW = Math.max(8, Math.round(barW * ratio));
-  drawRoundedRect(ctx, barX, barY, fillW, barH, 8);
-  ctx.fillStyle = getBotHudColor(ratio);
-  ctx.fill();
-
-  ctx.fillStyle = "#d9e9f8";
-  ctx.font = "700 16px Oxanium, Segoe UI, sans-serif";
-  ctx.fillText(`${hpValue}/${BOT_MAX_HEALTH} HP`, width * 0.5, 81);
-  texture.needsUpdate = true;
-}
-type SpawnZone = [number, number, number, number];
-
-// Competitive symmetric spawns: each side has a protected exit + risky fast exit.
-const PLAYER_SPAWN_ZONES: SpawnZone[] = [
-  // Procedural Dust2-style blockout: safe spawn near Base A (SW)
-  [-64,  52, 12, 12],
-  [-58,  40, 12, 12],
-  [-44,  52, 12, 10],
-];
-
-const BOT_SPAWN_ZONES: SpawnZone[] = [
-  // Enemy spawns: Base B (NE) + mid-lanes
-  [ 52, -64, 12, 12],
-  [ 40, -58, 12, 12],
-  [-12, -40, 24, 20],
-  [-18, -10, 12, 20],
-  [  6, -10, 12, 20],
-  [-12,  26, 24, 18],
-];
-
-const BOT_NAMES  = ["KoloBot","YoloEgg","SnipeHen","CrackBot","FryBot","Scrambles","Clucky"];
-const BOT_COLORS = ["#e84a4a","#e87a40","#e8c44a","#40e880","#40b0e8","#a040e8","#e840b0"]
-  .map(c => new THREE.Color(c));
-
-//  Build egg-bot mesh 
-function attachBotHud(g: THREE.Group, hpBarY: number, hpLabelY: number) {
-  const hbBg = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.12, 0.14),
-    new THREE.MeshBasicMaterial({ color: "#330000", depthTest: false }),
-  );
-  hbBg.position.y = hpBarY;
-  hbBg.renderOrder = 999;
-  g.add(hbBg);
-
-  const hbFg = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.08, 0.1),
-    new THREE.MeshBasicMaterial({ color: "#22ee44", depthTest: false }),
-  );
-  hbFg.position.y = hpBarY + 0.001;
-  hbFg.renderOrder = 1000;
-  g.add(hbFg);
-
-  const hpLabelCanvas = document.createElement("canvas");
-  hpLabelCanvas.width = 256;
-  hpLabelCanvas.height = 96;
-  const hpLabelTexture = new THREE.CanvasTexture(hpLabelCanvas);
-  hpLabelTexture.colorSpace = THREE.SRGBColorSpace;
-  hpLabelTexture.minFilter = THREE.LinearFilter;
-  hpLabelTexture.magFilter = THREE.LinearFilter;
-  hpLabelTexture.generateMipmaps = false;
-
-  const hpLabelSprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: hpLabelTexture,
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-    }),
-  );
-  hpLabelSprite.position.set(0, hpLabelY, 0);
-  hpLabelSprite.scale.set(1.58, 0.59, 1);
-  hpLabelSprite.renderOrder = 1001;
-  g.add(hpLabelSprite);
-
-  g.userData.hpBarBg = hbBg;
-  g.userData.hpBarFg = hbFg;
-  g.userData.hpLabelCtx = hpLabelCanvas.getContext("2d");
-  g.userData.hpLabelTexture = hpLabelTexture;
-  g.userData.hpLabelSprite = hpLabelSprite;
-}
-
-function makeBotMesh(color: THREE.Color, mutantTemplate: THREE.Group | null): THREE.Group {
-  const g = new THREE.Group();
-
-  // Unified muzzle/origin tuning (offset from capsule center).
-  g.userData.muzzleOffsetY = BOT_HEIGHT * 0.36;
-
-  const tmpBox = new THREE.Box3();
-  const tmpSize = new THREE.Vector3();
-  const tmpCenter = new THREE.Vector3();
-
-  function fitToBotCapsule(root: THREE.Object3D) {
-    // Scale imported model to match our gameplay capsule, then align feet to y=-BOT_HEIGHT.
-    root.updateMatrixWorld(true);
-    tmpBox.setFromObject(root);
-    tmpBox.getSize(tmpSize);
-
-    const currentH = Math.max(1e-4, tmpSize.y);
-    const targetH = BOT_HEIGHT * 2;
-    const s = targetH / currentH;
-
-    root.scale.multiplyScalar(s);
-    root.updateMatrixWorld(true);
-
-    tmpBox.setFromObject(root);
-    tmpBox.getCenter(tmpCenter);
-
-    // Center on X/Z so gameplay capsule matches the model.
-    root.position.x -= tmpCenter.x;
-    root.position.z -= tmpCenter.z;
-
-    root.updateMatrixWorld(true);
-    tmpBox.setFromObject(root);
-
-    // Align model feet to capsule bottom.
-    root.position.y += (-BOT_HEIGHT - tmpBox.min.y);
-    root.updateMatrixWorld(true);
-  }
-
-  const hudBarY = BOT_HEIGHT + 0.42;
-  const hudLabelY = BOT_HEIGHT + 0.74;
-
-  if (mutantTemplate) {
-    const mutant = SkeletonUtils.clone(mutantTemplate) as THREE.Group;
-
-    // Clone materials + slight tint for readable targets.
-    mutant.traverse((node) => {
-      const mesh = node as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-
-      const sourceMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const clonedMaterials = sourceMaterials.map((mat) => {
-        const cloned = mat.clone();
-        const maybeColor = cloned as THREE.Material & { color?: THREE.Color };
-        if (maybeColor.color) {
-          maybeColor.color.lerp(color, 0.12);
-        }
-        return cloned;
-      });
-      mesh.material = Array.isArray(mesh.material) ? clonedMaterials : clonedMaterials[0];
-    });
-
-    fitToBotCapsule(mutant);
-
-    g.add(mutant);
-    g.userData.mutantRoot = mutant;
-
-    attachBotHud(g, hudBarY, hudLabelY);
-    return g;
-  }
-
-  // Our own procedural bot: simple humanoid, all in code (feet y=0, head ≈ 2*BOT_HEIGHT).
-  const legH = 0.48;
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.2, 0.24, legH, 10),
-    new THREE.MeshStandardMaterial({ color: "#1a1a2e", roughness: 0.8, metalness: 0.1 }),
-  );
-  base.position.y = legH * 0.5;
-  base.receiveShadow = true;
-  g.add(base);
-
-  const torsoH = 0.88;
-  const torsoR = 0.3;
-  const bMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.15 });
-  const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(torsoR * 1.02, torsoR, torsoH, 12),
-    bMat,
-  );
-  body.position.y = legH + torsoH * 0.5;
-  body.castShadow = true;
-  g.add(body);
-
-  const headR = 0.22;
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(headR, 12, 10),
-    new THREE.MeshStandardMaterial({ color: color.clone().lerp(new THREE.Color("#fff"), 0.15), roughness: 0.45 }),
-  );
-  head.position.y = legH + torsoH + headR;
-  head.castShadow = true;
-  g.add(head);
-
-  const eyeY = head.position.y;
-  const eyeZ = headR * 0.92;
-  for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06, 8, 6),
-      new THREE.MeshStandardMaterial({ color: "#fff" }),
-    );
-    eye.position.set(sx * 0.08, eyeY + 0.02, eyeZ);
-    g.add(eye);
-    const pup = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 6, 6),
-      new THREE.MeshStandardMaterial({ color: "#0a0a12" }),
-    );
-    pup.position.set(sx * 0.08, eyeY + 0.02, eyeZ + 0.04);
-    g.add(pup);
-  }
-
-  const gun = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.04, 0.04, 0.48, 8),
-    new THREE.MeshStandardMaterial({ color: "#2a2a35", roughness: 0.5, metalness: 0.2 }),
-  );
-  gun.rotation.x = Math.PI / 2;
-  gun.position.set(0, legH + torsoH * 0.35, torsoR + 0.2);
-  g.add(gun);
-
-  attachBotHud(g, hudBarY + BOT_HEIGHT, hudLabelY + BOT_HEIGHT);
-
-  for (const child of g.children) {
-    child.position.y -= BOT_HEIGHT;
-  }
-
-  g.userData.body = body;
-  g.userData.base = base;
-  g.userData.gun = gun;
-  g.userData.bodyBaseY = body.position.y;
-  g.userData.baseBaseY = base.position.y;
-  g.userData.gunBaseRotZ = gun.rotation.z;
-
-  return g;
-}
 
 // Build viewmodel (weapon seen in first person)
 function setVmPose(group: THREE.Group, pose: VmPose, isAk47 = false) {
@@ -929,22 +194,6 @@ function addSimpleHands(
   leftHand.position.set(-0.14, -0.09, -0.2);
   handsRoot.add(leftHand);
 }
-
-type ImportedVmConfig = {
-  scale: number;
-  position: [number, number, number];
-  rotationDeg: [number, number, number];
-  pose: VmPose;
-  // Muzzle-flash visual offset (view-space), independent from bullet origin.
-  flashOffsetX?: number;
-  flashOffsetY?: number;
-  flashOffsetZ?: number;
-  // Optional tuning for simple static models (no rig/animations).
-  staticScaleMul?: number;
-  staticPositionOffset?: [number, number, number];
-  staticRotationOffsetDeg?: [number, number, number];
-  staticPose?: VmPose;
-};
 
 type MergedClipSplit = {
   idle: [number, number];
@@ -1085,8 +334,6 @@ function trimClipTailSeconds(
   return THREE.AnimationUtils.subclip(source, `${source.name}_${name}`, 0, endFrame, fps);
 }
 
-type MuzzleRatio = { x: number; y: number; z: number };
-type ObjectBounds = { min: THREE.Vector3; max: THREE.Vector3; size: THREE.Vector3 };
 let cachedAkMuzzleRatio: MuzzleRatio | null = null;
 
 function applyImportedTransform(root: THREE.Object3D, config: ImportedVmConfig) {
@@ -1195,7 +442,8 @@ function makeViewmodel(
       ? cachedAkMuzzleRatio
       : (cachedAkMuzzleRatio ?? ensureAkMuzzleRatio(akReferenceAsset));
     const resolvedPose: VmPose = {
-      ...(isStaticModel && config.staticPose ? config.staticPose : config.pose),
+      ...config.pose,
+      ...(isStaticModel && config.staticPose ? config.staticPose : {}),
     };
     if (wp.viewModel !== "ak47" && importedBounds && akMuzzleRatio) {
       // Derive muzzle from AK's proven ratio inside its model bounds.
@@ -1513,8 +761,12 @@ export default function BitsSniperGame() {
   /** Ref set on Start Match so the game effect uses these spawns for this session. */
   const customSpawnsForSessionRef = useRef<{ player: { x: number; z: number } | null; enemies: { x: number; z: number }[] }>({ player: null, enemies: [] });
   const [adsSens, setAdsSens] = useState(1);
-  const [masterVolume, setMasterVolume] = useState(1);
-  const [selectedMapId, setSelectedMapId] = useState<MapId>(USE_FLAT_PLAYGROUND ? "flat" : "arena");
+  const initialMasterVolume = clamp(loadSettingsFromStorage().masterVolume ?? 1, 0, 1);
+  const [masterVolume, setMasterVolume] = useState(() => initialMasterVolume);
+  const [bgMusicVolume, setBgMusicVolume] = useState(() => clamp(loadSettingsFromStorage().bgMusicVolume ?? 1, 0, 1));
+  const bgMusicRef = useRef<HTMLAudioElement | null>(null);
+  const bgMusicStartedRef = useRef(false);
+  const [selectedMapId, setSelectedMapId] = useState<MapId>("flat");
   const [crosshairBloom, setCrosshairBloom] = useState(0);
   /** טריגר לאפקט כיווץ/שחרור בכוונת (אקדח + AK) – מוגדר ב־performance.now() בירי */
   const [crosshairSqueezeAt, setCrosshairSqueezeAt] = useState(0);
@@ -1544,13 +796,13 @@ export default function BitsSniperGame() {
   const [killFeed, setKillFeed] = useState<KillFeedEntry[]>([]);
   const sessionStartedRef = useRef(false);
   const showIntroRef = useRef(true);
-  const selectedMapIdRef = useRef<MapId>(USE_FLAT_PLAYGROUND ? "flat" : "arena");
+  const selectedMapIdRef = useRef<MapId>("flat");
   const [fpsAssets, setFpsAssets] = useState<FpsAssetPack | null>(null);
 
   // Mutable state shared into RAF loop (avoids stale closures)
   const lookSensRef = useRef(LOOK_SENS_BASE);
   const adsSensRef = useRef(1);
-  const masterVolRef = useRef(1);
+  const masterVolRef = useRef(initialMasterVolume);
   const st = useRef({
     hp: MAX_HEALTH, kills:0, deaths:0,
     ammo: WEAPONS[0].maxAmmo, reloading:false, wpIdx:0,
@@ -1610,7 +862,12 @@ export default function BitsSniperGame() {
       return;
     }
 
-    const clickable = (under.closest?.("[data-vclick]") as HTMLElement | null) ?? null;
+    let clickable = (under.closest?.("[data-vclick]") as HTMLElement | null) ?? null;
+    if (!clickable && under.closest?.(".bits-sniper-pause-volume__row")) {
+      const row = under.closest(".bits-sniper-pause-volume__row");
+      const rangeInput = row?.querySelector?.("input[type=range]") as HTMLInputElement | null;
+      if (rangeInput) clickable = rangeInput;
+    }
 
     if (vHoveredRef.current !== clickable) {
       clearVirtualHover();
@@ -1655,11 +912,6 @@ export default function BitsSniperGame() {
     syncVirtualCursorDom();
     updateVirtualHover();
   }, [syncVirtualCursorDom, updateVirtualHover]);
-
-  const virtualClick = useCallback(() => {
-    const target = vHoveredRef.current;
-    if (target) target.click();
-  }, []);
 
   useEffect(() => {
     runStateRef.current = runState;
@@ -1774,12 +1026,67 @@ export default function BitsSniperGame() {
     const value = Number(snapped.toFixed(2));
     setMasterVolume(value);
     masterVolRef.current = value;
+    saveSettingsToStorage({ ...loadSettingsFromStorage(), masterVolume: value });
   },[]);
+
+  const applyBgMusicVolume = useCallback((next: number)=>{
+    const value = clamp(Number((Math.round(next * 100) / 100).toFixed(2)), 0, 1);
+    setBgMusicVolume(value);
+    const el = bgMusicRef.current;
+    if (el) el.volume = value * BG_MUSIC_MAX_GAIN * masterVolRef.current;
+    saveSettingsToStorage({ ...loadSettingsFromStorage(), bgMusicVolume: value });
+  },[]);
+
+  const updateVirtualSliderFromCursor = useCallback(() => {
+    const root = pauseOverlayRootRef.current;
+    if (!root) return;
+    const rr = root.getBoundingClientRect();
+    const clientX = rr.left + vCursorRef.current.x;
+    const clientY = rr.top + vCursorRef.current.y;
+    const volumeSection = root.querySelector(".bits-sniper-pause-volume");
+    if (!volumeSection) return;
+    const rows = volumeSection.querySelectorAll(".bits-sniper-pause-volume__row");
+    let target: HTMLInputElement | null = null;
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (clientX >= rect.left - 2 && clientX <= rect.right + 2 && clientY >= rect.top - 2 && clientY <= rect.bottom + 2) {
+        const input = row.querySelector("input[type=range]") as HTMLInputElement | null;
+        if (input) target = input;
+        break;
+      }
+    }
+    if (!target || target.type !== "range") return;
+    const tr = target.getBoundingClientRect();
+    const ratio = clamp((clientX - tr.left) / tr.width, 0, 1);
+    const min = parseFloat(target.min) || 0;
+    const max = parseFloat(target.max) || 1;
+    const value = Number((ratio * (max - min) + min).toFixed(2));
+    target.value = String(value);
+    if (target.getAttribute("data-volume") === "master") {
+      applyMasterVolume(value);
+    } else {
+      applyBgMusicVolume(value);
+    }
+  }, [applyBgMusicVolume, applyMasterVolume]);
+
+  const virtualClick = useCallback(() => {
+    const target = vHoveredRef.current;
+    if (!target) return;
+    const root = pauseOverlayRootRef.current;
+    const inVolume = root?.querySelector(".bits-sniper-pause-volume")?.contains(target);
+    const isRange = target instanceof HTMLInputElement && target.type === "range";
+    if (inVolume || isRange) {
+      updateVirtualSliderFromCursor();
+      if (inVolume) return;
+    }
+    if (isRange) return;
+    target.click();
+  }, [updateVirtualSliderFromCursor]);
 
   const applySelectedMap = useCallback((next: MapId)=>{
     setSelectedMapId(next);
     // reset asset pack so בחירת המפה תשפיע על הטעינה הבאה
-    fpsAssetPackPromise = null;
+    resetFpsAssetPackPromise();
   },[]);
 
   const applyStagePreset = useCallback((preset: Exclude<StageSizePreset, "custom">)=>{
@@ -1910,6 +1217,16 @@ export default function BitsSniperGame() {
     return ()=> window.removeEventListener("resize", onViewportResize);
   },[]);
 
+  useEffect(() => {
+    const el = bgMusicRef.current;
+    if (!el) return;
+    el.volume = bgMusicVolume * BG_MUSIC_MAX_GAIN * masterVolume;
+    if (isLocked && sessionStarted && !bgMusicStartedRef.current) {
+      bgMusicStartedRef.current = true;
+      el.play().catch(() => {});
+    }
+  }, [isLocked, sessionStarted, bgMusicVolume, masterVolume]);
+
   const startFreshSession = useCallback(()=>{
     matchReadyDispatchedRef.current = false;
     // מתחילים סשן חדש; אם היינו ב-Pause, נחזור למשחק ונסגור את המסכים.
@@ -1931,6 +1248,9 @@ export default function BitsSniperGame() {
     setKillFeed([]);
     setTacticalMapImage(null);
     setShowSettings(false);
+    bgMusicStartedRef.current = false;
+    const bgEl = bgMusicRef.current;
+    if (bgEl) { bgEl.pause(); bgEl.currentTime = 0; }
     setShowIntro(true);
     setIntroPage("basic");
     setSessionStarted(false);
@@ -2040,16 +1360,6 @@ export default function BitsSniperGame() {
     composer.addPass(bloomPass);
     composer.addPass(outputPass);
 
-    // Minimap camera (top-down orthographic view of the arena)
-    const minimapHalf = USE_FLAT_PLAYGROUND ? FLAT_SPAWN_HALF : ARENA_HALF;
-    const minimapCamera = new THREE.OrthographicCamera(
-      -minimapHalf, minimapHalf,
-      minimapHalf, -minimapHalf,
-      0.1, 400,
-    );
-    minimapCamera.position.set(0, minimapHalf * 1.6, 0);
-    minimapCamera.up.set(0, 0, -1);
-    minimapCamera.lookAt(0, 0, 0);
     const TACTICAL_RT_SIZE = 1024;
     let tacticalRt: THREE.WebGLRenderTarget | null = null;
 
@@ -2325,14 +1635,90 @@ export default function BitsSniperGame() {
     bounce.position.set(-42, 36, -24);
     scene.add(bounce);
 
-    //  Map 
-    const { collidables, keyPoints, levelRoot } = buildMap(scene, assets.levelTemplate ?? null);
+    //  Map – boundaryHalf matches this map's walls so the safety clamp doesn't create an invisible barrier.
+    const { collidables, keyPoints, levelRoot, boundaryHalf } = buildMap(scene, assets.levelTemplate ?? null);
     if (levelRoot) levelRoot.updateMatrixWorld(true);
 
-    //  Projectiles 
+    // Minimap camera (top-down, uses this map's boundary)
+    const minimapHalf = boundaryHalf;
+    const minimapCamera = new THREE.OrthographicCamera(
+      -minimapHalf, minimapHalf,
+      minimapHalf, -minimapHalf,
+      0.1, 400,
+    );
+    minimapCamera.position.set(0, minimapHalf * 1.6, 0);
+    minimapCamera.up.set(0, 0, -1);
+    minimapCamera.lookAt(0, 0, 0);
+
+    // Debug colliders: מציג את ה־Box3 שבהם מתבצעת התנגשות (מקור אמת אחד)
+    const debugCollidersGroup = new THREE.Group();
+    debugCollidersGroup.name = "debug_colliders";
+    if (DEBUG_COLLIDERS && collidables.length > 0) {
+      const boxSize = new THREE.Vector3();
+      const boxCenter = new THREE.Vector3();
+      const debugMat = new THREE.LineBasicMaterial({ color: 0xff2200, linewidth: 2, depthTest: true });
+      for (const box of collidables) {
+        box.getSize(boxSize);
+        box.getCenter(boxCenter);
+        const geo = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
+        const edges = new THREE.EdgesGeometry(geo);
+        const line = new THREE.LineSegments(edges, debugMat.clone());
+        line.position.copy(boxCenter);
+        debugCollidersGroup.add(line);
+        geo.dispose();
+      }
+      scene.add(debugCollidersGroup);
+    }
+
+    //  Projectiles — גליל ויזואלי (גדול יותר, זוהר) כדי שניתן יהיה לראות את הכדורים
     const projectiles: Projectile[] = [];
-    const projGeo = new THREE.CylinderGeometry(0.03,0.03,0.5,6);
+    const projGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 10);
     const projImpact = new THREE.Vector3();
+
+    //  סימני פגיעה (decals) — קירות/רצפה, נעלמים אחרי כמה שניות, מוגבלים במספר
+    const DECAL_LIFETIME_SEC = 4.5;
+    const MAX_DECALS = 28;
+    const decalImpactNormal = new THREE.Vector3();
+    type DecalEntry = { mesh: THREE.Mesh; spawnTime: number };
+    const decals: DecalEntry[] = [];
+    const decalCanvas = document.createElement("canvas");
+    decalCanvas.width = 64;
+    decalCanvas.height = 64;
+    const dctx = decalCanvas.getContext("2d")!;
+    dctx.fillStyle = "rgba(12,8,4,0.92)";
+    dctx.beginPath();
+    dctx.arc(32, 32, 28, 0, Math.PI * 2);
+    dctx.fill();
+    dctx.fillStyle = "rgba(8,4,0,0.85)";
+    dctx.beginPath();
+    dctx.arc(32, 32, 18, 0, Math.PI * 2);
+    dctx.fill();
+    const decalTexture = new THREE.CanvasTexture(decalCanvas);
+    decalTexture.colorSpace = THREE.SRGBColorSpace;
+    decalTexture.needsUpdate = true;
+    function addDecal(worldPos: THREE.Vector3, normal: THREE.Vector3, nowSec: number) {
+      if (decals.length >= MAX_DECALS) {
+        const old = decals.shift()!;
+        scene.remove(old.mesh);
+        (old.mesh.geometry as THREE.BufferGeometry).dispose();
+        (old.mesh.material as THREE.Material).dispose();
+      }
+      const size = 0.18 + Math.random() * 0.08;
+      const geo = new THREE.PlaneGeometry(size, size);
+      const mat = new THREE.MeshBasicMaterial({
+        map: decalTexture,
+        transparent: true,
+        opacity: 0.88,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(worldPos).addScaledVector(normal, 0.004);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+      scene.add(mesh);
+      decals.push({ mesh, spawnTime: nowSec });
+    }
+
     const projRay = new THREE.Ray();
     const projDir = new THREE.Vector3();
     const rayHitPoint = new THREE.Vector3();
@@ -2389,10 +1775,14 @@ export default function BitsSniperGame() {
       origin: THREE.Vector3, dir: THREE.Vector3, wp: WeaponDef,
       fromBot: boolean, sourceName: string
     ){
-      const mat = new THREE.MeshBasicMaterial({
-        color: wp.projColor,
+      const col = new THREE.Color(wp.projColor);
+      const mat = new THREE.MeshLambertMaterial({
+        color: col,
+        emissive: col.clone(),
+        emissiveIntensity: 0.9,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.95,
+        depthWrite: false,
       });
       const m   = new THREE.Mesh(projGeo,mat);
       m.position.copy(origin);
@@ -2425,15 +1815,15 @@ export default function BitsSniperGame() {
     function snapPlayerToSafeSpawn() {
       // ב-flat playground תמיד מצמידים למרכז ולגובה הרצפה בלי ריי-קאסטים כדי למנוע מצבים לא צפויים.
       if (USE_FLAT_PLAYGROUND) {
-        yawObj.position.x = clamp(yawObj.position.x, -FLAT_SPAWN_HALF + PLAYER_RADIUS, FLAT_SPAWN_HALF - PLAYER_RADIUS);
-        yawObj.position.z = clamp(yawObj.position.z, -FLAT_SPAWN_HALF + PLAYER_RADIUS, FLAT_SPAWN_HALF - PLAYER_RADIUS);
+        yawObj.position.x = clamp(yawObj.position.x, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
+        yawObj.position.z = clamp(yawObj.position.z, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
         yawObj.position.y = PLAYER_HEIGHT;
         return;
       }
 
-      // ברירת מחדל: מצמידים לגבולות הארנה ומנסים להצמיד לגובה הרצפה של המפה.
-      yawObj.position.x = clamp(yawObj.position.x, -ARENA_HALF + PLAYER_RADIUS, ARENA_HALF - PLAYER_RADIUS);
-      yawObj.position.z = clamp(yawObj.position.z, -ARENA_HALF + PLAYER_RADIUS, ARENA_HALF - PLAYER_RADIUS);
+      // ברירת מחדל: מצמידים לגבולות המפה ומנסים להצמיד לגובה הרצפה.
+      yawObj.position.x = clamp(yawObj.position.x, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
+      yawObj.position.z = clamp(yawObj.position.z, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
       if (levelRoot) {
         spawnRayOrigin.set(yawObj.position.x, yawObj.position.y + 40, yawObj.position.z);
         spawnRay.set(spawnRayOrigin, spawnRayDir);
@@ -2893,11 +2283,23 @@ export default function BitsSniperGame() {
     }
 
     const weaponPool = Array.isArray(botWeaponPool) && botWeaponPool.length > 0 ? botWeaponPool : [0, 1, 2, 3];
+    const muzzleOffsetY = BOT_HEIGHT * 0.36;
     for(let i=0;i<BOT_COUNT;i++){
       const mesh = makeBotMesh(BOT_COLORS[i%BOT_COLORS.length], null);
       mesh.position.copy(pickBotSpawn(i));
       mesh.position.y = getBotGroundY(mesh.position.x, mesh.position.z, mesh.position.y);
       scene.add(mesh);
+      if (shotBuffer && audioListener) {
+        const botShotSound = new THREE.PositionalAudio(audioListener);
+        botShotSound.position.set(0, muzzleOffsetY, 0);
+        botShotSound.setBuffer(shotBuffer);
+        botShotSound.setLoop(false);
+        botShotSound.setRefDistance(12);
+        botShotSound.setRolloffFactor(1.2);
+        botShotSound.setVolume(0.38);
+        mesh.add(botShotSound);
+        (mesh as THREE.Group & { userData: { botShotSound?: THREE.PositionalAudio } }).userData.botShotSound = botShotSound;
+      }
       const wIdx = weaponPool[Math.floor(Math.random() * weaponPool.length)];
       const botLabel = BOT_NAMES[i%BOT_NAMES.length];
       updateBotHpLabel(mesh, botLabel, BOT_MAX_HEALTH);
@@ -2953,6 +2355,10 @@ export default function BitsSniperGame() {
     }
     scene.add(outlineGroup);
 
+    //  Death debris – ניהול מות האויב (התפרקות, פיזיקה, פגיעת ירייה) מתוך enemyDeathManager
+    const deathDebrisState: DeathDebrisState = createDeathDebrisState();
+    scene.add(deathDebrisState.group);
+
     //  Player actions 
     function traceWorldHitDistance(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number){
       let best = maxDist;
@@ -2991,7 +2397,8 @@ export default function BitsSniperGame() {
 
       if(!bestBot) return false;
 
-      const damage = wp.damage * (headshot ? HEADSHOT_MULT : 1);
+      const baseDamage = getWeaponDamageAtDistance(wp, bestDist);
+      const damage = baseDamage * (headshot ? getWeaponHeadshotMult(wp) : 1);
       bestBot.health -= damage;
       S.hitMark = 1;
       setHitMarker(1);
@@ -3003,6 +2410,7 @@ export default function BitsSniperGame() {
         S.kills++;
         setKills(S.kills);
         pushKillFeed(`You eliminated ${bestBot.label}${headshot ? " (Headshot)" : ""}`, headshot);
+        spawnBotDeathParts(bestBot, deathDebrisState);
       }
 
       return true;
@@ -3018,7 +2426,10 @@ export default function BitsSniperGame() {
 
       rayHitPoint.copy(hsTmpHit);
 
-      S.hp -= wp.damage;
+      // For fairness / competitive consistency: apply range falloff for incoming hits too (no headshots for bots).
+      const hitDist = hit.segS * maxDist;
+      const damage = getWeaponDamageAtDistance(wp, hitDist);
+      S.hp -= damage;
       S.hitFlash = 1;
       S.lastDamageTs = performance.now()/1000;
 
@@ -3038,12 +2449,23 @@ export default function BitsSniperGame() {
       return true;
     }
 
-    function doHitscan(origin: THREE.Vector3, dir: THREE.Vector3, wp: WeaponDef, fromBot: boolean, sourceName: string){
+    function doHitscan(origin: THREE.Vector3, dir: THREE.Vector3, wp: WeaponDef, fromBot: boolean, sourceName: string, nowSec: number){
       const maxDist = traceWorldHitDistance(origin, dir, wp.range);
+      let hitActor: boolean;
       if(fromBot){
-        return hitPlayerByRay(origin, dir, maxDist, sourceName, wp);
+        hitActor = hitPlayerByRay(origin, dir, maxDist, sourceName, wp);
+      } else {
+        hitActor = hitBotByRay(origin, dir, maxDist, wp);
       }
-      return hitBotByRay(origin, dir, maxDist, wp);
+      if (!hitActor && !fromBot && deathDebrisState.list.length > 0) {
+        if (hitDebrisByRay(deathDebrisState, origin, dir, maxDist)) hitActor = true;
+      }
+      if(!hitActor && maxDist < wp.range){
+        const wallPoint = origin.clone().addScaledVector(dir, maxDist);
+        decalImpactNormal.copy(dir).negate().normalize();
+        addDecal(wallPoint, decalImpactNormal, nowSec);
+      }
+      return hitActor;
     }
 
     const keys: Record<string,boolean> = {};
@@ -3137,7 +2559,8 @@ export default function BitsSniperGame() {
       }
       if(S.ammo<=0) return;
       const shootPlaybackDuration = getShootPlaybackDuration(wp);
-      const useFireCooldown = !isPistolVm;
+      // Competitive pacing: pistol must also respect fire rate (prevents click-spam).
+      const useFireCooldown = true;
       if(useFireCooldown){
         if(S.fireTimer > now) return;
         const baseInterval = 1 / wp.fireRate;
@@ -3194,7 +2617,7 @@ export default function BitsSniperGame() {
       const recoilStep = pattern[patternIdx] ?? { yaw: 0, pitch: 0 };
       S.sprayIndex = Math.min(S.sprayIndex + 1, pattern.length - 1);
       S.lastShotTs = now;
-      if (isPistolVm || wp.viewModel === "ak47") setCrosshairSqueezeAtRef.current(performance.now());
+      if (isPistolVm || wp.viewModel === "ak47" || isShotgunVm) setCrosshairSqueezeAtRef.current(performance.now());
 
       vmKickT = isPistolVm ? 0.2 : isShotgunVm ? 0.24 : isSniperVm ? 0.32 : 0.14;   // trigger viewmodel recoil kick
       // Recoil animation steps – מחוזק במיוחד עבור הסנייפר (אנימציה בלבד, לא פיזיקה/פגיעה)
@@ -3281,7 +2704,7 @@ export default function BitsSniperGame() {
           .add(up.clone().multiplyScalar(jitter.y))
           .normalize();
         if(wp.hitMode === "hitscan"){
-          doHitscan(muzzleWorld, d, wp, false, "You");
+          doHitscan(muzzleWorld, d, wp, false, "You", now);
         } else {
           spawnProj(muzzleWorld.clone(), d, wp, false, "You");
         }
@@ -3454,12 +2877,12 @@ export default function BitsSniperGame() {
 
     const onMouseMove = (e:MouseEvent)=>{
       if (runStateRef.current === "paused") {
-        // While soft-paused (P) we keep pointer lock and drive a virtual cursor for menu navigation.
         if (inputModeRef.current === "menu" && document.pointerLockElement === renderer.domElement) {
           const maxDelta = 80;
           const dx = clamp(e.movementX, -maxDelta, maxDelta);
           const dy = clamp(e.movementY, -maxDelta, maxDelta);
           moveVirtualCursor(dx, dy);
+          if (e.buttons & 1) updateVirtualSliderFromCursor();
         }
         return;
       }
@@ -3475,6 +2898,21 @@ export default function BitsSniperGame() {
     };
 
     const onKeyDown = (e:KeyboardEvent)=>{
+      const inGameLock = document.pointerLockElement === renderer.domElement;
+      if (inGameLock) {
+        if (e.code === "F5" || (e.ctrlKey && e.code === "KeyR") || (e.metaKey && e.code === "KeyR")) {
+          e.preventDefault();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.code === "KeyW" || e.code === "KeyT" || e.code === "KeyN" || e.code === "KeyL" || e.code === "KeyQ")) {
+          e.preventDefault();
+          return;
+        }
+        if (e.code === "F1" || e.code === "F2" || e.code === "F3" || e.code === "F4" || e.code === "F6" || e.code === "F7" || e.code === "F9" || e.code === "F10" || e.code === "F11" || e.code === "F12") {
+          e.preventDefault();
+          return;
+        }
+      }
       if(e.code==="KeyH" && !e.repeat){
         e.preventDefault();
         showHitboxOutlinesRef.current = !showHitboxOutlinesRef.current;
@@ -3490,10 +2928,8 @@ export default function BitsSniperGame() {
         toggleFullscreen();
         return;
       }
-      if(e.code==="KeyP" && !e.repeat){
-        // אין Pause במסך האלימיניישן (כשמתים)
+      if((e.code==="KeyP" || e.code==="Semicolon" || e.code==="Backquote") && !e.repeat){
         if (S.dead) return;
-        // P toggles a "soft pause" that keeps pointer lock; menu is navigated with a virtual cursor.
         e.preventDefault();
         if (runStateRef.current === "playing") {
           for (const k of Object.keys(keys)) keys[k] = false;
@@ -3605,6 +3041,7 @@ export default function BitsSniperGame() {
               setKills(S.kills);
               pushKillFeed(`You eliminated ${bot.label} (Splash)`);
             }
+            spawnBotDeathParts(bot, deathDebrisState);
           }
         }
       }
@@ -3625,7 +3062,7 @@ export default function BitsSniperGame() {
     const _botAim = new THREE.Vector3();
     const _botShotDir = new THREE.Vector3();
     const _botJitter = new THREE.Vector3();
-    function updateBot(bot:BotState, dt:number){
+    function updateBot(bot:BotState, dt:number, nowSec:number){
       if(bot.dead){
         bot.respawnTimer-=dt;
         if(bot.respawnTimer<=0){
@@ -3714,21 +3151,21 @@ export default function BitsSniperGame() {
       // Lean into movement (pitch forward when running, roll when strafing) – no change to facing
       const moveX = bot.velX * dt;
       const moveZ = bot.velZ * dt;
-      const nextX = clamp(bp.x + moveX, -ARENA_HALF + 1, ARENA_HALF - 1);
-      const nextZ = clamp(bp.z + moveZ, -ARENA_HALF + 1, ARENA_HALF - 1);
+      const nextX = clamp(bp.x + moveX, -boundaryHalf + 1, boundaryHalf - 1);
+      const nextZ = clamp(bp.z + moveZ, -boundaryHalf + 1, boundaryHalf - 1);
 
       if (!botCollidesAt(nextX, bp.y, bp.z)) {
         bp.x = nextX;
       } else {
         bot.velX = 0;
-        const nudgeX = clamp(bp.x + Math.sign(moveX || 1) * 0.08, -ARENA_HALF + 1, ARENA_HALF - 1);
+        const nudgeX = clamp(bp.x + Math.sign(moveX || 1) * 0.08, -boundaryHalf + 1, boundaryHalf - 1);
         if (!botCollidesAt(nudgeX, bp.y, bp.z)) bp.x = nudgeX;
       }
       if (!botCollidesAt(bp.x, bp.y, nextZ)) {
         bp.z = nextZ;
       } else {
         bot.velZ = 0;
-        const nudgeZ = clamp(bp.z + Math.sign(moveZ || 1) * 0.08, -ARENA_HALF + 1, ARENA_HALF - 1);
+        const nudgeZ = clamp(bp.z + Math.sign(moveZ || 1) * 0.08, -boundaryHalf + 1, boundaryHalf - 1);
         if (!botCollidesAt(bp.x, bp.y, nudgeZ)) bp.z = nudgeZ;
       }
       pushBotOutOfBoxes(bot);
@@ -3794,22 +3231,10 @@ export default function BitsSniperGame() {
       bot.mesh.rotation.x += leanPitch;
       bot.mesh.rotation.z += leanRoll;
 
-      // hp bar
-      const hbFg = bot.mesh.userData.hpBarFg as THREE.Mesh | undefined;
-      const hbBg = bot.mesh.userData.hpBarBg as THREE.Mesh | undefined;
+      // hp — מדד יחיד: sprite עם canvas (בר + טקסט)
       const hpLabelSprite = bot.mesh.userData.hpLabelSprite as THREE.Sprite | undefined;
-      const ratio=clamp(bot.health/BOT_MAX_HEALTH,0,1);
-      if (hbFg && hbBg) {
-        hbFg.scale.x=Math.max(0.01,ratio);
-        hbFg.position.x=-(1-ratio)*0.54;
-        (hbFg.material as THREE.MeshBasicMaterial).color.set(getBotHudColor(ratio));
-        hbFg.lookAt(camera.position);
-        hbBg.lookAt(camera.position);
-      }
-      if(hpLabelSprite){
-        hpLabelSprite.lookAt(camera.position);
-      }
-      if(Math.abs(bot.lastHudHealth - bot.health) >= 0.5){
+      if (hpLabelSprite) hpLabelSprite.lookAt(camera.position);
+      if (Math.abs(bot.lastHudHealth - bot.health) >= 0.5) {
         bot.lastHudHealth = bot.health;
         updateBotHpLabel(bot.mesh, bot.label, bot.health);
       }
@@ -3838,13 +3263,20 @@ export default function BitsSniperGame() {
           );
           _botShotDir.copy(_botAim).add(_botJitter).normalize();
           if(wp.hitMode === "hitscan"){
-            doHitscan(_botOrigin, _botShotDir, wp, true, bot.label);
+            doHitscan(_botOrigin, _botShotDir, wp, true, bot.label, nowSec);
           } else {
             spawnProj(_botOrigin, _botShotDir, wp, true, bot.label);
           }
         }
         bot.ammo=Math.max(0,bot.ammo-1);
         if(bot.ammo===0) bot.reloadTimer=wp.reloadTime;
+        const botShotSound = (bot.mesh as THREE.Group & { userData: { botShotSound?: THREE.PositionalAudio } }).userData.botShotSound;
+        if (botShotSound) {
+          botShotSound.setVolume(0.38 * masterVolRef.current);
+          botShotSound.setPlaybackRate(0.88 + Math.random() * 0.24);
+          if (botShotSound.isPlaying) botShotSound.stop();
+          botShotSound.play();
+        }
       }
     }
 
@@ -3921,6 +3353,11 @@ export default function BitsSniperGame() {
         box.getSize(_hs).multiplyScalar(0.5);
         const ox=_hs.x+PLAYER_RADIUS-Math.abs(_pd.x);
         const oz=_hs.z+PLAYER_RADIUS-Math.abs(_pd.z);
+        // FIX Bug 2: guard required – if ox or oz <= 0 the player isn't actually
+        // overlapping on that axis; without this guard the function incorrectly
+        // pushes the player even when they're standing next to (not inside) the box.
+        // pushBotOutOfBoxes() already had this guard; player function was missing it.
+        if(ox<=0||oz<=0) continue;
         if(ox<oz) {
           const sign = Math.sign(_pd.x||1);
           yawObj.position.x += sign * ox;
@@ -4205,22 +3642,15 @@ export default function BitsSniperGame() {
           wishZ = -cosY*nf - sinY*ns;
         }
 
-        yawObj.position.x = clamp(
-          yawObj.position.x + wishX * flySpeed * dt,
-          USE_FLAT_PLAYGROUND ? -FLAT_SPAWN_HALF + PLAYER_RADIUS : -ARENA_HALF + PLAYER_RADIUS,
-          USE_FLAT_PLAYGROUND ?  FLAT_SPAWN_HALF - PLAYER_RADIUS :  ARENA_HALF - PLAYER_RADIUS,
-        );
-        yawObj.position.z = clamp(
-          yawObj.position.z + wishZ * flySpeed * dt,
-          USE_FLAT_PLAYGROUND ? -FLAT_SPAWN_HALF + PLAYER_RADIUS : -ARENA_HALF + PLAYER_RADIUS,
-          USE_FLAT_PLAYGROUND ?  FLAT_SPAWN_HALF - PLAYER_RADIUS :  ARENA_HALF - PLAYER_RADIUS,
-        );
+        // FLY MODE (noclip): no collision, no horizontal boundary – pass through walls and map bounds.
+        yawObj.position.x += wishX * flySpeed * dt;
+        yawObj.position.z += wishZ * flySpeed * dt;
 
         const upIn = (keys["Space"]?1:0) - ((keys["ShiftLeft"]||keys["ShiftRight"])?1:0);
         if(upIn!==0){
           yawObj.position.y += upIn * flySpeed * dt;
         }
-        // Keep within a sane vertical band.
+        // Optional: keep Y in a sane band so you don't fall into the void. Adjust if needed.
         yawObj.position.y = clamp(yawObj.position.y, -2, 48);
       } else {
       const horizontalSpeedBefore = Math.hypot(velX, velZ);
@@ -4299,8 +3729,13 @@ export default function BitsSniperGame() {
         velX *= airDrag;
         velZ *= airDrag;
       }
-      yawObj.position.x=clamp(yawObj.position.x+velX*dt,-ARENA_HALF+PLAYER_RADIUS,ARENA_HALF-PLAYER_RADIUS);
-      yawObj.position.z=clamp(yawObj.position.z+velZ*dt,-ARENA_HALF+PLAYER_RADIUS,ARENA_HALF-PLAYER_RADIUS);
+      // FIX: apply movement freely here; the arena-boundary safety clamp is moved to AFTER
+      // pushOutOfBoxes() so that wall Box3 colliders are the primary authority.
+      // Previously this clamp ran BEFORE pushOutOfBoxes(), creating an invisible wall at
+      // ARENA_HALF-PLAYER_RADIUS that stopped the player before they ever reached the
+      // actual collidable geometry (visible as yellow debug outlines in THREE.js).
+      yawObj.position.x += velX * dt;
+      yawObj.position.z += velZ * dt;
 
       // Jump + gravity
       if(onGround) coyoteTimer = COYOTE_TIME_SECS;
@@ -4318,29 +3753,22 @@ export default function BitsSniperGame() {
       yawObj.position.y += velY*dt;
       resolveVerticalCollisions(prevY);
       pushOutOfBoxes();
+      // Safety clamp uses this map's boundaryHalf (from buildMap) so no invisible wall.
+      yawObj.position.x = clamp(yawObj.position.x, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
+      yawObj.position.z = clamp(yawObj.position.z, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
       if(!wasGrounded && onGround && preResolveVelY < -2.4){
         landingKick = clamp(Math.abs(preResolveVelY) * LANDING_KICK_MULT, 0.03, 0.12);
       }
 
-      // בפלאט וורלד – לא משנה מה קרה בפיזיקה או בקוליז'נים,
-      // מכריחים את השחקן להישאר בתוך ריבוע בטוח במרכז המפה.
-      if (USE_FLAT_PLAYGROUND && !S.dead){
-        yawObj.position.x = clamp(
-          yawObj.position.x,
-          -FLAT_SPAWN_HALF + PLAYER_RADIUS,
-          FLAT_SPAWN_HALF - PLAYER_RADIUS,
-        );
-        yawObj.position.z = clamp(
-          yawObj.position.z,
-          -FLAT_SPAWN_HALF + PLAYER_RADIUS,
-          FLAT_SPAWN_HALF - PLAYER_RADIUS,
-        );
-      }
+      // NOTE: The old FLAT_SPAWN_HALF physics clamp has been removed.
+      // The flat playground walls are now registered as Box3 collidables in buildMap,
+      // so pushOutOfBoxes() stops the player at the real visible wall geometry.
+      // A hard clamp here created an invisible barrier well inside those walls.
 
-      // Safety when השחקן יוצא לגמרי מהארנה.
+      // Safety when השחקן יוצא לגמרי מהארנה (uses this map's boundary).
       const outOfArena =
-        Math.abs(yawObj.position.x) > ARENA_HALF + 4 ||
-        Math.abs(yawObj.position.z) > ARENA_HALF + 4 ||
+        Math.abs(yawObj.position.x) > boundaryHalf + 4 ||
+        Math.abs(yawObj.position.z) > boundaryHalf + 4 ||
         yawObj.position.y < -10;
       if(outOfArena && !S.dead){
         if (USE_FLAT_PLAYGROUND) {
@@ -4357,11 +3785,14 @@ export default function BitsSniperGame() {
 
 
       // Bot updates
-      for(const bot of bots) updateBot(bot,dt);
+      for(const bot of bots) updateBot(bot,dt,nowSec);
+
+      updateDeathDebris(deathDebrisState, collidables, dt);
 
       // Projectile updates
       for(let i=projectiles.length-1;i>=0;i--){
         const pr=projectiles[i];
+        let structureHit = false;
 
         prStart.copy(pr.mesh.position);
         prStep.copy(pr.vel).multiplyScalar(dt);
@@ -4371,31 +3802,47 @@ export default function BitsSniperGame() {
         pr.traveled += stepLen;
 
         let hit = pr.traveled>pr.range
-          || Math.abs(prEnd.x)>ARENA_HALF+3
-          || Math.abs(prEnd.z)>ARENA_HALF+3
+          || Math.abs(prEnd.x)>boundaryHalf+3
+          || Math.abs(prEnd.z)>boundaryHalf+3
           || prEnd.y<-1 || prEnd.y>20;
 
         let splashHandled = false;
         projImpact.copy(prEnd);
 
         // World collision (ray-against-boxes), keeping the nearest impact.
+        let closestWallDist = stepLen + 1e-4;
         if(!hit && stepLen > 1e-6){
           projDir.copy(prStep).multiplyScalar(1 / stepLen);
           projRay.set(prStart, projDir);
 
-          let bestWallDist = stepLen + 1e-4;
           let found = false;
           for(const box of collidables){
-            const structureHit = projRay.intersectBox(box, rayPointTmp);
-            if(!structureHit) continue;
+            const boxHit = projRay.intersectBox(box, rayPointTmp);
+            if(!boxHit) continue;
             const d = rayPointTmp.distanceTo(prStart);
-            if(d <= bestWallDist){
-              bestWallDist = d;
+            if(d <= closestWallDist){
+              closestWallDist = d;
               projImpact.copy(rayPointTmp);
               found = true;
             }
           }
-          if(found) hit = true;
+          if(found){ hit = true; structureHit = true; }
+        }
+
+        // Debris: projectile can hit body parts (enemyDeathManager).
+        if (!hit && stepLen > 1e-6) {
+          projDir.copy(prStep).multiplyScalar(1 / stepLen);
+          const debrisResult = tryHitDebrisWithProjectile(
+            deathDebrisState,
+            prStart,
+            projDir,
+            stepLen,
+            closestWallDist,
+          );
+          if (debrisResult.hit && debrisResult.impactPoint) {
+            projImpact.copy(debrisResult.impactPoint);
+            hit = true;
+          }
         }
 
         // Actor collision (capsule vs segment).
@@ -4441,6 +3888,7 @@ export default function BitsSniperGame() {
               bot.health=0; bot.dead=true; bot.mesh.visible=false;
               bot.respawnTimer=RESPAWN_SECS; S.kills++; setKills(S.kills);
               pushKillFeed(`You eliminated ${bot.label}${headshot ? " (Headshot)" : ""}`, headshot);
+              spawnBotDeathParts(bot, deathDebrisState);
             }
             if(pr.splash){
               applySplash(pr,projImpact);
@@ -4451,6 +3899,10 @@ export default function BitsSniperGame() {
         }
 
         if(hit){
+          if(structureHit){
+            decalImpactNormal.copy(projDir).negate().normalize();
+            addDecal(projImpact, decalImpactNormal, nowSec);
+          }
           if(pr.splash && !splashHandled){
             applySplash(pr,projImpact);
           }
@@ -4461,6 +3913,13 @@ export default function BitsSniperGame() {
         pr.mesh.position.copy(prEnd);
       }
 
+      // הסרת סימני פגיעה ישנים (לאחר כמה שניות)
+      while (decals.length > 0 && (nowSec - decals[0].spawnTime) >= DECAL_LIFETIME_SEC) {
+        const old = decals.shift()!;
+        scene.remove(old.mesh);
+        (old.mesh.geometry as THREE.BufferGeometry).dispose();
+        (old.mesh.material as THREE.Material).dispose();
+      }
 
       // Hit flash fade
       if(S.hitFlash>0){ S.hitFlash=Math.max(0,S.hitFlash-dt*3.5); if(hudT>0.04) setHitFlash(S.hitFlash); }
@@ -4720,6 +4179,19 @@ export default function BitsSniperGame() {
       }
       if (spawnVisualGroup.parent) spawnVisualGroup.parent.remove(spawnVisualGroup);
       disposeSpawnVisualGroup(spawnVisualGroup);
+      while (decals.length > 0) {
+        const d = decals.shift()!;
+        scene.remove(d.mesh);
+        (d.mesh.geometry as THREE.BufferGeometry).dispose();
+        (d.mesh.material as THREE.Material).dispose();
+      }
+      decalTexture.dispose();
+      if (debugCollidersGroup.parent) scene.remove(debugCollidersGroup);
+      debugCollidersGroup.traverse((o) => {
+        const line = o as THREE.LineSegments;
+        if (line.geometry) line.geometry.dispose();
+        if (line.material) (line.material as THREE.Material).dispose();
+      });
       projGeo.dispose(); renderer.dispose();
       if(renderer.domElement.parentElement===mount) mount.removeChild(renderer.domElement);
     };
@@ -4727,11 +4199,17 @@ export default function BitsSniperGame() {
 
   const wp=WEAPONS[wpIdx];
   // Crosshair gap tuning per weapon (CS-style). Scale drives the gap and arm length.
+  // For shotgun, tie base scale directly to configured spread so the ring visual matches pellet spread.
+  const SHOTGUN_SPREAD_REF = 0.34; // current whipper spread config
+  const SHOTGUN_BASE_SCALE = 1.4;
+  const shotgunBaseCrosshair =
+    wp.viewModel === "shotgun"
+      ? SHOTGUN_BASE_SCALE * clamp(wp.spread / SHOTGUN_SPREAD_REF, 0.6, 1.6)
+      : 0;
   const baseCrosshair =
     wp.viewModel === "pistol"  ? 0.8  :
     wp.viewModel === "ak47"    ? 1.0  :
-    // שוטגן – כוונת בסיסית רחבה יותר כדי לשקף את הספריי
-    wp.viewModel === "shotgun" ? 1.4  :
+    wp.viewModel === "shotgun" ? shotgunBaseCrosshair :
     /* sniper */                 0.7;
   const bloomMult =
     wp.viewModel === "pistol"  ? 0.46 :
@@ -4780,6 +4258,13 @@ export default function BitsSniperGame() {
           box-shadow: 0 0 0 4px rgba(90,200,255,0.18);
         }
       `}</style>
+      <audio
+        ref={bgMusicRef}
+        src="/music/Fps/kaazoom-unhinged-full-version-aggressive-rock-game-music-415713.mp3"
+        loop
+        preload="auto"
+        aria-hidden
+      />
       <section
         ref={shellRef}
         className={`bits-sniper-shell${stageSize ? "" : " bits-sniper-shell--fluid"}${shellPosition ? " bits-sniper-shell--floating" : ""}${!isFullscreen ? " bits-sniper-shell--has-drag" : ""}`}
@@ -4850,7 +4335,7 @@ export default function BitsSniperGame() {
                   <li>W/A/S/D - Move | Space/F - Jump</li>
                   <li>Shift - Sprint | Mouse - Aim | Left click - Fire</li>
                   <li>Right click - ADS (Zoom) | R - Reload | 1-4 or Wheel - Switch weapon</li>
-                  <li>Esc - Pause menu (in-game) | P - Pause | M or Alt+Enter - Fullscreen</li>
+                  <li>Esc - Pause menu (in-game) | P / ; / ` - Pause | M or Alt+Enter - Fullscreen</li>
                 </ul>
                 <div className="bits-sniper-intro-tabs" role="tablist" aria-label="Intro pages">
                   <button
@@ -5030,7 +4515,7 @@ export default function BitsSniperGame() {
                   : isAiming && wp.viewModel !== "shotgun"
                     ? " bits-sniper-crosshair--ads"
                     : ""
-              }${crosshairSqueezeAt > 0 && (wp.id === "rifle" || wp.id === "scrambler") ? " bits-sniper-crosshair--squeeze" : ""}`}
+              }${crosshairSqueezeAt > 0 && (wp.id === "rifle" || wp.id === "scrambler" || wp.id === "whipper") ? " bits-sniper-crosshair--squeeze" : ""}`}
               style={{ ["--crosshair-scale" as string]: crosshairScale } as React.CSSProperties}
               aria-hidden
             />
@@ -5132,13 +4617,52 @@ export default function BitsSniperGame() {
                 <h3>Paused</h3>
                 {isLocked ? (
                   <p>
-                    Soft pause (pointer lock kept). Move mouse to move the virtual cursor, left click to select. Press <b>P</b> to resume.
+                    Soft pause (pointer lock kept). Move mouse to move the virtual cursor, left click to select. Press <b>P</b>, <b>;</b> or <b>`</b> to resume.
                   </p>
                 ) : (
                   <p>
                     Pointer lock is released (ESC / focus loss). Click Resume to re-lock and return.
                   </p>
                 )}
+                <section className="bits-sniper-pause-volume" aria-label="נפח">
+                  <h4 className="bits-sniper-pause-volume__title">נפח</h4>
+                  <div className="bits-sniper-pause-volume__row">
+                    <div className="bits-sniper-pause-volume__label">
+                      <span>נפח כללי</span>
+                      <span className="bits-sniper-pause-volume__hint">מוזיקה וכל הסאונדים</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={MASTER_VOL_MIN}
+                      max={MASTER_VOL_MAX}
+                      step={MASTER_VOL_STEP}
+                      value={masterVolume}
+                      onChange={(e)=> applyMasterVolume(Number(e.target.value))}
+                      className="bits-sniper-pause-volume__slider"
+                      data-vclick
+                      data-volume="master"
+                      aria-label="נפח כללי"
+                    />
+                    <span className="bits-sniper-pause-volume__value">{Math.round(masterVolume * 100)}%</span>
+                  </div>
+                  <div className="bits-sniper-pause-volume__row">
+                    <div className="bits-sniper-pause-volume__label">
+                      <span>מוזיקת רקע</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={bgMusicVolume}
+                      onChange={(e)=> applyBgMusicVolume(Number(e.target.value))}
+                      className="bits-sniper-pause-volume__slider"
+                      data-vclick
+                      aria-label="מוזיקת רקע"
+                    />
+                    <span className="bits-sniper-pause-volume__value">{Math.round(bgMusicVolume * 100)}%</span>
+                  </div>
+                </section>
                 <button data-vclick type="button" onClick={resumeGame}>Resume</button>
                 <button data-vclick type="button" onClick={toggleFullscreen}>{isFullscreen ? "Exit fullscreen" : "Fullscreen"}</button>
                 <button data-vclick type="button" onClick={startFreshSession}>New Session</button>

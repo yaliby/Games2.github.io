@@ -55,19 +55,18 @@ export function worldToMapNormalized(
 }
 
 const ARENA = 72;
-// Playable area in flat playground (matches FLAT_SPAWN_HALF in BitsSniperGame)
-const FLAT_PLAYABLE_HALF = 46;
+// Flat playground: walls at ±ARENA (72) – minimap bounds must match so player position is correct.
+const FLAT_ARENA_HALF = ARENA;
 
 export const TACTICAL_MAP_CONFIGS: Record<string, TacticalMapConfig> = {
   flat: {
     mapId: "flat",
     mapImage: "", // placeholder / generated from code
-    // Important: bounds match the actual clamped movement area of player/bots.
     worldBounds: {
-      minX: -FLAT_PLAYABLE_HALF,
-      maxX: FLAT_PLAYABLE_HALF,
-      minZ: -FLAT_PLAYABLE_HALF,
-      maxZ: FLAT_PLAYABLE_HALF,
+      minX: -FLAT_ARENA_HALF,
+      maxX: FLAT_ARENA_HALF,
+      minZ: -FLAT_ARENA_HALF,
+      maxZ: FLAT_ARENA_HALF,
     },
     spawnPoints: [
       { x: -10, z: 0, label: "L" },

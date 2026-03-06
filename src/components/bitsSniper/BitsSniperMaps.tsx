@@ -26,6 +26,8 @@ export type MapBuildResult = {
   collidables: THREE.Box3[];
   keyPoints: MapKeyPoint[];
   levelRoot: THREE.Object3D | null;
+  /** Half-extent of play boundary (symmetric ±boundaryHalf). Used for safety clamp so it matches this map's walls. */
+  boundaryHalf: number;
 };
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
@@ -59,19 +61,41 @@ function makeCheckerTexture(size: number, col1: string, col2: string, repeat = 1
   return tex;
 }
 
-function makeWallStripesTexture(size: number, baseCol: string, stripeCol: string): THREE.CanvasTexture {
+/** Subtle concrete/plaster texture with fine noise – clean, smooth wall look. */
+function makeConcreteTexture(size: number, baseCol: string, repeat = 4): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
+
   ctx.fillStyle = baseCol;
   ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = stripeCol;
-  const stripeH = Math.max(4, size / 12);
-  for (let y = 0; y < size; y += stripeH * 2) ctx.fillRect(0, y, size, stripeH);
+
+  // Fine noise grain for a plaster/concrete feel
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const noise = (Math.random() - 0.5) * 18;
+    d[i] = clamp(d[i] + noise, 0, 255);
+    d[i + 1] = clamp(d[i + 1] + noise, 0, 255);
+    d[i + 2] = clamp(d[i + 2] + noise, 0, 255);
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Subtle horizontal mortar lines
+  ctx.strokeStyle = "rgba(0,0,0,0.06)";
+  ctx.lineWidth = 1;
+  const brickH = size / 8;
+  for (let y = brickH; y < size; y += brickH) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1, 8);
+  tex.repeat.set(repeat, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -95,12 +119,12 @@ export function createFlatPlayground(): THREE.Group {
     metalness: 0.02,
   });
 
-  const wallTex = makeWallStripesTexture(64, "#8e8668", "#6e6848");
+  const wallTex = makeConcreteTexture(256, "#b0a48a", 6);
   const wallMat = new THREE.MeshStandardMaterial({
     map: wallTex,
     color: "#ffffff",
-    roughness: 0.88,
-    metalness: 0.04,
+    roughness: 0.92,
+    metalness: 0.02,
   });
 
   const floor = new THREE.Mesh(
@@ -384,30 +408,16 @@ export function buildMap(scene: THREE.Scene, levelTemplate?: THREE.Group | null)
 
     scene.add(levelRoot);
 
+    // מקור אמת אחד: קולידרים ב־world space אחרי שכל המטריצות מעודכנות
+    levelRoot.updateMatrixWorld(true);
+
     const boxSize = new THREE.Vector3();
     const addMeshCollider = (box: THREE.Box3, mesh?: THREE.Mesh) => {
       box.getSize(boxSize);
       if (boxSize.y < 0.02) return;
       const isFloor = (mesh?.name || "").toLowerCase() === "floor";
       if (!isFloor && boxSize.x * boxSize.z > A * A * 1.5 && boxSize.y < 4.2) return;
-      if (isFloor) {
-        collidables.push(box.clone());
-        return;
-      }
-      const shrinkX = Math.min(0.7, boxSize.x * 0.1);
-      const shrinkZ = Math.min(0.7, boxSize.z * 0.1);
-      const halfX = Math.max(0.2, boxSize.x * 0.5 - shrinkX);
-      const halfZ = Math.max(0.2, boxSize.z * 0.5 - shrinkZ);
-      const cx = (box.min.x + box.max.x) * 0.5;
-      const cz = (box.min.z + box.max.z) * 0.5;
-      const minY = Math.max(0.02, box.min.y + 0.02);
-      const maxY = minY + Math.max(1.0, boxSize.y * 0.92);
-      collidables.push(
-        new THREE.Box3(
-          new THREE.Vector3(cx - halfX, minY, cz - halfZ),
-          new THREE.Vector3(cx + halfX, maxY, cz + halfZ),
-        ),
-      );
+      collidables.push(box.clone());
     };
 
     levelRoot.traverse((obj) => {
@@ -441,10 +451,53 @@ export function buildMap(scene: THREE.Scene, levelTemplate?: THREE.Group | null)
       scene.add(lightB);
     }
 
-    return { collidables, keyPoints, levelRoot };
+    const boundaryHalf = levelBounds
+      ? Math.max(
+          Math.abs(levelBounds.min.x),
+          Math.abs(levelBounds.max.x),
+          Math.abs(levelBounds.min.z),
+          Math.abs(levelBounds.max.z),
+        ) + 1
+      : A;
+    return { collidables, keyPoints, levelRoot, boundaryHalf };
   }
 
-  // Fallback map
+  // ─── USE_FLAT_PLAYGROUND path ───────────────────────────────────────────────
+  // When no levelTemplate is provided AND we are in flat-playground mode,
+  // build the flat playground, register its walls + floor as collidables, and
+  // return the group as levelRoot.  This is the ONLY authoritative boundary;
+  // the FLAT_SPAWN_HALF clamp in the game loop has been removed so that the
+  // player walks up to (and is stopped by) the actual visible wall meshes.
+  if (USE_FLAT_PLAYGROUND) {
+    const flatGroup = createFlatPlayground();
+    scene.add(flatGroup);
+    flatGroup.updateMatrixWorld(true);
+
+    flatGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const b = new THREE.Box3().setFromObject(mesh);
+      const sz = b.getSize(new THREE.Vector3());
+      // Skip degenerate geometry
+      if (sz.x < 0.01 || sz.y < 0.01 || sz.z < 0.01) return;
+      collidables.push(b.clone());
+    });
+
+    // Key points spread across the flat arena
+    addKeyPoint("KP-HEAL",   "heal",   -32, 0.02,   0, "#59dc9f", 2.1, 15);
+    addKeyPoint("KP-AMMO",   "ammo",     0, 0.02,   0, "#66b8ff", 2.1, 14);
+    addKeyPoint("KP-SHIELD", "shield",  32, 0.02,   0, "#d28cff", 2.1, 18);
+
+    { // Ambient lights
+      const lA = new THREE.PointLight("#ffb25f", 0.7, 96); lA.position.set(-32, 8, 0);  scene.add(lA);
+      const lM = new THREE.PointLight("#d8c36a", 0.6, 120); lM.position.set(0,  9, 0);  scene.add(lM);
+      const lB = new THREE.PointLight("#6fc4ff", 0.7, 96); lB.position.set( 32, 8, 0);  scene.add(lB);
+    }
+
+    return { collidables, keyPoints, levelRoot: flatGroup, boundaryHalf: A };
+  }
+
+  // ─── Fallback map (procedural skirmish arena, non-flat) ──────────────────
   const MAP_HALF = 70;
   const FLOOR_Y_TOP = 0;
   const FLOOR_THICK = 6;
@@ -563,5 +616,5 @@ export function buildMap(scene: THREE.Scene, levelTemplate?: THREE.Group | null)
     const lCT = new THREE.PointLight("#6d9eff", 0.55, 74); lCT.position.set(38, 7, 16); scene.add(lCT);
   }
 
-  return { collidables, keyPoints, levelRoot: null };
+  return { collidables, keyPoints, levelRoot: null, boundaryHalf: MAP_HALF };
 }
