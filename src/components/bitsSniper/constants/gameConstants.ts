@@ -49,6 +49,8 @@ export const MASTER_VOL_STEP = 0.05;
 export const BG_MUSIC_MAX_GAIN = 0.14;
 
 export const ADS_LOOK_SENS_MULT = 0.56;
+/** מכפיל נוסף לרגישות העכבר בכוונת הצלף – נמוך יותר = תנועה איטית יותר (ריגוש מואט ~פי 2.5). */
+export const SNIPER_ADS_SENS_MULT = 0.20;
 export const ADS_MOVE_MULT = 0.76;
 export const ADS_SPREAD_MULT = 0.52;
 export const HIP_SPREAD_MULT = 1.38;

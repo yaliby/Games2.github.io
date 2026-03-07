@@ -66,6 +66,7 @@ import {
   MASTER_VOL_STEP,
   BG_MUSIC_MAX_GAIN,
   ADS_LOOK_SENS_MULT,
+  SNIPER_ADS_SENS_MULT,
   ADS_MOVE_MULT,
   ADS_SPREAD_MULT,
   HIP_SPREAD_MULT,
@@ -142,14 +143,7 @@ import {
 } from "./weapons/weaponDefs";
 import { getFpsAssetPackOnce, EMPTY_FPS_ASSET_PACK, resetFpsAssetPackPromise } from "./assets/fpsAssetLoader";
 import { BOT_NAMES, BOT_COLORS, makeBotMesh, updateBotHpLabel } from "./bots/botUtils";
-import {
-  createDeathDebrisState,
-  updateDeathDebris,
-  spawnBotDeathParts,
-  hitDebrisByRay,
-  tryHitDebrisWithProjectile,
-  type DeathDebrisState,
-} from "./enemyDeathManager";
+import { enemyDeathPhysics, type DeathDebrisState, type KillImpact } from "./enemyDeathManager";
 
 const MAPS: { id: MapId; label: string }[] = [
   { id: "flat",     label: "Flat Playground" },
@@ -284,7 +278,7 @@ const MERGED_CLIP_SPLITS: Partial<Record<WeaponDef["viewModel"], MergedClipSplit
 const SNIPER_CLIP_SECONDS = {
   idle:   { start: 0, end: 0.20 },   // פוזה כמעט סטטית בתחילת הקליפ
   shoot:  { start: 0, end: 1.53 },   // ירייה בודדת
-  reload: { start: 0, end: 3.24 },   // רילואד מלא
+  reload: { start: 1.6, end: 5 },   // חיתוך 1.6s–5s מהקליפ; משך = 3.4s
 } as const;
 
 // כמה שניקח את הסנייפר עוד קצת "קדימה" בעומק התמונה בזמן רילואד (רחוק מהשחקן)
@@ -483,9 +477,10 @@ function makeViewmodel(
           // Sniper: ב-all-anims לוקחים רק טווחים מוגדרים לפי SNIPER_CLIP_SECONDS
           if (wp.viewModel === "sniper") {
             const dur = Math.max(0.001, single.duration);
-            const shootEndNorm  = clamp01(SNIPER_CLIP_SECONDS.shoot.end / dur);
-            const reloadEndNorm = clamp01(SNIPER_CLIP_SECONDS.reload.end / dur);
-            const idleEndNorm   = clamp01(SNIPER_CLIP_SECONDS.idle.end / dur);
+            const shootEndNorm   = clamp01(SNIPER_CLIP_SECONDS.shoot.end / dur);
+            const reloadStartNorm = clamp01(SNIPER_CLIP_SECONDS.reload.start / dur);
+            const reloadEndNorm   = clamp01(SNIPER_CLIP_SECONDS.reload.end / dur);
+            const idleEndNorm     = clamp01(SNIPER_CLIP_SECONDS.idle.end / dur);
             // Idle: קטע קצר מאוד בהתחלה, כמעט סטטי
             idleClip = idleClip ?? buildSubclipFromNormalizedRange(
               single,
@@ -498,11 +493,11 @@ function makeViewmodel(
               "fire",
               [0, shootEndNorm],
             );
-            // Reload: 0–3.24s
+            // Reload: חיתוך מהשנייה 1.6 עד 5 (לא מההתחלה)
             reloadClip = reloadClip ?? buildSubclipFromNormalizedRange(
               single,
               "reload",
-              [0, reloadEndNorm],
+              [reloadStartNorm, reloadEndNorm],
             );
           }
           if (wp.viewModel === "shotgun") {
@@ -1681,18 +1676,18 @@ export default function BitsSniperGame() {
     const decalImpactNormal = new THREE.Vector3();
     type DecalEntry = { mesh: THREE.Mesh; spawnTime: number };
     const decals: DecalEntry[] = [];
+    // סימן פגיעה עדין – גרדיאנט רך מאפור כהה במרכז לשקוף בקצוות
     const decalCanvas = document.createElement("canvas");
     decalCanvas.width = 64;
     decalCanvas.height = 64;
     const dctx = decalCanvas.getContext("2d")!;
-    dctx.fillStyle = "rgba(12,8,4,0.92)";
-    dctx.beginPath();
-    dctx.arc(32, 32, 28, 0, Math.PI * 2);
-    dctx.fill();
-    dctx.fillStyle = "rgba(8,4,0,0.85)";
-    dctx.beginPath();
-    dctx.arc(32, 32, 18, 0, Math.PI * 2);
-    dctx.fill();
+    const decalGrad = dctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    decalGrad.addColorStop(0, "rgba(62,60,58,1)");
+    decalGrad.addColorStop(0.35, "rgba(78,76,74,0.85)");
+    decalGrad.addColorStop(0.65, "rgba(92,90,88,0.5)");
+    decalGrad.addColorStop(1, "rgba(70,68,66,0.12)");
+    dctx.fillStyle = decalGrad;
+    dctx.fillRect(0, 0, 64, 64);
     const decalTexture = new THREE.CanvasTexture(decalCanvas);
     decalTexture.colorSpace = THREE.SRGBColorSpace;
     decalTexture.needsUpdate = true;
@@ -1703,17 +1698,17 @@ export default function BitsSniperGame() {
         (old.mesh.geometry as THREE.BufferGeometry).dispose();
         (old.mesh.material as THREE.Material).dispose();
       }
-      const size = 0.18 + Math.random() * 0.08;
+      const size = 0.17 + Math.random() * 0.05;
       const geo = new THREE.PlaneGeometry(size, size);
       const mat = new THREE.MeshBasicMaterial({
         map: decalTexture,
         transparent: true,
-        opacity: 0.88,
+        opacity: 1,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(worldPos).addScaledVector(normal, 0.004);
+      mesh.position.copy(worldPos).addScaledVector(normal, 0.002);
       mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
       scene.add(mesh);
       decals.push({ mesh, spawnTime: nowSec });
@@ -2355,21 +2350,51 @@ export default function BitsSniperGame() {
     }
     scene.add(outlineGroup);
 
-    //  Death debris – ניהול מות האויב (התפרקות, פיזיקה, פגיעת ירייה) מתוך enemyDeathManager
-    const deathDebrisState: DeathDebrisState = createDeathDebrisState();
+    //  Death debris – מנוע Rigid-Body מלא (Rapier). State נוצר מיד; אחרי טעינת Rapier משדרגים ל־world עם קולידרים
+    const deathDebrisState: DeathDebrisState = enemyDeathPhysics.createState(collidables);
     scene.add(deathDebrisState.group);
+    enemyDeathPhysics.init().then(() => {
+      enemyDeathPhysics.upgradeStateWithRapier(deathDebrisState, collidables);
+    });
 
-    //  Player actions 
-    function traceWorldHitDistance(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number){
-      let best = maxDist;
+    /** מחזיר נורמל של פאת קופסה בנקודת פגיעה (משטח שטוח – קיר/רצפה), כך שהדקל יישב בדיוק על המשטח. */
+    function getBoxFaceNormal(box: THREE.Box3, point: THREE.Vector3, rayOrigin: THREE.Vector3): THREE.Vector3 {
+      const eps = 0.002;
+      const toRay = rayPointTmp.subVectors(rayOrigin, point).normalize();
+      const axes: [number, number, number][] = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+      for (const [ix, iy, iz] of axes) {
+        const onFace = ix !== 0 ? Math.abs(point.x - (ix > 0 ? box.max.x : box.min.x)) < eps
+          : iy !== 0 ? Math.abs(point.y - (iy > 0 ? box.max.y : box.min.y)) < eps
+          : Math.abs(point.z - (iz > 0 ? box.max.z : box.min.z)) < eps;
+        if (onFace && toRay.x * ix + toRay.y * iy + toRay.z * iz > 0)
+          return decalImpactNormal.set(ix, iy, iz);
+      }
+      if (Math.abs(toRay.x) >= Math.abs(toRay.y) && Math.abs(toRay.x) >= Math.abs(toRay.z))
+        return decalImpactNormal.set(Math.sign(toRay.x), 0, 0);
+      if (Math.abs(toRay.y) >= Math.abs(toRay.z))
+        return decalImpactNormal.set(0, Math.sign(toRay.y), 0);
+      return decalImpactNormal.set(0, 0, Math.sign(toRay.z));
+    }
+
+    /** מחזיר מרחק פגיעה + נקודה + נורמל משטח (פאת הקופסה) – כדי להדביק דקל בשטוח על הקיר/רצפה. */
+    function traceWorldHitWithNormal(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): { dist: number; point: THREE.Vector3; normal: THREE.Vector3 } | null {
+      let bestDist = maxDist;
+      let bestPoint: THREE.Vector3 | null = null;
+      let bestBox: THREE.Box3 | null = null;
       projRay.set(origin, dir);
       for(const box of collidables){
         const wallHit = projRay.intersectBox(box, rayPointTmp);
         if(!wallHit) continue;
         const dist = wallHit.distanceTo(origin);
-        if(dist < best) best = dist;
+        if(dist < bestDist) {
+          bestDist = dist;
+          bestPoint = wallHit.clone();
+          bestBox = box;
+        }
       }
-      return best;
+      if (bestPoint === null || bestBox === null) return null;
+      const normal = getBoxFaceNormal(bestBox, bestPoint, origin);
+      return { dist: bestDist, point: bestPoint, normal: normal.clone() };
     }
     function hitBotByRay(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, wp: WeaponDef){
       let bestDist = maxDist;
@@ -2410,7 +2435,12 @@ export default function BitsSniperGame() {
         S.kills++;
         setKills(S.kills);
         pushKillFeed(`You eliminated ${bestBot.label}${headshot ? " (Headshot)" : ""}`, headshot);
-        spawnBotDeathParts(bestBot, deathDebrisState);
+        const killImpact: KillImpact = {
+          direction: dir.clone().normalize(),
+          impulseMultiplier: headshot ? 1.5 : 1.25,
+          impactPoint: rayHitPoint.clone(),
+        };
+        enemyDeathPhysics.spawn(bestBot, deathDebrisState, killImpact);
       }
 
       return true;
@@ -2450,7 +2480,8 @@ export default function BitsSniperGame() {
     }
 
     function doHitscan(origin: THREE.Vector3, dir: THREE.Vector3, wp: WeaponDef, fromBot: boolean, sourceName: string, nowSec: number){
-      const maxDist = traceWorldHitDistance(origin, dir, wp.range);
+      const worldHit = traceWorldHitWithNormal(origin, dir, wp.range);
+      const maxDist = worldHit ? worldHit.dist : wp.range;
       let hitActor: boolean;
       if(fromBot){
         hitActor = hitPlayerByRay(origin, dir, maxDist, sourceName, wp);
@@ -2458,12 +2489,10 @@ export default function BitsSniperGame() {
         hitActor = hitBotByRay(origin, dir, maxDist, wp);
       }
       if (!hitActor && !fromBot && deathDebrisState.list.length > 0) {
-        if (hitDebrisByRay(deathDebrisState, origin, dir, maxDist)) hitActor = true;
+        if (enemyDeathPhysics.hitByRay(deathDebrisState, origin, dir, maxDist)) hitActor = true;
       }
-      if(!hitActor && maxDist < wp.range){
-        const wallPoint = origin.clone().addScaledVector(dir, maxDist);
-        decalImpactNormal.copy(dir).negate().normalize();
-        addDecal(wallPoint, decalImpactNormal, nowSec);
+      if (!hitActor && worldHit !== null && worldHit.dist < wp.range) {
+        addDecal(worldHit.point, worldHit.normal, nowSec);
       }
       return hitActor;
     }
@@ -2602,6 +2631,8 @@ export default function BitsSniperGame() {
             // רילואד מלא של סנייפר – ארוך ואיטי יותר
             const clipDur = getVmAnimRig()?.actions.reload?.getClip().duration ?? reloadDuration;
             reloadDuration = clamp(Math.max(reloadDuration * 1.5, clipDur * 1.1), reloadDuration, 4.2);
+            S.aiming = false;
+            setIsAiming(false);
           }
           S.reloading=true; S.reloadTimer=now+reloadDuration; setReloading(true);
           pendingVmReload = { wpIdx: S.wpIdx, fromEmpty: true, triggerAt: now + delay, durationSec: reloadDuration };
@@ -2749,6 +2780,10 @@ export default function BitsSniperGame() {
       }
       const reloadDuration = getEffectiveReloadDuration(wp);
       S.reloading=true; S.reloadTimer=now+reloadDuration; setReloading(true);
+      if (wp.viewModel === "sniper") {
+        S.aiming = false;
+        setIsAiming(false);
+      }
       triggerReloadAnim(wp, false, reloadDuration, now);
     }
 
@@ -2851,10 +2886,15 @@ export default function BitsSniperGame() {
       if(isStageResizingRef.current) return;
       if(e.button===2){
         rightMouseHeld = true;
-        // בזמן רילואד של הצלף לא נכנסים למצב כוונת
+        // בזמן רילואד או בין יריה ליריה (צלף) לא נכנסים למצב כוונת
         if(document.pointerLockElement===renderer.domElement && !S.reloading){
-          S.aiming = true;
-          setIsAiming(true);
+          const now = performance.now() / 1000;
+          const isSniperVm = WEAPONS[S.wpIdx].viewModel === "sniper";
+          const sniperBetweenShots = isSniperVm && now < sniperAimLockUntil;
+          if (!sniperBetweenShots) {
+            S.aiming = true;
+            setIsAiming(true);
+          }
         }
         return;
       }
@@ -2887,7 +2927,9 @@ export default function BitsSniperGame() {
         return;
       }
       if(document.pointerLockElement!==renderer.domElement || S.dead) return;
-      const sens = lookSensRef.current * (S.aiming ? ADS_LOOK_SENS_MULT * adsSensRef.current : 1);
+      const baseAimMult = S.aiming ? ADS_LOOK_SENS_MULT * adsSensRef.current : 1;
+      const sniperSlow = (S.aiming && WEAPONS[S.wpIdx].viewModel === "sniper") ? SNIPER_ADS_SENS_MULT : 1;
+      const sens = lookSensRef.current * baseAimMult * sniperSlow;
       // יש לעיתים movementX/Y קיצוני בפריים יחיד – נחתוך לדלתא סבירה כדי למנוע "טלקפורט" במבט.
       const maxDelta = 50;
       const dx = clamp(e.movementX, -maxDelta, maxDelta);
@@ -3041,7 +3083,13 @@ export default function BitsSniperGame() {
               setKills(S.kills);
               pushKillFeed(`You eliminated ${bot.label} (Splash)`);
             }
-            spawnBotDeathParts(bot, deathDebrisState);
+            const splashDir = bot.mesh.position.clone().sub(pos).normalize();
+            const splashKill: KillImpact = {
+              direction: splashDir,
+              impulseMultiplier: 0.75,
+              impactPoint: pos.clone(),
+            };
+            enemyDeathPhysics.spawn(bot, deathDebrisState, splashKill);
           }
         }
       }
@@ -3787,7 +3835,7 @@ export default function BitsSniperGame() {
       // Bot updates
       for(const bot of bots) updateBot(bot,dt,nowSec);
 
-      updateDeathDebris(deathDebrisState, collidables, dt);
+      enemyDeathPhysics.update(deathDebrisState, collidables, dt);
 
       // Projectile updates
       for(let i=projectiles.length-1;i>=0;i--){
@@ -3809,8 +3857,9 @@ export default function BitsSniperGame() {
         let splashHandled = false;
         projImpact.copy(prEnd);
 
-        // World collision (ray-against-boxes), keeping the nearest impact.
+        // World collision (ray-against-boxes), keeping the nearest impact and which box (לנורמל שטוח לדקל).
         let closestWallDist = stepLen + 1e-4;
+        let hitBox: THREE.Box3 | null = null;
         if(!hit && stepLen > 1e-6){
           projDir.copy(prStep).multiplyScalar(1 / stepLen);
           projRay.set(prStart, projDir);
@@ -3823,16 +3872,17 @@ export default function BitsSniperGame() {
             if(d <= closestWallDist){
               closestWallDist = d;
               projImpact.copy(rayPointTmp);
+              hitBox = box;
               found = true;
             }
           }
           if(found){ hit = true; structureHit = true; }
         }
 
-        // Debris: projectile can hit body parts (enemyDeathManager).
+        // Debris: projectile can hit body parts (פיזיקה רק ב־enemyDeathManager).
         if (!hit && stepLen > 1e-6) {
           projDir.copy(prStep).multiplyScalar(1 / stepLen);
-          const debrisResult = tryHitDebrisWithProjectile(
+          const debrisResult = enemyDeathPhysics.tryHitByProjectile(
             deathDebrisState,
             prStart,
             projDir,
@@ -3888,7 +3938,12 @@ export default function BitsSniperGame() {
               bot.health=0; bot.dead=true; bot.mesh.visible=false;
               bot.respawnTimer=RESPAWN_SECS; S.kills++; setKills(S.kills);
               pushKillFeed(`You eliminated ${bot.label}${headshot ? " (Headshot)" : ""}`, headshot);
-              spawnBotDeathParts(bot, deathDebrisState);
+              const projKill: KillImpact = {
+                direction: projDir.clone().normalize(),
+                impulseMultiplier: headshot ? 1.4 : 1.15,
+                impactPoint: projImpact.clone(),
+              };
+              enemyDeathPhysics.spawn(bot, deathDebrisState, projKill);
             }
             if(pr.splash){
               applySplash(pr,projImpact);
@@ -3899,8 +3954,8 @@ export default function BitsSniperGame() {
         }
 
         if(hit){
-          if(structureHit){
-            decalImpactNormal.copy(projDir).negate().normalize();
+          if(structureHit && hitBox){
+            getBoxFaceNormal(hitBox, projImpact, prStart);
             addDecal(projImpact, decalImpactNormal, nowSec);
           }
           if(pr.splash && !splashHandled){

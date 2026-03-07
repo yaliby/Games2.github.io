@@ -1,136 +1,180 @@
 /**
- * Bits Sniper – ניהול מות האויב: פיזיקה ריאליסטית + Euler rotation equations.
+ * Bits Sniper – ניהול מות האויב עם מנוע Rigid-Body מלא (Rapier).
  *
- * מה מיוחד כאן:
- *  - angular velocity מאוחסן ב-WORLD space
- *  - כל frame: המר ל-body space → הפעל Euler equations → המר חזרה
- *  - Euler equations: I·dω/dt = −(ω × I·ω)
- *    → פלטה שטוחה מסתובבת יציב סביב ציר הקצר,
- *      מוט ארוך מתכבל (tumble) בצורה אופיינית,
- *      קובייה מסתובבת בצורה פחות יציבה (chaos near intermediate axis)
- *  - inertia tensor נשמר ב-body space (diagonal, קירוב קופסה)
- *  - impulse hit גם מופעל ב-body space ומומר נכון
+ * כל פיזיקת המוות מרוכזת כאן: התפרקות לחלקים, כבידה, קוליז'ן עם המפה,
+ * פגיעת ירייה (אימפולס ב־applyImpulseAtPoint). כשהרפייר לא טעון – fallback לינארי.
  */
 import * as THREE from "three";
 import type { BotState } from "./types/gameTypes";
+
+type Rapier3D = typeof import("@dimforge/rapier3d");
+
+// ─── Rapier טעינה אסינכרונית ─────────────────────────────────────────────────
+
+let RAPIER: Rapier3D | null = null;
+let initPromise: Promise<void> | null = null;
+
+export function initDeathPhysicsEngine(): Promise<void> {
+  if (RAPIER) return Promise.resolve();
+  if (initPromise) return initPromise;
+  initPromise = import("@dimforge/rapier3d").then((r) => {
+    RAPIER = r;
+  });
+  return initPromise;
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export interface DeathPart {
   mesh: THREE.Object3D;
-  velocity: THREE.Vector3;         // world space, m/s
-  angularVelocity: THREE.Vector3;  // world space, rad/s
-  /** diagonal inertia tensor in BODY space: (Ixx, Iyy, Izz) */
-  inertiaBody: THREE.Vector3;
-  /** I⁻¹ in body space */
-  inertiaBodyInv: THREE.Vector3;
   life: number;
   mass: number;
-  restitution: number;
-  linearDamping: number;
-  sleeping: boolean;
-  sleepTimer: number;
+  /** כשמשתמשים ב-Rapier */
+  rigidBody?: import("@dimforge/rapier3d").RigidBody;
+  /** fallback כשאין Rapier */
+  velocity?: THREE.Vector3;
+  angularVelocity?: THREE.Vector3;
 }
 
 export interface DeathDebrisState {
   group: THREE.Group;
   list: DeathPart[];
+  /** עולם Rapier (קיים רק אחרי טעינה) */
+  world?: import("@dimforge/rapier3d").World;
+}
+
+// ─── Kill impact (הירייה ההורגת – כיוון ועוצמה) ─────────────────────────────
+
+/**
+ * נתוני הפגיעה שהורגת את האויב – משפיעים פיזיקלית על כל החלקים בעת ההתפרקות.
+ * direction: כיוון הירייה/הפיצוץ (נורמלי).
+ * impulseMultiplier: עוצמה יחסית (למשל headshot גבוה יותר, splash נמוך).
+ * impactPoint: נקודת הפגיעה בעולם – משמשת לחישוב מומנט סיבוב (חלקים רחוקים מסתובבים יותר).
+ */
+export interface KillImpact {
+  direction: THREE.Vector3;
+  impulseMultiplier: number;
+  impactPoint: THREE.Vector3;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const GRAVITY             = -9.81 * 1.6;
-const FADE_DURATION       = 1.4;
-const PART_LIFE           = 7.0;
+const GRAVITY_Y = -14;
+/** משך הדעיכה – החלקים מתחילים להיעלם בהדרגה ב־FADE_DURATION השניות האחרונות. */
+const FADE_DURATION = 2.8;
+const LIFE_SEC = 6;
+const DENSITY = 0.35;
+const FRICTION = 0.82;
+const ANGULAR_FRICTION = 0.88;
+const AIR_DRAG = 1.8;
+const HIT_IMPULSE = 2.6;
+const TORQUE_SCALE = 3.2;
+const PROJ_IMPULSE_MULT = 0.92;
+const MIN_HALF_EXT = 0.02;
 
-const MATERIAL_DENSITY    = 380;     // kg/m³  (פלסטיק/אלומיניום קל)
-const RESTITUTION_DEFAULT = 0.35;
-const FRICTION_DYNAMIC    = 0.45;
-const COLLISION_ITERS     = 4;
-
-const AIR_DENSITY         = 1.225;
-const DRAG_COEFF          = 0.47;
-const ANGULAR_DRAG_COEFF  = 0.012;
-
-const SLEEP_VEL_SQ        = 0.003;
-const SLEEP_ANG_SQ        = 0.08;
-const SLEEP_DELAY         = 1.2;
-
-const HIT_IMPULSE_BASE    = 18.0;
-const MAX_EFFECTIVE_MASS  = 2.5;
-const MAX_INERTIA_INV     = 120.0;
-
-// sub-steps לEuler equations (יציבות נומרית)
-const EULER_SUBSTEPS      = 4;
-
-// ─── Inertia tensor (body space, קופסה מלאה) ──────────────────────────────
-// I_xx = m/12*(h²+d²),  I_yy = m/12*(w²+d²),  I_zz = m/12*(w²+h²)
-
-function computeBoxInertia(
-  mass: number,
-  size: THREE.Vector3,
-  outI: THREE.Vector3,
-  outIinv: THREE.Vector3,
-): void {
-  const w = size.x, h = size.y, d = size.z;
-  const f = mass / 12;
-  const Ixx = Math.max(1e-4, f * (h * h + d * d));
-  const Iyy = Math.max(1e-4, f * (w * w + d * d));
-  const Izz = Math.max(1e-4, f * (w * w + h * h));
-  outI.set(Ixx, Iyy, Izz);
-  outIinv.set(
-    Math.min(MAX_INERTIA_INV, 1 / Ixx),
-    Math.min(MAX_INERTIA_INV, 1 / Iyy),
-    Math.min(MAX_INERTIA_INV, 1 / Izz),
-  );
-}
-
-// ─── Scratch (module-level, zero allocations per frame) ───────────────────
-
-const _worldPos   = new THREE.Vector3();
-const _worldQuat  = new THREE.Quaternion();
-const _worldScale = new THREE.Vector3();
-const _aabbSize   = new THREE.Vector3();
-
-// Euler rotation equation scratch
-const _quatInv      = new THREE.Quaternion();
-const _omegaBody    = new THREE.Vector3();   // ω in body space
-const _IomegaBody   = new THREE.Vector3();   // I·ω_body
-const _cross        = new THREE.Vector3();   // ω × (I·ω)
-const _dOmegaBody   = new THREE.Vector3();   // I⁻¹ · (−ω×Iω)
-const _dOmegaWorld  = new THREE.Vector3();   // back to world
-
-// Collision scratch
-const _debrisBox    = new THREE.Box3();
-const _debrisCenter = new THREE.Vector3();
-const _boxCenter    = new THREE.Vector3();
-const _contactPt    = new THREE.Vector3();
-const _r            = new THREE.Vector3();
-const _omegaCrossR  = new THREE.Vector3();
-const _vRel         = new THREE.Vector3();
-const _nVec         = new THREE.Vector3();
-const _rCrossN      = new THREE.Vector3();
-const _iiRcrossN    = new THREE.Vector3();
-const _iiRcrossNxR  = new THREE.Vector3();
-const _tangent      = new THREE.Vector3();
-const _jN           = new THREE.Vector3();
-const _deltaOmega   = new THREE.Vector3();
-const _omegaDelta   = new THREE.Vector3();
-
-// Rotation scratch
-const _rotAxis      = new THREE.Vector3();
-const _rotDelta     = new THREE.Quaternion();
-
-// Hit scratch
-const _raycaster    = new THREE.Raycaster();
-const _impactOffset = new THREE.Vector3();
-const _torqueWorld  = new THREE.Vector3();
-const _torqueBody   = new THREE.Vector3();
-const _torqueResult = new THREE.Vector3();
+/** אימפולס בסיס ליניארי בהתפרקות (הירייה ההורגת). */
+const KILL_IMPULSE_BASE = 2.2;
+/** סקלה למומנט סיבוב בהתפרקות – חלק רחוק מנקודת הפגיעה מקבל יותר סיבוב. */
+const KILL_TORQUE_SCALE = 1.2;
+/** פיזור ליניארי קטן (רנדום) מעבר לכיוון הראשי. */
+const KILL_SPREAD_LINEAR = 0.2;
+/** פיזור זוויתי קטן. */
+const KILL_SPREAD_ANGULAR = 0.35;
+/** מינימום אימפולס ליניארי גם לחלקים כבדים. */
+const KILL_MIN_LINEAR_SPEED = 0.35;
 
 // ─── Spawn ─────────────────────────────────────────────────────────────────
 
-export function spawnBotDeathParts(bot: BotState, state: DeathDebrisState): void {
+const _worldPos = new THREE.Vector3();
+const _worldQuat = new THREE.Quaternion();
+const _worldScale = new THREE.Vector3();
+const _aabbSize = new THREE.Vector3();
+const _boxCenter = new THREE.Vector3();
+const _impactToPart = new THREE.Vector3();
+const _linearVel = new THREE.Vector3();
+const _torqueAxis = new THREE.Vector3();
+const _rnd = new THREE.Vector3();
+
+/**
+ * מחשב מהירות ליניארית וזוויתית התחלתית לחלק בהתבסס על הירייה ההורגת.
+ * אימפולס בכיוון הפגיעה (מנורמל למסה), + מומנט סיבוב לפי (נקודת פגיעה → מרכז החלק) × כיוון.
+ */
+function computeKillInitialVelocities(
+  partWorldPos: THREE.Vector3,
+  mass: number,
+  kill: KillImpact,
+  outLinear: THREE.Vector3,
+  outAngular: THREE.Vector3,
+): void {
+  const mult = kill.impulseMultiplier;
+  const invMass = 1 / Math.max(0.01, mass);
+  const linearMag = Math.max(KILL_MIN_LINEAR_SPEED, KILL_IMPULSE_BASE * mult * invMass);
+  outLinear.copy(kill.direction).multiplyScalar(linearMag);
+  outLinear.x += (Math.random() - 0.5) * KILL_SPREAD_LINEAR * 2;
+  outLinear.y += (Math.random() - 0.5) * KILL_SPREAD_LINEAR * 2;
+  outLinear.z += (Math.random() - 0.5) * KILL_SPREAD_LINEAR * 2;
+
+  _impactToPart.subVectors(partWorldPos, kill.impactPoint);
+  const dist = _impactToPart.length();
+  if (dist > 0.01) {
+    _rnd.crossVectors(_impactToPart, kill.direction).normalize();
+    const torqueMag = KILL_TORQUE_SCALE * mult * invMass * Math.min(dist * 2, 3);
+    outAngular.copy(_rnd).multiplyScalar(torqueMag);
+  } else {
+    outAngular.set(0, 0, 0);
+  }
+  outAngular.x += (Math.random() - 0.5) * KILL_SPREAD_ANGULAR * 2;
+  outAngular.y += (Math.random() - 0.5) * KILL_SPREAD_ANGULAR * 2;
+  outAngular.z += (Math.random() - 0.5) * KILL_SPREAD_ANGULAR * 2;
+}
+
+export function createDeathDebrisState(collidables: THREE.Box3[]): DeathDebrisState {
+  const group = new THREE.Group();
+  const list: DeathPart[] = [];
+  if (!RAPIER) return { group, list };
+  const world = makeRapierWorldWithStatics(collidables);
+  return { group, list, world };
+}
+
+/** בונה עולם Rapier עם קולידרים סטטיים מהמפה. קוראים אחרי ש־init() הושלם. */
+function makeRapierWorldWithStatics(collidables: THREE.Box3[]): import("@dimforge/rapier3d").World {
+  if (!RAPIER) throw new Error("Rapier not loaded");
+  const world = new RAPIER.World({ x: 0, y: GRAVITY_Y, z: 0 });
+  for (const box of collidables) {
+    box.getCenter(_boxCenter);
+    box.getSize(_aabbSize);
+    const hx = Math.max(MIN_HALF_EXT, _aabbSize.x * 0.5);
+    const hy = Math.max(MIN_HALF_EXT, _aabbSize.y * 0.5);
+    const hz = Math.max(MIN_HALF_EXT, _aabbSize.z * 0.5);
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
+      _boxCenter.x,
+      _boxCenter.y,
+      _boxCenter.z,
+    );
+    const body = world.createRigidBody(bodyDesc);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+    world.createCollider(colliderDesc, body);
+  }
+  return world;
+}
+
+/**
+ * לשדרג state קיים ל־Rapier אחרי שהמנוע נטען.
+ * קוראים: enemyDeathPhysics.init().then(() => enemyDeathPhysics.upgradeStateWithRapier(state, collidables))
+ */
+export function upgradeStateWithRapier(
+  state: DeathDebrisState,
+  collidables: THREE.Box3[],
+): void {
+  if (state.world || !RAPIER) return;
+  state.world = makeRapierWorldWithStatics(collidables);
+}
+
+export function spawnBotDeathParts(
+  bot: BotState,
+  state: DeathDebrisState,
+  killImpact?: KillImpact,
+): void {
   const root = bot.mesh;
   root.updateMatrixWorld(true);
 
@@ -139,8 +183,6 @@ export function spawnBotDeathParts(bot: BotState, state: DeathDebrisState): void
     if (node instanceof THREE.Sprite) return;
 
     const clone = node.clone() as THREE.Mesh;
-    clone.matrixAutoUpdate = true;  // חובה – גם אם המקור כיבה אותו
-
     node.getWorldPosition(_worldPos);
     node.getWorldQuaternion(_worldQuat);
     node.getWorldScale(_worldScale);
@@ -148,346 +190,297 @@ export function spawnBotDeathParts(bot: BotState, state: DeathDebrisState): void
     clone.quaternion.copy(_worldQuat);
     clone.scale.copy(_worldScale);
     clone.updateMatrixWorld(true);
+    makeDebrisMaterialsFadeable(clone);
 
-    // AABB → מסה ו-inertia
     const box = new THREE.Box3().setFromObject(clone);
     box.getSize(_aabbSize);
     const volume = Math.max(1e-6, _aabbSize.x * _aabbSize.y * _aabbSize.z);
-    const mass   = Math.max(0.02, volume * MATERIAL_DENSITY);
-
-    const inertiaBody    = new THREE.Vector3();
-    const inertiaBodyInv = new THREE.Vector3();
-    computeBoxInertia(mass, _aabbSize, inertiaBody, inertiaBodyInv);
-
-    // מהירות לינארית זעירה
-    const v = new THREE.Vector3(
-      (Math.random() - 0.5) * 0.02,
-      Math.random() * 0.01,
-      (Math.random() - 0.5) * 0.02,
-    );
-
-    // ─ angular velocity: 1.5–4.5 rad/s על ציר רנדומלי ─────────────────────
-    // ציר הסיבוב ההתחלתי נבחר ב-WORLD space, אבל ה-Euler equations
-    // ידאגו שהאובייקט יסתובב בהתאם לצורה שלו מרגע ראשון.
-    const spinSpeed = 1.5 + Math.random() * 3.0;
-    const av = new THREE.Vector3(
-      Math.random() - 0.5,
-      Math.random() - 0.5,
-      Math.random() - 0.5,
-    ).normalize().multiplyScalar(spinSpeed);
-
-    const radius        = Math.max(_aabbSize.x, _aabbSize.y, _aabbSize.z) * 0.5;
-    const linearDamping = 0.5 * AIR_DENSITY * DRAG_COEFF * Math.PI * radius * radius;
+    const mass = Math.max(0.01, volume * DENSITY);
 
     state.group.add(clone);
-    state.list.push({
-      mesh: clone,
-      velocity: v,
-      angularVelocity: av,
-      inertiaBody,
-      inertiaBodyInv,
-      life: PART_LIFE,
-      mass,
-      restitution: RESTITUTION_DEFAULT + (Math.random() - 0.5) * 0.1,
-      linearDamping,
-      sleeping: false,
-      sleepTimer: 0,
-    });
+
+    if (state.world && RAPIER) {
+      const hx = Math.max(MIN_HALF_EXT, _aabbSize.x * 0.5);
+      const hy = Math.max(MIN_HALF_EXT, _aabbSize.y * 0.5);
+      const hz = Math.max(MIN_HALF_EXT, _aabbSize.z * 0.5);
+      const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(_worldPos.x, _worldPos.y, _worldPos.z)
+        .setRotation({ x: _worldQuat.x, y: _worldQuat.y, z: _worldQuat.z, w: _worldQuat.w });
+      const body = state.world.createRigidBody(bodyDesc);
+      const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
+        .setDensity(DENSITY)
+        .setFriction(FRICTION)
+        .setRestitution(0.2);
+      state.world.createCollider(colliderDesc, body);
+
+      if (killImpact) {
+        computeKillInitialVelocities(_worldPos, mass, killImpact, _linearVel, _torqueAxis);
+        body.setLinvel({ x: _linearVel.x, y: _linearVel.y, z: _linearVel.z }, true);
+        body.setAngvel({ x: _torqueAxis.x, y: _torqueAxis.y, z: _torqueAxis.z }, true);
+      } else {
+        body.setLinvel(
+          {
+            x: (Math.random() - 0.5) * 0.14,
+            y: Math.random() * 0.06,
+            z: (Math.random() - 0.5) * 0.14,
+          },
+          true,
+        );
+        body.setAngvel(
+          {
+            x: (Math.random() - 0.5) * 0.35,
+            y: (Math.random() - 0.5) * 0.35,
+            z: (Math.random() - 0.5) * 0.35,
+          },
+          true,
+        );
+      }
+      body.setLinearDamping(AIR_DRAG * 0.5);
+      body.setAngularDamping(ANGULAR_FRICTION);
+      state.list.push({ mesh: clone, life: LIFE_SEC, mass, rigidBody: body });
+    } else {
+      let v: THREE.Vector3;
+      let av: THREE.Vector3;
+      if (killImpact) {
+        v = new THREE.Vector3();
+        av = new THREE.Vector3();
+        computeKillInitialVelocities(_worldPos, mass, killImpact, v, av);
+      } else {
+        v = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.14,
+          Math.random() * 0.06,
+          (Math.random() - 0.5) * 0.14,
+        );
+        av = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.35,
+          (Math.random() - 0.5) * 0.35,
+          (Math.random() - 0.5) * 0.35,
+        );
+      }
+      state.list.push({
+        mesh: clone,
+        life: LIFE_SEC,
+        mass,
+        velocity: v,
+        angularVelocity: av,
+      });
+    }
   });
 }
 
-// ─── State factory ─────────────────────────────────────────────────────────
+// ─── Fallback: קוליז'ן ידני + opacity ──────────────────────────────────────
 
-export function createDeathDebrisState(): DeathDebrisState {
-  return { group: new THREE.Group(), list: [] };
+const _debrisBox = new THREE.Box3();
+const _debrisCenter = new THREE.Vector3();
+const _boxCenterFallback = new THREE.Vector3();
+const _euler = new THREE.Euler(0, 0, 0, "YXZ");
+
+function pushDebrisOutOfBoxes(d: DeathPart, collidables: THREE.Box3[]): void {
+  if (!d.velocity) return;
+  const pos = d.mesh.position;
+  for (let iter = 0; iter < 6; iter++) {
+    d.mesh.updateMatrixWorld(true);
+    _debrisBox.setFromObject(d.mesh);
+    let pushed = false;
+    for (const box of collidables) {
+      if (!_debrisBox.intersectsBox(box)) continue;
+      box.getCenter(_boxCenterFallback);
+      _debrisBox.getCenter(_debrisCenter);
+      const overlapX = Math.min(_debrisBox.max.x - box.min.x, box.max.x - _debrisBox.min.x);
+      const overlapY = Math.min(_debrisBox.max.y - box.min.y, box.max.y - _debrisBox.min.y);
+      const overlapZ = Math.min(_debrisBox.max.z - box.min.z, box.max.z - _debrisBox.min.z);
+      const minOverlap = Math.min(overlapX, overlapY, overlapZ);
+      if (minOverlap <= 0) continue;
+      if (minOverlap === overlapX) {
+        pos.x += _debrisCenter.x < _boxCenterFallback.x ? -overlapX : overlapX;
+        d.velocity.x = 0;
+        d.velocity.y! *= FRICTION;
+        d.velocity.z! *= FRICTION;
+        d.angularVelocity?.multiplyScalar(ANGULAR_FRICTION);
+      } else if (minOverlap === overlapY) {
+        pos.y += _debrisCenter.y < _boxCenterFallback.y ? -overlapY : overlapY;
+        d.velocity.y = 0;
+        d.velocity.x! *= FRICTION;
+        d.velocity.z! *= FRICTION;
+        d.angularVelocity?.multiplyScalar(ANGULAR_FRICTION);
+      } else {
+        pos.z += _debrisCenter.z < _boxCenterFallback.z ? -overlapZ : overlapZ;
+        d.velocity.z = 0;
+        d.velocity.x! *= FRICTION;
+        d.velocity.y! *= FRICTION;
+        d.angularVelocity?.multiplyScalar(ANGULAR_FRICTION);
+      }
+      pushed = true;
+      break;
+    }
+    if (!pushed) break;
+  }
 }
 
-// ─── Opacity helper ────────────────────────────────────────────────────────
+/** משכפל חומרים של mesh כדי שכל שבר יהיה עם חומר משלו (לא משותף עם הבוט) ומאפשר דעיכה. */
+function makeDebrisMaterialsFadeable(mesh: THREE.Object3D): void {
+  mesh.traverse((node) => {
+    const meshNode = node as THREE.Mesh;
+    if (!meshNode.isMesh || !meshNode.material) return;
+    const mats = Array.isArray(meshNode.material) ? meshNode.material : [meshNode.material];
+    const cloned = mats.map((mat) => {
+      const m = mat.clone();
+      m.transparent = true;
+      (m as THREE.Material & { opacity?: number }).opacity = 1;
+      m.depthWrite = true;
+      return m;
+    });
+    meshNode.material = cloned.length === 1 ? cloned[0] : cloned;
+  });
+}
 
 function setDebrisOpacity(mesh: THREE.Object3D, opacity: number): void {
   mesh.traverse((node) => {
     const m = (node as THREE.Mesh).material;
     if (!m) return;
-    (Array.isArray(m) ? m : [m]).forEach((mat) => {
+    const mats = Array.isArray(m) ? m : [m];
+    mats.forEach((mat) => {
       const base = mat as THREE.Material & { transparent?: boolean; opacity?: number };
+      if (typeof base.opacity === "undefined") return;
       base.transparent = true;
-      base.opacity     = opacity;
-      base.depthWrite  = opacity >= 1;
+      base.opacity = Math.max(0, Math.min(1, opacity));
+      base.depthWrite = opacity >= 0.99;
     });
   });
 }
 
-// ─── Euler's rotation equations (torque-free rigid body) ──────────────────
-/**
- * מחשב את השינוי ב-angular velocity בגלל צורת הגוף.
- *
- * משוואת אויילר (body space):
- *   I · dω/dt = τ − ω × (I·ω)
- * ללא מומנט חיצוני (τ=0, free flight):
- *   dω/dt = I⁻¹ · (−ω × (I·ω))
- *
- * זה מה שגורם לגוף שטוח לסובב בצורה שונה ממוט ארוך.
- * מחולק לsub-steps לגישה נומרית יציבה.
- */
-function integrateEulerEquations(d: DeathPart, dt: number): void {
-  const subDt = dt / EULER_SUBSTEPS;
-
-  for (let s = 0; s < EULER_SUBSTEPS; s++) {
-    // המר ω world → body: ω_body = Q⁻¹ · ω_world
-    _quatInv.copy(d.mesh.quaternion).invert();
-    _omegaBody.copy(d.angularVelocity).applyQuaternion(_quatInv);
-
-    // I·ω_body (diagonal → כפל רכיב)
-    _IomegaBody.set(
-      d.inertiaBody.x * _omegaBody.x,
-      d.inertiaBody.y * _omegaBody.y,
-      d.inertiaBody.z * _omegaBody.z,
-    );
-
-    // dω_body/dt = I⁻¹ · (−(ω_body × I·ω_body))
-    _cross.crossVectors(_omegaBody, _IomegaBody);   // ω × Iω
-    _dOmegaBody.set(
-      -d.inertiaBodyInv.x * _cross.x,
-      -d.inertiaBodyInv.y * _cross.y,
-      -d.inertiaBodyInv.z * _cross.z,
-    );
-
-    // עדכן ω_body
-    _omegaBody.addScaledVector(_dOmegaBody, subDt);
-
-    // המר חזרה ל-world: ω_world = Q · ω_body
-    _dOmegaWorld.copy(_omegaBody).applyQuaternion(d.mesh.quaternion);
-    d.angularVelocity.copy(_dOmegaWorld);
-  }
-}
-
-// ─── Collision resolution (impulse-based, restitution + friction) ──────────
-
-function resolveDebrisVsBoxes(d: DeathPart, collidables: THREE.Box3[]): void {
-  for (let iter = 0; iter < COLLISION_ITERS; iter++) {
-    d.mesh.updateMatrixWorld(true);
-    _debrisBox.setFromObject(d.mesh);
-    _debrisBox.getCenter(_debrisCenter);
-
-    let resolved = false;
-
-    for (const box of collidables) {
-      if (!_debrisBox.intersectsBox(box)) continue;
-      box.getCenter(_boxCenter);
-
-      const overlapX = Math.min(_debrisBox.max.x - box.min.x, box.max.x - _debrisBox.min.x);
-      const overlapY = Math.min(_debrisBox.max.y - box.min.y, box.max.y - _debrisBox.min.y);
-      const overlapZ = Math.min(_debrisBox.max.z - box.min.z, box.max.z - _debrisBox.min.z);
-      const minOv    = Math.min(overlapX, overlapY, overlapZ);
-      if (minOv <= 0) continue;
-
-      let nx = 0, ny = 0, nz = 0;
-      if (minOv === overlapY) {
-        ny = _debrisCenter.y < _boxCenter.y ? -1 : 1;
-        d.mesh.position.y += ny * overlapY;
-      } else if (minOv === overlapX) {
-        nx = _debrisCenter.x < _boxCenter.x ? -1 : 1;
-        d.mesh.position.x += nx * overlapX;
-      } else {
-        nz = _debrisCenter.z < _boxCenter.z ? -1 : 1;
-        d.mesh.position.z += nz * overlapZ;
-      }
-      _nVec.set(nx, ny, nz);
-
-      _contactPt.set(
-        _debrisCenter.x - nx * (_debrisBox.max.x - _debrisBox.min.x) * 0.5,
-        _debrisCenter.y - ny * (_debrisBox.max.y - _debrisBox.min.y) * 0.5,
-        _debrisCenter.z - nz * (_debrisBox.max.z - _debrisBox.min.z) * 0.5,
-      );
-
-      _r.subVectors(_contactPt, _debrisCenter);
-
-      // v_rel = v + ω×r
-      _omegaCrossR.crossVectors(d.angularVelocity, _r);
-      _vRel.copy(d.velocity).add(_omegaCrossR);
-      const vRelN = _vRel.dot(_nVec);
-      if (vRelN >= 0) continue;
-
-      // ─ invInertia עבור collision: המר מ-body ל-world ─────────────────────
-      // לצורך denominator משתמשים ב-I_world (מקורב) –
-      // מחשבים (I⁻¹*(r×n)) ב-world ע"י:
-      //   r×n  → body → I⁻¹ → world
-      _rCrossN.crossVectors(_r, _nVec);
-      _quatInv.copy(d.mesh.quaternion).invert();
-      _iiRcrossN.copy(_rCrossN).applyQuaternion(_quatInv); // body space
-      _iiRcrossN.set(                                       // I⁻¹ · (r×n)_body
-        d.inertiaBodyInv.x * _iiRcrossN.x,
-        d.inertiaBodyInv.y * _iiRcrossN.y,
-        d.inertiaBodyInv.z * _iiRcrossN.z,
-      );
-      _iiRcrossN.applyQuaternion(d.mesh.quaternion);        // חזרה ל-world
-
-      _iiRcrossNxR.crossVectors(_iiRcrossN, _r);
-      const angularTerm = _iiRcrossNxR.dot(_nVec);
-      const denom       = 1 / d.mass + angularTerm;
-      const j           = -(1 + d.restitution) * vRelN / Math.max(1e-9, denom);
-
-      // impulse לינארי
-      d.velocity.addScaledVector(_nVec, j / d.mass);
-
-      // impulse זוויתי (world space → body → apply I⁻¹ → world)
-      _jN.copy(_nVec).multiplyScalar(j);
-      _deltaOmega.crossVectors(_r, _jN);
-      _deltaOmega.applyQuaternion(_quatInv);  // body
-      _omegaDelta.set(
-        d.inertiaBodyInv.x * _deltaOmega.x,
-        d.inertiaBodyInv.y * _deltaOmega.y,
-        d.inertiaBodyInv.z * _deltaOmega.z,
-      );
-      _omegaDelta.applyQuaternion(d.mesh.quaternion);  // world
-      d.angularVelocity.add(_omegaDelta);
-
-      // Friction משיק
-      _tangent.copy(d.velocity).addScaledVector(_nVec, -d.velocity.dot(_nVec));
-      const tangentSpeed = _tangent.length();
-      if (tangentSpeed > 1e-5) {
-        const fi = Math.min(FRICTION_DYNAMIC * Math.abs(j), tangentSpeed * d.mass);
-        d.velocity.addScaledVector(_tangent.normalize(), -fi / d.mass);
-      }
-
-      resolved = true;
-      break;
-    }
-    if (!resolved) break;
-  }
-}
-
-// ─── Update ────────────────────────────────────────────────────────────────
+// ─── Update ─────────────────────────────────────────────────────────────────
 
 export function updateDeathDebris(
   state: DeathDebrisState,
   collidables: THREE.Box3[],
   dt: number,
 ): void {
-  const { group, list } = state;
+  const { group, list, world } = state;
+
+  if (world && RAPIER) {
+    world.step();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const d = list[i];
+      d.life -= dt;
+      if (d.life <= 0 || (d.rigidBody ? d.rigidBody.translation().y < -15 : d.mesh.position.y < -15)) {
+        if (d.rigidBody) world.removeRigidBody(d.rigidBody);
+        group.remove(d.mesh);
+        list.splice(i, 1);
+        continue;
+      }
+      if (d.rigidBody) {
+        const t = d.rigidBody.translation();
+        d.mesh.position.set(t.x, t.y, t.z);
+        const r = d.rigidBody.rotation();
+        d.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+      } else if (d.velocity && d.angularVelocity) {
+        d.mesh.position.x += d.velocity.x * dt;
+        d.mesh.position.y += d.velocity.y * dt;
+        d.mesh.position.z += d.velocity.z * dt;
+        d.velocity.y += GRAVITY_Y * dt;
+        const drag = 1 - AIR_DRAG * dt;
+        d.velocity.multiplyScalar(Math.max(0, drag));
+        d.angularVelocity.multiplyScalar(Math.max(0, drag));
+        pushDebrisOutOfBoxes(d, collidables);
+        _euler.set(
+          d.mesh.rotation.x + d.angularVelocity.x * dt,
+          d.mesh.rotation.y + d.angularVelocity.y * dt,
+          d.mesh.rotation.z + d.angularVelocity.z * dt,
+        );
+        d.mesh.rotation.x = _euler.x;
+        d.mesh.rotation.y = _euler.y;
+        d.mesh.rotation.z = _euler.z;
+      }
+      if (d.life < FADE_DURATION) {
+        const opacity = Math.max(0, d.life / FADE_DURATION);
+        setDebrisOpacity(d.mesh, opacity);
+      }
+    }
+    return;
+  }
 
   for (let i = list.length - 1; i >= 0; i--) {
     const d = list[i];
     d.life -= dt;
-
-    if (d.life <= 0 || d.mesh.position.y < -20) {
+    if (d.life <= 0 || d.mesh.position.y < -15) {
       group.remove(d.mesh);
       list.splice(i, 1);
       continue;
     }
-
+    if (d.velocity && d.angularVelocity) {
+      d.mesh.position.x += d.velocity.x * dt;
+      d.mesh.position.y += d.velocity.y * dt;
+      d.mesh.position.z += d.velocity.z * dt;
+      d.velocity.y += GRAVITY_Y * dt;
+      const drag = 1 - AIR_DRAG * dt;
+      d.velocity.multiplyScalar(Math.max(0, drag));
+      d.angularVelocity.multiplyScalar(Math.max(0, drag));
+      pushDebrisOutOfBoxes(d, collidables);
+      _euler.set(
+        d.mesh.rotation.x + d.angularVelocity.x * dt,
+        d.mesh.rotation.y + d.angularVelocity.y * dt,
+        d.mesh.rotation.z + d.angularVelocity.z * dt,
+      );
+      d.mesh.rotation.x = _euler.x;
+      d.mesh.rotation.y = _euler.y;
+      d.mesh.rotation.z = _euler.z;
+    }
     if (d.life < FADE_DURATION) {
-      setDebrisOpacity(d.mesh, Math.max(0, d.life / FADE_DURATION));
-    }
-
-    // Sleep – רק כשגם תנועה וגם סיבוב עצרו
-    if (d.velocity.lengthSq() < SLEEP_VEL_SQ && d.angularVelocity.lengthSq() < SLEEP_ANG_SQ) {
-      d.sleepTimer += dt;
-      if (d.sleepTimer > SLEEP_DELAY) d.sleeping = true;
-    } else {
-      d.sleepTimer = 0;
-      d.sleeping   = false;
-    }
-    if (d.sleeping) continue;
-
-    // כבידה
-    d.velocity.y += GRAVITY * dt;
-
-    // Drag לינארי ריבועי
-    const speed = d.velocity.length();
-    if (speed > 1e-6) {
-      const dragAccel = (d.linearDamping * speed * speed) / d.mass;
-      d.velocity.multiplyScalar(Math.max(0, 1 - (dragAccel / speed) * dt));
-    }
-
-    // Angular drag (מינימלי)
-    const omega = d.angularVelocity.length();
-    if (omega > 1e-6) {
-      const angDrag = ANGULAR_DRAG_COEFF * omega * omega / d.mass;
-      d.angularVelocity.multiplyScalar(Math.max(0, 1 - (angDrag / omega) * dt));
-    }
-
-    // ─── Euler rotation equations ──────────────────────────────────────────
-    // מחשב את ההשפעה של צורת הגוף על הסיבוב (precession / tumbling)
-    integrateEulerEquations(d, dt);
-
-    // אינטגרציה מיקום
-    d.mesh.position.addScaledVector(d.velocity, dt);
-
-    // Collision
-    resolveDebrisVsBoxes(d, collidables);
-
-    // ─── עדכון quaternion ──────────────────────────────────────────────────
-    const omegaLen = d.angularVelocity.length();
-    if (omegaLen > 1e-7) {
-      _rotAxis.copy(d.angularVelocity).multiplyScalar(1 / omegaLen);
-      _rotDelta.setFromAxisAngle(_rotAxis, omegaLen * dt);
-      d.mesh.quaternion.premultiply(_rotDelta);
-      d.mesh.quaternion.normalize();
+      const opacity = Math.max(0, d.life / FADE_DURATION);
+      setDebrisOpacity(d.mesh, opacity);
     }
   }
 }
 
-// ─── Shared hit impulse ────────────────────────────────────────────────────
+// ─── Hit: ray + projectile ──────────────────────────────────────────────────
 
-function applyHitImpulse(
+const _raycaster = new THREE.Raycaster();
+const _impactOffset = new THREE.Vector3();
+const _torque = new THREE.Vector3();
+
+function applyHitImpulseFallback(
   part: DeathPart,
   hitPoint: THREE.Vector3,
   dir: THREE.Vector3,
   strength: number,
 ): void {
-  const effMass = Math.min(part.mass, MAX_EFFECTIVE_MASS);
-
-  part.sleeping   = false;
-  part.sleepTimer = 0;
-
-  // impulse לינארי
-  part.velocity.addScaledVector(dir, strength / effMass);
-
-  // r = hitPoint − CoM
-  _impactOffset.subVectors(hitPoint, part.mesh.position);
-  if (_impactOffset.length() < 0.05) {
-    _impactOffset
-      .set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
-      .normalize().multiplyScalar(0.07);
-  }
-
-  // τ = r × F  (world) → המר ל-body → I⁻¹ → חזר ל-world
-  _torqueWorld.crossVectors(_impactOffset, dir).multiplyScalar(strength);
-  _quatInv.copy(part.mesh.quaternion).invert();
-  _torqueBody.copy(_torqueWorld).applyQuaternion(_quatInv);
-  _torqueResult.set(
-    part.inertiaBodyInv.x * _torqueBody.x,
-    part.inertiaBodyInv.y * _torqueBody.y,
-    part.inertiaBodyInv.z * _torqueBody.z,
-  );
-  _torqueResult.applyQuaternion(part.mesh.quaternion);
-  part.angularVelocity.add(_torqueResult);
+  if (!part.velocity || !part.angularVelocity) return;
+  const invMass = 1 / Math.max(0.01, part.mass);
+  part.velocity.addScaledVector(dir, strength * invMass);
+  _impactOffset.copy(hitPoint).sub(part.mesh.position);
+  _torque.crossVectors(_impactOffset, dir);
+  part.angularVelocity.addScaledVector(_torque, TORQUE_SCALE * invMass);
 }
-
-// ─── Hitscan ───────────────────────────────────────────────────────────────
 
 export function hitDebrisByRay(
   state: DeathDebrisState,
   origin: THREE.Vector3,
   dir: THREE.Vector3,
   maxDist: number,
-  impulseStrength: number = HIT_IMPULSE_BASE,
+  impulseStrength: number = HIT_IMPULSE,
 ): boolean {
   const { list } = state;
   if (list.length === 0) return false;
   _raycaster.set(origin, dir);
   _raycaster.far = maxDist;
-  const hits = _raycaster.intersectObjects(list.map((d) => d.mesh), true);
+  const hits = _raycaster.intersectObjects(list.map((d) => d.mesh), false);
   if (hits.length === 0) return false;
-  const hit  = hits[0];
-  const part = list.find((d) => d.mesh === hit.object || d.mesh === hit.object.parent);
+  const hit = hits[0];
+  const part = list.find((d) => d.mesh === hit.object);
   if (!part) return false;
-  applyHitImpulse(part, hit.point, dir, impulseStrength);
+  if (part.rigidBody && RAPIER) {
+    const impulse = impulseStrength / Math.max(0.01, part.mass);
+    part.rigidBody.applyImpulseAtPoint(
+      { x: dir.x * impulse, y: dir.y * impulse, z: dir.z * impulse },
+      { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+      true,
+    );
+  } else {
+    applyHitImpulseFallback(part, hit.point, dir, impulseStrength);
+  }
   return true;
 }
-
-// ─── Projectile ────────────────────────────────────────────────────────────
 
 export function tryHitDebrisWithProjectile(
   state: DeathDebrisState,
@@ -497,16 +490,41 @@ export function tryHitDebrisWithProjectile(
   closestWallDist: number,
 ): { hit: boolean; impactPoint: THREE.Vector3 | null } {
   const { list } = state;
-  if (list.length === 0 || stepLen <= 1e-6)
-    return { hit: false, impactPoint: null };
+  if (list.length === 0 || stepLen <= 1e-6) return { hit: false, impactPoint: null };
   _raycaster.set(prStart, projDir);
   _raycaster.far = stepLen;
-  const hits = _raycaster.intersectObjects(list.map((d) => d.mesh), true);
+  const hits = _raycaster.intersectObjects(list.map((d) => d.mesh), false);
   if (hits.length === 0 || hits[0].distance >= closestWallDist)
     return { hit: false, impactPoint: null };
   const dHit = hits[0];
-  const part = list.find((d) => d.mesh === dHit.object || d.mesh === dHit.object.parent);
+  const part = list.find((d) => d.mesh === dHit.object);
   if (!part) return { hit: false, impactPoint: null };
-  applyHitImpulse(part, dHit.point, projDir, HIT_IMPULSE_BASE);
+  const strength = HIT_IMPULSE * PROJ_IMPULSE_MULT;
+  if (part.rigidBody && RAPIER) {
+    const impulse = strength / Math.max(0.01, part.mass);
+    part.rigidBody.applyImpulseAtPoint(
+      {
+        x: projDir.x * impulse,
+        y: projDir.y * impulse,
+        z: projDir.z * impulse,
+      },
+      { x: dHit.point.x, y: dHit.point.y, z: dHit.point.z },
+      true,
+    );
+  } else {
+    applyHitImpulseFallback(part, dHit.point, projDir, strength);
+  }
   return { hit: true, impactPoint: dHit.point.clone() };
 }
+
+// ─── API ───────────────────────────────────────────────────────────────────
+
+export const enemyDeathPhysics = {
+  init: initDeathPhysicsEngine,
+  createState: createDeathDebrisState,
+  upgradeStateWithRapier,
+  spawn: spawnBotDeathParts,
+  update: updateDeathDebris,
+  hitByRay: hitDebrisByRay,
+  tryHitByProjectile: tryHitDebrisWithProjectile,
+} as const;

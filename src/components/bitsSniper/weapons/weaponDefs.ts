@@ -9,7 +9,7 @@ export const ADS_FOV: Record<WeaponDef["viewModel"], number> = {
   pistol: 52,
   ak47: 48,
   shotgun: 58,
-  sniper: 22,
+  sniper: 9,
 };
 
 export const RECOIL_PATTERNS: Record<string, RecoilStep[]> = {
@@ -156,7 +156,7 @@ export const WEAPONS: WeaponDef[] = [
     range: 240,
     ammo: 5,
     maxAmmo: 5,
-    reloadTime: 3.0,
+    reloadTime: 3.4,   // 5 - 1.6 (טווח אנימציית הרילואד)
     projColor: "#ff9944",
     projSpeed: 60,
     hitMode: "hitscan",

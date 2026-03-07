@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 const CROSSY_ROUTE_PREFIX = "/expo-crossy-road";
 
@@ -87,7 +89,7 @@ function crossyStaticDevPlugin(): Plugin {
 // If your site is at: yaliby.github.io/repo-name/, set to '/repo-name/'
 
 export default defineConfig({
-  plugins: [crossyStaticDevPlugin(), react()],
+  plugins: [crossyStaticDevPlugin(), react(), wasm(), topLevelAwait()],
   base: "/",
 });
 
