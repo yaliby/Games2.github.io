@@ -1,7 +1,7 @@
 .suggestions-fab {
   position: fixed;
-  right: clamp(0.85rem, 2vw, 1.35rem);
-  bottom: clamp(0.85rem, 2.4vh, 1.35rem);
+  right: clamp(0.9rem, 3vw, 1.8rem);
+  bottom: clamp(0.9rem, 3.2vh, 1.8rem);
   z-index: 1000;
   border: 1px solid rgba(152, 196, 255, 0.42);
   border-radius: 999px;
@@ -10,8 +10,8 @@
     linear-gradient(135deg, rgba(24, 46, 86, 0.97), rgba(19, 36, 67, 0.97));
   color: #f3f6ff;
   font-weight: 800;
-  font-size: 0.9rem;
-  padding: 0.6rem 1rem;
+  font-size: clamp(0.95rem, 2.4vmin, 1.4rem);
+  padding: clamp(0.65rem, 1.8vmin, 1.15rem) clamp(1rem, 3vmin, 1.7rem);
   cursor: pointer;
   box-shadow:
     0 1.05rem 2rem rgba(0, 0, 0, 0.44),
@@ -485,9 +485,9 @@
   }
 
   .suggestions-fab {
-    right: 0.58rem;
-    bottom: 0.58rem;
-    font-size: 0.81rem;
-    padding: 0.5rem 0.78rem;
+    right: clamp(0.6rem, 2.5vw, 1rem);
+    bottom: clamp(0.6rem, 2.8vh, 1rem);
+    font-size: clamp(0.88rem, 3.2vmin, 1.15rem);
+    padding: clamp(0.55rem, 2.2vmin, 0.9rem) clamp(0.85rem, 3.5vmin, 1.25rem);
   }
 }

@@ -101,7 +101,7 @@ export const WEAPONS: WeaponDef[] = [
     range: 130,
     ammo: 30,
     maxAmmo: 30,
-    reloadTime: 1.95,
+    reloadTime: 2.55,
     projColor: "#ffe070",
     projSpeed: 57,
     hitMode: "hitscan",

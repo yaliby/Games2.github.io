@@ -52,11 +52,11 @@ export function updateBotHpLabel(mesh: THREE.Group, label: string, health: numbe
   ctx.fillStyle = "rgba(4, 12, 24, 0.88)";
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(126, 188, 244, 0.74)";
+  ctx.strokeStyle = "rgba(100, 120, 140, 0.5)";
   ctx.stroke();
 
   ctx.textAlign = "center";
-  ctx.fillStyle = "#e8f4ff";
+  ctx.fillStyle = "#8a9eb5";
   ctx.font = "700 22px Oxanium, Segoe UI, sans-serif";
   ctx.fillText(label, width * 0.5, 30);
 
@@ -73,7 +73,7 @@ export function updateBotHpLabel(mesh: THREE.Group, label: string, health: numbe
   ctx.fillStyle = getBotHudColor(ratio);
   ctx.fill();
 
-  ctx.fillStyle = "#d9e9f8";
+  ctx.fillStyle = "#8a9eb5";
   ctx.font = "700 16px Oxanium, Segoe UI, sans-serif";
   ctx.fillText(`${hpValue}/${BOT_MAX_HEALTH} HP`, width * 0.5, 81);
   texture.needsUpdate = true;

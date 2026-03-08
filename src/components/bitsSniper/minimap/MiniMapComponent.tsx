@@ -19,7 +19,7 @@ export type MiniMapProps = {
   mapImage: string | null;
   mapId: string;
   player: { x: number; z: number; forwardX?: number; forwardZ?: number };
-  teammates?: { x: number; z: number }[];
+  teammates?: { x: number; z: number; forwardX?: number; forwardZ?: number }[];
   objectives?: { x: number; z: number; label?: string }[];
   showEnemies?: boolean;
   enemies?: { x: number; z: number; forwardX?: number; forwardZ?: number }[];
@@ -128,11 +128,18 @@ export function MiniMapComponent({
           const pos = worldToScreen(t.x, t.z);
           if (!isInRadius(pos.x, pos.y)) return null;
           const c = clampToCircle(pos.x, pos.y);
+          const fx = t.forwardX ?? 0;
+          const fz = t.forwardZ ?? 1;
+          const arrowDegTeammate = (Math.atan2(fx, fz) * 180) / Math.PI;
           return (
             <div
               key={i}
               className="bits-sniper-minimap-widget__teammate"
-              style={{ left: c.x, top: c.y, transform: "translate(-50%, -50%)" }}
+              style={{
+                left: c.x,
+                top: c.y,
+                transform: `translate(-50%, -50%) rotate(${arrowDegTeammate}deg)`,
+              }}
               title="Teammate"
             />
           );

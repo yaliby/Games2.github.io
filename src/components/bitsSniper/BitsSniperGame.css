@@ -345,6 +345,31 @@
   border-color: rgba(140,200,255,0.8);
   color: #fff;
 }
+.bits-sniper-intro-setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.bits-sniper-intro-mode-btn {
+  padding: 0.32rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(100,170,230,0.4);
+  background: rgba(8,26,48,0.7);
+  color: rgba(200,228,255,0.9);
+  font: 600 0.72rem/1 "Oxanium","Segoe UI",sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.bits-sniper-intro-mode-btn.is-active {
+  background: rgba(40,110,190,0.85);
+  border-color: rgba(140,200,255,0.8);
+  color: #fff;
+}
+.bits-sniper-intro-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(180,210,245,0.88);
+}
 .bits-sniper-intro-setting--spawn-map {
   display: flex;
   flex-direction: column;
@@ -1498,6 +1523,9 @@
   backdrop-filter: blur(4px);
   animation: bits-sniper-fade-in 0.25s ease-out;
 }
+.bits-sniper-death-overlay--interactive {
+  pointer-events: auto;
+}
 .bits-sniper-death-title {
   font-size: 2.2rem;
   font-weight: 800;
@@ -1901,6 +1929,27 @@
   background: #ffffff;
   box-shadow: 0 0 5px rgba(255,255,255,0.95);
 }
+.bits-sniper-tactical-marker--teammate {
+  position: relative;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 12px solid #4da6ff;
+  filter: drop-shadow(0 0 3px rgba(77,166,255,0.7));
+}
+.bits-sniper-tactical-marker--teammate::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #a8d4ff;
+  box-shadow: 0 0 4px rgba(255,255,255,0.9);
+}
 .bits-sniper-tactical-marker--enemy {
   position: relative;
   width: 0;
@@ -2008,11 +2057,25 @@
 }
 .bits-sniper-minimap-widget__teammate {
   position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #4da6ff;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 12px solid #4da6ff;
+  filter: drop-shadow(0 0 3px rgba(77, 166, 255, 0.7));
   transform: translate(-50%, -50%);
+}
+.bits-sniper-minimap-widget__teammate::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #a8d4ff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.9);
 }
 .bits-sniper-minimap-widget__enemy {
   position: absolute;

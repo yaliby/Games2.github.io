@@ -75,6 +75,18 @@ export const TACTICAL_MAP_CONFIGS: Record<string, TacticalMapConfig> = {
       { x: 0, z: -12, label: "B" },
     ],
   },
+  warehouse: {
+    mapId: "warehouse",
+    mapImage: "",
+    worldBounds: { minX: -68, maxX: 68, minZ: -68, maxZ: 68 },
+    spawnPoints: [
+      { x: -50, z: 50, label: "SW" },
+      { x:  50, z: 50, label: "SE" },
+      { x: -50, z: -50, label: "NW" },
+      { x:  50, z: -50, label: "NE" },
+      { x:   0, z:  0, label: "MID" },
+    ],
+  },
   arena: {
     mapId: "arena",
     mapImage: "",
@@ -92,6 +104,21 @@ export const TACTICAL_MAP_CONFIGS: Record<string, TacticalMapConfig> = {
     mapImage: "",
     worldBounds: { minX: -ARENA, maxX: ARENA, minZ: -ARENA, maxZ: ARENA },
     spawnPoints: [],
+  },
+  colosseum: {
+    mapId: "colosseum",
+    mapImage: "",
+    worldBounds: { minX: -38, maxX: 38, minZ: -38, maxZ: 38 },
+    spawnPoints: [{ x: 0, z: 0, label: "Center" }],
+  },
+  ctf: {
+    mapId: "ctf",
+    mapImage: "",
+    worldBounds: { minX: -42, maxX: 42, minZ: -42, maxZ: 42 },
+    spawnPoints: [
+      { x: -34, z: 0, label: "Blue" },
+      { x: 34, z: 0, label: "Red" },
+    ],
   },
 };
 

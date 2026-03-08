@@ -46,6 +46,9 @@ import {
   SLIDE_SPEED_MULT,
   LANDING_KICK_MULT,
   LOOK_SENS_BASE,
+  MOUSE_LOOK_MAX_DELTA_PER_EVENT,
+  MOUSE_LOOK_MAX_DELTA_PER_FRAME,
+  HUD_UPDATE_INTERVAL_SECS,
   VCURSOR_SENS,
   BOT_COUNT,
   BOT_RADIUS,
@@ -104,6 +107,18 @@ import {
   SHELL_PADDING_PX,
   PLAYER_SPAWN_ZONES,
   BOT_SPAWN_ZONES,
+  WAREHOUSE_PLAYER_SPAWN_ZONES,
+  WAREHOUSE_BOT_SPAWN_ZONES,
+  CTF_TEAM_SIZE,
+  CTF_CAPTURES_TO_WIN,
+  CTF_FLAG_PICKUP_RADIUS,
+  CTF_FLAG_RETURN_RADIUS,
+  CTF_FLAG_RESET_SECS,
+  CTF_RESPAWN_SECS,
+  CTF_BLUE_BASE_X,
+  CTF_RED_BASE_X,
+  CTF_BLUE_SPAWNS,
+  CTF_RED_SPAWNS,
 } from "./constants/gameConstants";
 import type {
   WeaponDef,
@@ -113,6 +128,7 @@ import type {
   KillFeedEntry,
   VmPose,
   MapId,
+  GameMode,
   FpsAssetPack,
   ViewModelAsset,
   StageSizePreset,
@@ -146,10 +162,13 @@ import { BOT_NAMES, BOT_COLORS, makeBotMesh, updateBotHpLabel } from "./bots/bot
 import { enemyDeathPhysics, type DeathDebrisState, type KillImpact } from "./enemyDeathManager";
 
 const MAPS: { id: MapId; label: string }[] = [
-  { id: "flat",     label: "Flat Playground" },
-  { id: "arena",    label: "Shell Arena" },
-  { id: "dust2",    label: "Dust II (OBJ)" },
-  { id: "levelGlb", label: "Custom Level (GLB)" },
+  { id: "flat",      label: "Flat Playground" },
+  { id: "warehouse", label: "Warehouse" },
+  { id: "arena",     label: "Shell Arena" },
+  { id: "colosseum", label: "Colosseum" },
+  { id: "ctf",       label: "CTF (5v5)" },
+  { id: "dust2",     label: "Dust II (OBJ)" },
+  { id: "levelGlb",  label: "Custom Level (GLB)" },
 ];
 
 // Build viewmodel (weapon seen in first person)
@@ -526,8 +545,8 @@ function makeViewmodel(
         reloadClip = reloadClip ?? idleClip ?? clips[0];
       }
       if (wp.viewModel === "ak47" && reloadClip) {
-        // Speed up AK magazine reload by trimming dead tail at the clip end.
-        reloadClip = trimClipTailSeconds(reloadClip, "trimTailFast", 1.8) ?? reloadClip;
+        // חיתוך ה-tail בשלב מאוחר יותר – פחות שניות נחתכות, האנימציה נגמרת קרוב יותר לסוף הקליפ.
+        reloadClip = trimClipTailSeconds(reloadClip, "trimTailFast", 0.8) ?? reloadClip;
       }
       if (wp.viewModel === "pistol" && reloadClip) {
         // Cut the pistol reload 1.5 seconds before the original clip end.
@@ -762,6 +781,10 @@ export default function BitsSniperGame() {
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
   const bgMusicStartedRef = useRef(false);
   const [selectedMapId, setSelectedMapId] = useState<MapId>("flat");
+  const [gameMode, setGameMode] = useState<GameMode>("classic");
+  const [ctfBlueScore, setCtfBlueScore] = useState(0);
+  const [ctfRedScore, setCtfRedScore] = useState(0);
+  const [ctfWinner, setCtfWinner] = useState<"blue" | "red" | null>(null);
   const [crosshairBloom, setCrosshairBloom] = useState(0);
   /** טריגר לאפקט כיווץ/שחרור בכוונת (אקדח + AK) – מוגדר ב־performance.now() בירי */
   const [crosshairSqueezeAt, setCrosshairSqueezeAt] = useState(0);
@@ -773,6 +796,7 @@ export default function BitsSniperGame() {
   const [roundTime, setRoundTime] = useState(MATCH_DURATION_SECS);
   const [playerCoords, setPlayerCoords] = useState<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
   const [botPositionsForTactical, setBotPositionsForTactical] = useState<{ x: number; z: number; forwardX: number; forwardZ: number }[]>([]);
+  const [botTeammatePositionsForTactical, setBotTeammatePositionsForTactical] = useState<{ x: number; z: number; forwardX?: number; forwardZ?: number }[]>([]);
   const [tacticalMapOpen, setTacticalMapOpen] = useState(false);
   const [tacticalMapImage, setTacticalMapImage] = useState<string | null>(null);
   /** H – הצגת אווטליין של היטבוקסים (אויבים + אלמנטים של המפה) */
@@ -813,6 +837,8 @@ export default function BitsSniperGame() {
     sprayIndex: 0,
     lastShotTs: 0,
   });
+  const gameModeRef = useRef<GameMode>("classic");
+  useEffect(() => { gameModeRef.current = gameMode; }, [gameMode]);
 
   const settingsOverlayRef = useRef<HTMLDivElement | null>(null);
   const pausedAtRef = useRef(0);
@@ -1280,6 +1306,10 @@ export default function BitsSniperGame() {
   useEffect(()=>{ showIntroRef.current = showIntro; }, [showIntro]);
   useEffect(()=>{ selectedMapIdRef.current = selectedMapId; }, [selectedMapId]);
 
+  useEffect(() => {
+    if (ctfWinner) plmRef.current?.releaseLock();
+  }, [ctfWinner]);
+
   // מקים את סצנת ה-THREE רק אחרי שיש assets ושאנחנו באמת במשחק (לא במסך ה-intro).
   useEffect(()=>{
     const mount = mountRef.current; if(!mount || !fpsAssets) return;
@@ -1308,6 +1338,11 @@ export default function BitsSniperGame() {
     setRoundTime(MATCH_DURATION_SECS);
     setMatchEnded(false);
     setKillFeed([]);
+    if (gameMode === "ctf") {
+      setCtfBlueScore(0);
+      setCtfRedScore(0);
+      setCtfWinner(null);
+    }
 
     //  Renderer 
     const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:"high-performance" });
@@ -1489,10 +1524,7 @@ export default function BitsSniperGame() {
     }
     function getEffectiveReloadDuration(wp: WeaponDef) {
       const base = wp.reloadTime;
-      if (wp.viewModel === "ak47") {
-        const clipDur = getVmAnimRig()?.actions.reload?.getClip().duration ?? base;
-        return clamp(Math.max(base * 1.15, clipDur * 0.52), base, 3.3);
-      }
+      // AK-47: משך הרילואד = reloadTime בלבד, האנימציה רצה בזמן רגיל (1:1).
       if (wp.viewModel !== "pistol") return base;
       const clipDur = getVmAnimRig()?.actions.reload?.getClip().duration ?? base;
       return clamp(Math.max(base * 1.25, clipDur * 0.5), base, 2.2);
@@ -1630,8 +1662,9 @@ export default function BitsSniperGame() {
     bounce.position.set(-42, 36, -24);
     scene.add(bounce);
 
+    const isCTF = gameMode === "ctf";
     //  Map – boundaryHalf matches this map's walls so the safety clamp doesn't create an invisible barrier.
-    const { collidables, keyPoints, levelRoot, boundaryHalf } = buildMap(scene, assets.levelTemplate ?? null);
+    const { collidables, keyPoints, levelRoot, boundaryHalf } = buildMap(scene, assets.levelTemplate ?? null, selectedMapIdRef.current);
     if (levelRoot) levelRoot.updateMatrixWorld(true);
 
     // Minimap camera (top-down, uses this map's boundary)
@@ -1794,8 +1827,10 @@ export default function BitsSniperGame() {
     }
 
     //  Spawns (player/CT and enemies distributed over the map) 
-    let playerSpawnSeed = Math.floor(Math.random() * PLAYER_SPAWN_ZONES.length);
-    let botSpawnSeed = Math.floor(Math.random() * BOT_SPAWN_ZONES.length);
+    const activePlayerZones = selectedMapIdRef.current === "warehouse" ? WAREHOUSE_PLAYER_SPAWN_ZONES : PLAYER_SPAWN_ZONES;
+    const activeBotZones = selectedMapIdRef.current === "warehouse" ? WAREHOUSE_BOT_SPAWN_ZONES : BOT_SPAWN_ZONES;
+    let playerSpawnSeed = Math.floor(Math.random() * activePlayerZones.length);
+    let botSpawnSeed = Math.floor(Math.random() * activeBotZones.length);
     const spawnProbe = new THREE.Box3();
     const playerSpawnSize = new THREE.Vector3(PLAYER_RADIUS * 2, PLAYER_HEIGHT * 2, PLAYER_RADIUS * 2);
     const botSpawnSize = new THREE.Vector3(BOT_RADIUS * 2, BOT_HEIGHT * 2, BOT_RADIUS * 2);
@@ -1808,8 +1843,8 @@ export default function BitsSniperGame() {
     const spawnRayDir = new THREE.Vector3(0, -1, 0);
 
     function snapPlayerToSafeSpawn() {
-      // ב-flat playground תמיד מצמידים למרכז ולגובה הרצפה בלי ריי-קאסטים כדי למנוע מצבים לא צפויים.
-      if (USE_FLAT_PLAYGROUND) {
+      // ב-flat playground / warehouse / colosseum תמיד מצמידים למרכז ולגובה הרצפה בלי ריי-קאסטים.
+      if (USE_FLAT_PLAYGROUND || selectedMapIdRef.current === "warehouse" || selectedMapIdRef.current === "colosseum" || selectedMapIdRef.current === "ctf") {
         yawObj.position.x = clamp(yawObj.position.x, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
         yawObj.position.z = clamp(yawObj.position.z, -boundaryHalf + PLAYER_RADIUS, boundaryHalf - PLAYER_RADIUS);
         yawObj.position.y = PLAYER_HEIGHT;
@@ -1923,16 +1958,31 @@ export default function BitsSniperGame() {
     }
     buildDynamicLevelSpawns();
 
-    const customSpawns = customSpawnsForSessionRef.current;
-    if (customSpawns.enemies?.length) {
-      levelBotSpawns.length = 0;
-      customSpawns.enemies.forEach(({ x, z }) => levelBotSpawns.push(new THREE.Vector3(x, BOT_HEIGHT, z)));
-    }
-    if (customSpawns.player) {
+    if (selectedMapIdRef.current === "ctf") {
       levelPlayerSpawns.length = 0;
-      levelPlayerSpawns.push(new THREE.Vector3(customSpawns.player.x, PLAYER_HEIGHT, customSpawns.player.z));
+      levelPlayerSpawns.push(new THREE.Vector3(CTF_BLUE_SPAWNS[0][0], PLAYER_HEIGHT, CTF_BLUE_SPAWNS[0][1]));
+      levelBotSpawns.length = 0;
+      // Friendly bots (blue): indices 0..3 → blue spawns 1..4
+      for (let i = 1; i < CTF_BLUE_SPAWNS.length; i++) {
+        levelBotSpawns.push(new THREE.Vector3(CTF_BLUE_SPAWNS[i][0], BOT_HEIGHT, CTF_BLUE_SPAWNS[i][1]));
+      }
+      // Enemy bots (red): indices 4..8 → red spawns 0..4
+      for (const [x, z] of CTF_RED_SPAWNS) {
+        levelBotSpawns.push(new THREE.Vector3(x, BOT_HEIGHT, z));
+      }
     }
 
+    const customSpawns = customSpawnsForSessionRef.current;
+    if (!isCTF) {
+      if (customSpawns.enemies?.length) {
+        levelBotSpawns.length = 0;
+        customSpawns.enemies.forEach(({ x, z }) => levelBotSpawns.push(new THREE.Vector3(x, BOT_HEIGHT, z)));
+      }
+      if (customSpawns.player) {
+        levelPlayerSpawns.length = 0;
+        levelPlayerSpawns.push(new THREE.Vector3(customSpawns.player.x, PLAYER_HEIGHT, customSpawns.player.z));
+      }
+    }
     function captureTopDownMapSnapshot(): string | null {
       if (!renderer || !scene || !minimapCamera) return null;
 
@@ -2077,8 +2127,17 @@ export default function BitsSniperGame() {
       return fallback;
     }
 
-    function getBotSpawnCandidate(idx: number): THREE.Vector3 {
+    function getBotSpawnCandidate(idx: number, botIdForCtf?: number): THREE.Vector3 {
       if (levelBotSpawns.length > 0) {
+        if (selectedMapIdRef.current === "ctf" && botIdForCtf !== undefined) {
+          const friendlyCount = CTF_TEAM_SIZE - 1;
+          if (botIdForCtf < friendlyCount) {
+            return levelBotSpawns[idx % friendlyCount].clone();
+          }
+          const redStart = friendlyCount;
+          const redCount = levelBotSpawns.length - redStart;
+          return levelBotSpawns[redStart + (idx % redCount)].clone();
+        }
         return levelBotSpawns[idx % levelBotSpawns.length].clone();
       }
       if (USE_FLAT_PLAYGROUND) {
@@ -2111,7 +2170,7 @@ export default function BitsSniperGame() {
         if (levelPlayerSpawns.length > 0) {
           playerSpawnSeed = idx % levelPlayerSpawns.length;
         } else {
-          playerSpawnSeed = idx % PLAYER_SPAWN_ZONES.length;
+          playerSpawnSeed = idx % activePlayerZones.length;
         }
         return candidate;
       }
@@ -2131,7 +2190,7 @@ export default function BitsSniperGame() {
       if (levelPlayerSpawns.length > 0) {
         playerSpawnSeed = (playerSpawnSeed + 1) % levelPlayerSpawns.length;
       } else {
-        playerSpawnSeed = (playerSpawnSeed + 1) % PLAYER_SPAWN_ZONES.length;
+        playerSpawnSeed = (playerSpawnSeed + 1) % activePlayerZones.length;
       }
       let best = getPlayerSpawnCandidate(playerSpawnSeed);
       let bestScore = -Infinity;
@@ -2147,7 +2206,7 @@ export default function BitsSniperGame() {
           if (levelPlayerSpawns.length > 0) {
             playerSpawnSeed = idx % levelPlayerSpawns.length;
           } else {
-            playerSpawnSeed = idx % PLAYER_SPAWN_ZONES.length;
+            playerSpawnSeed = idx % activePlayerZones.length;
           }
           return candidate;
         }
@@ -2161,12 +2220,16 @@ export default function BitsSniperGame() {
 
     function pickBotSpawn(botId:number): THREE.Vector3 {
       const otherBots = bots.filter((b)=>!b.dead && b.id!==botId).map((b)=>b.mesh.position);
-      let best = getBotSpawnCandidate(botSpawnSeed);
+      const ctfBotSpawn = selectedMapIdRef.current === "ctf" && levelBotSpawns.length > 0;
+      const poolSize = ctfBotSpawn
+        ? (botId < CTF_TEAM_SIZE - 1 ? CTF_TEAM_SIZE - 1 : levelBotSpawns.length - (CTF_TEAM_SIZE - 1))
+        : levelBotSpawns.length;
+      let best = getBotSpawnCandidate(botSpawnSeed, ctfBotSpawn ? botId : undefined);
       let bestScore = -Infinity;
 
       for(let i=0;i<52;i++){
         const idx = botSpawnSeed + botId + i;
-        const candidate = getBotSpawnCandidate(idx);
+        const candidate = getBotSpawnCandidate(idx, ctfBotSpawn ? botId : undefined);
         if (overlapsCollidable(candidate, botSpawnSize)) continue;
         const playerDist = candidate.distanceTo(yawObj.position);
         let nearestBot = Infinity;
@@ -2174,9 +2237,9 @@ export default function BitsSniperGame() {
 
         if(playerDist >= 24 && nearestBot >= 10){
           if (levelBotSpawns.length > 0) {
-            botSpawnSeed = (idx + 1) % levelBotSpawns.length;
+            botSpawnSeed = (idx + 1) % (ctfBotSpawn ? poolSize : levelBotSpawns.length);
           } else {
-            botSpawnSeed = (idx + 1) % BOT_SPAWN_ZONES.length;
+            botSpawnSeed = (idx + 1) % activeBotZones.length;
           }
           return candidate;
         }
@@ -2188,9 +2251,9 @@ export default function BitsSniperGame() {
         }
       }
       if (levelBotSpawns.length > 0) {
-        botSpawnSeed = (botSpawnSeed + 1) % levelBotSpawns.length;
+        botSpawnSeed = (botSpawnSeed + 1) % (ctfBotSpawn ? poolSize : levelBotSpawns.length);
       } else {
-        botSpawnSeed = (botSpawnSeed + 1) % BOT_SPAWN_ZONES.length;
+        botSpawnSeed = (botSpawnSeed + 1) % activeBotZones.length;
       }
       return best;
     }
@@ -2279,8 +2342,12 @@ export default function BitsSniperGame() {
 
     const weaponPool = Array.isArray(botWeaponPool) && botWeaponPool.length > 0 ? botWeaponPool : [0, 1, 2, 3];
     const muzzleOffsetY = BOT_HEIGHT * 0.36;
-    for(let i=0;i<BOT_COUNT;i++){
-      const mesh = makeBotMesh(BOT_COLORS[i%BOT_COLORS.length], null);
+    const botCount = isCTF ? (CTF_TEAM_SIZE * 2 - 1) : BOT_COUNT;
+    const FRIENDLY_COLOR = new THREE.Color("#2288ff");
+    const ENEMY_COLOR = new THREE.Color("#ff3333");
+    for(let i=0;i<botCount;i++){
+      const botColor = isCTF ? (i < CTF_TEAM_SIZE - 1 ? FRIENDLY_COLOR : ENEMY_COLOR) : BOT_COLORS[i % BOT_COLORS.length];
+      const mesh = makeBotMesh(botColor, null);
       mesh.position.copy(pickBotSpawn(i));
       mesh.position.y = getBotGroundY(mesh.position.x, mesh.position.z, mesh.position.y);
       scene.add(mesh);
@@ -2304,13 +2371,72 @@ export default function BitsSniperGame() {
         yaw:Math.random()*Math.PI*2, targetYaw:0,
         wpIdx:wIdx,
         fireTimer:Math.random()*2,
-        strafeDir:Math.random()<0.5?1:-1, strafeTimer:rng(0.5,1.8),
+        strafeDir:Math.random()<0.5?1:-1, strafeTimer:rng(0.8, 2.6),
         reloadTimer:0, ammo:WEAPONS[wIdx].maxAmmo,
         label:botLabel, lastHudHealth:BOT_MAX_HEALTH,
         animTime:rng(0,Math.PI*2), animPhase:rng(0,Math.PI*2),
+        invincibleTimer: SPAWN_INVINCIBLE,
       };
       Object.assign(bot, bindBotAnimationRig(mesh));
       bots.push(bot);
+    }
+
+    // ─── CTF: flags, team assignment, scoring ────────────────────────────────
+    type CtfTeam = "blue" | "red";
+    type CtfFlagState = {
+      team: CtfTeam;
+      basePos: THREE.Vector3;
+      mesh: THREE.Group;
+      carriedBy: number | "player" | null;
+      dropped: boolean;
+      droppedTimer: number;
+    };
+    const ctfFlags: CtfFlagState[] = [];
+    const ctfBotTeam: CtfTeam[] = [];
+    let ctfBScore = 0;
+    let ctfRScore = 0;
+    let ctfMatchOver = false;
+
+    if (isCTF) {
+      const blueBase = new THREE.Vector3(CTF_BLUE_BASE_X, 0.02, 0);
+      const redBase = new THREE.Vector3(CTF_RED_BASE_X, 0.02, 0);
+
+      function makeFlagMesh(color: string): THREE.Group {
+        const fg = new THREE.Group();
+        const poleMat = new THREE.MeshStandardMaterial({ color: "#888", roughness: 0.5, metalness: 0.3 });
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.2, 8), poleMat);
+        pole.position.y = 1.6;
+        pole.castShadow = true;
+        fg.add(pole);
+        const flagMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide });
+        const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.8), flagMat);
+        flag.position.set(0.6, 2.7, 0);
+        flag.castShadow = true;
+        fg.add(flag);
+        const baseMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.1, transparent: true, opacity: 0.4 });
+        const baseRing = new THREE.Mesh(new THREE.CylinderGeometry(CTF_FLAG_RETURN_RADIUS, CTF_FLAG_RETURN_RADIUS, 0.06, 24), baseMat);
+        baseRing.position.y = 0.03;
+        fg.add(baseRing);
+        return fg;
+      }
+      const blueFlag = makeFlagMesh("#2288ff");
+      blueFlag.position.copy(blueBase);
+      scene.add(blueFlag);
+      ctfFlags.push({ team: "blue", basePos: blueBase.clone(), mesh: blueFlag, carriedBy: null, dropped: false, droppedTimer: 0 });
+
+      const redFlag = makeFlagMesh("#ff3333");
+      redFlag.position.copy(redBase);
+      scene.add(redFlag);
+      ctfFlags.push({ team: "red", basePos: redBase.clone(), mesh: redFlag, carriedBy: null, dropped: false, droppedTimer: 0 });
+
+      const friendlyCount = CTF_TEAM_SIZE - 1;
+      for (let i = 0; i < bots.length; i++) {
+        ctfBotTeam[i] = i < friendlyCount ? "blue" : "red";
+      }
+    }
+
+    function isFriendlyBot(botIdx: number): boolean {
+      return isCTF && ctfBotTeam[botIdx] === "blue";
     }
 
     //  Hitbox outline overlay (H) – אווטליין היטבוקסים לאויבים ואלמנטי מפה
@@ -2319,7 +2445,7 @@ export default function BitsSniperGame() {
     const botOutlineMat = new THREE.LineBasicMaterial({ color: 0x00ff88, depthTest: false });
     const mapOutlineMat = new THREE.LineBasicMaterial({ color: 0xff8822, depthTest: false });
     const botOutlineMeshes: THREE.LineSegments[] = [];
-    for (let i = 0; i < BOT_COUNT; i++) {
+    for (let i = 0; i < botCount; i++) {
       const capGeo = new THREE.CylinderGeometry(BOT_RADIUS, BOT_RADIUS, BOT_HEIGHT * 2, 12);
       const edgeGeo = new THREE.EdgesGeometry(capGeo);
       capGeo.dispose();
@@ -2405,6 +2531,7 @@ export default function BitsSniperGame() {
 
       for(const bot of bots){
         if(bot.dead) continue;
+        if (isFriendlyBot(bot.id)) continue;
 
         const hit = segmentHitsCapsule(origin, hsRayEnd, bot.mesh.position, BOT_HEIGHT, BOT_RADIUS + 0.05, hsTmpHit);
         if(!hit.hit) continue;
@@ -2421,17 +2548,23 @@ export default function BitsSniperGame() {
       }
 
       if(!bestBot) return false;
+      if ((bestBot.invincibleTimer ?? 0) > 0) return false;
 
       const baseDamage = getWeaponDamageAtDistance(wp, bestDist);
       const damage = baseDamage * (headshot ? getWeaponHeadshotMult(wp) : 1);
       bestBot.health -= damage;
+      if (bestBot.health > 0 && Math.random() < 0.65) {
+        bestBot.strafeDir = -bestBot.strafeDir;
+        bestBot.strafeTimer = rng(0.3, 0.8);
+      }
       S.hitMark = 1;
       setHitMarker(1);
       if(bestBot.health <= 0){
         bestBot.health = 0;
         bestBot.dead = true;
         bestBot.mesh.visible = false;
-        bestBot.respawnTimer = RESPAWN_SECS;
+        bestBot.respawnTimer = isCTF ? CTF_RESPAWN_SECS : RESPAWN_SECS;
+        if (isCTF) dropBotFlag(bestBot.id);
         S.kills++;
         setKills(S.kills);
         pushKillFeed(`You eliminated ${bestBot.label}${headshot ? " (Headshot)" : ""}`, headshot);
@@ -2479,12 +2612,58 @@ export default function BitsSniperGame() {
       return true;
     }
 
+    function hitEnemyBotByBotRay(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, wp: WeaponDef, shooterTeam: CtfTeam, shooterLabel: string): boolean {
+      let bestDist = maxDist;
+      let bestBot: BotState | null = null;
+
+      hsRayEnd.copy(dir).multiplyScalar(maxDist).add(origin);
+
+      for (const bot of bots) {
+        if (bot.dead) continue;
+        if (isCTF && ctfBotTeam[bot.id] === shooterTeam) continue;
+        const hit = segmentHitsCapsule(origin, hsRayEnd, bot.mesh.position, BOT_HEIGHT, BOT_RADIUS + 0.05, hsTmpHit);
+        if (!hit.hit) continue;
+        const tDist = hit.segS * maxDist;
+        if (tDist <= 0 || tDist >= bestDist) continue;
+        bestDist = tDist;
+        bestBot = bot;
+      }
+      if (!bestBot) return false;
+      if ((bestBot.invincibleTimer ?? 0) > 0) return false;
+      const damage = getWeaponDamageAtDistance(wp, bestDist);
+      bestBot.health -= damage;
+      if (bestBot.health <= 0) {
+        bestBot.health = 0;
+        bestBot.dead = true;
+        bestBot.mesh.visible = false;
+        bestBot.respawnTimer = isCTF ? CTF_RESPAWN_SECS : RESPAWN_SECS;
+        if (isCTF) dropBotFlag(bestBot.id);
+        pushKillFeed(`${shooterLabel} eliminated ${bestBot.label}`);
+        enemyDeathPhysics.spawn(bestBot, deathDebrisState, {
+          direction: dir.clone().normalize(),
+          impulseMultiplier: 1.0,
+          impactPoint: hsTmpHit.clone(),
+        });
+      }
+      return true;
+    }
+
     function doHitscan(origin: THREE.Vector3, dir: THREE.Vector3, wp: WeaponDef, fromBot: boolean, sourceName: string, nowSec: number){
       const worldHit = traceWorldHitWithNormal(origin, dir, wp.range);
       const maxDist = worldHit ? worldHit.dist : wp.range;
       let hitActor: boolean;
       if(fromBot){
-        hitActor = hitPlayerByRay(origin, dir, maxDist, sourceName, wp);
+        const shooterBot = bots.find(b => b.label === sourceName);
+        const shooterIsFriendly = shooterBot ? isFriendlyBot(shooterBot.id) : false;
+        if (isCTF && shooterBot) {
+          const team = ctfBotTeam[shooterBot.id];
+          hitActor = hitEnemyBotByBotRay(origin, dir, maxDist, wp, team, sourceName);
+          if (!hitActor && !shooterIsFriendly) {
+            hitActor = hitPlayerByRay(origin, dir, maxDist, sourceName, wp);
+          }
+        } else {
+          hitActor = hitPlayerByRay(origin, dir, maxDist, sourceName, wp);
+        }
       } else {
         hitActor = hitBotByRay(origin, dir, maxDist, wp);
       }
@@ -2860,6 +3039,28 @@ export default function BitsSniperGame() {
       setIsSliding(false);
     }
 
+    function dropCarriedFlag() {
+      for (const flag of ctfFlags) {
+        if (flag.carriedBy === "player") {
+          flag.carriedBy = null;
+          flag.dropped = true;
+          flag.droppedTimer = CTF_FLAG_RESET_SECS;
+          pushKillFeed("You dropped the flag!");
+        }
+      }
+    }
+
+    function dropBotFlag(botIdx: number) {
+      for (const flag of ctfFlags) {
+        if (flag.carriedBy === botIdx) {
+          flag.carriedBy = null;
+          flag.dropped = true;
+          flag.droppedTimer = CTF_FLAG_RESET_SECS;
+          pushKillFeed(`${bots[botIdx].label} dropped the flag!`);
+        }
+      }
+    }
+
     function killPlayer(killer = "Enemy"){
       if(S.dead || S.invincible>0) return;
       S.lastDamageTs = performance.now()/1000;
@@ -2867,7 +3068,10 @@ export default function BitsSniperGame() {
       S.sliding = false;
       S.slideTimer = 0;
       S.dead=true; S.deaths++;
-      S.respawnTimer=RESPAWN_SECS;
+      if (isCTF) {
+        dropCarriedFlag();
+      }
+      S.respawnTimer = isCTF ? CTF_RESPAWN_SECS : RESPAWN_SECS;
       setDead(true); setDeaths(S.deaths); setRespawnT(RESPAWN_SECS);
       setIsCrouching(false);
       setIsSliding(false);
@@ -2915,6 +3119,9 @@ export default function BitsSniperGame() {
       }
     };
 
+    // צבירת תנועת עכבר – מיושם ב-rAF כדי למנוע קפיצות כשהדפדפן שולח movementX/Y קיצוניים (למשל אחרי איבוד פוקוס).
+    let lookAccumDx = 0;
+    let lookAccumDy = 0;
     const onMouseMove = (e:MouseEvent)=>{
       if (runStateRef.current === "paused") {
         if (inputModeRef.current === "menu" && document.pointerLockElement === renderer.domElement) {
@@ -2927,21 +3134,19 @@ export default function BitsSniperGame() {
         return;
       }
       if(document.pointerLockElement!==renderer.domElement || S.dead) return;
-      const baseAimMult = S.aiming ? ADS_LOOK_SENS_MULT * adsSensRef.current : 1;
-      const sniperSlow = (S.aiming && WEAPONS[S.wpIdx].viewModel === "sniper") ? SNIPER_ADS_SENS_MULT : 1;
-      const sens = lookSensRef.current * baseAimMult * sniperSlow;
-      // יש לעיתים movementX/Y קיצוני בפריים יחיד – נחתוך לדלתא סבירה כדי למנוע "טלקפורט" במבט.
-      const maxDelta = 50;
-      const dx = clamp(e.movementX, -maxDelta, maxDelta);
-      const dy = clamp(e.movementY, -maxDelta, maxDelta);
-      yawObj.rotation.y   -= dx * sens;
-      pitchObj.rotation.x -= dy * sens;
-      pitchObj.rotation.x  = clamp(pitchObj.rotation.x, -1.35, 1.35);
+      const dx = clamp(e.movementX, -MOUSE_LOOK_MAX_DELTA_PER_EVENT, MOUSE_LOOK_MAX_DELTA_PER_EVENT);
+      const dy = clamp(e.movementY, -MOUSE_LOOK_MAX_DELTA_PER_EVENT, MOUSE_LOOK_MAX_DELTA_PER_EVENT);
+      lookAccumDx += dx;
+      lookAccumDy += dy;
     };
 
     const onKeyDown = (e:KeyboardEvent)=>{
       const inGameLock = document.pointerLockElement === renderer.domElement;
       if (inGameLock) {
+        if (e.code === "ControlLeft" || e.code === "ControlRight") {
+          e.preventDefault();
+          return;
+        }
         if (e.code === "F5" || (e.ctrlKey && e.code === "KeyR") || (e.metaKey && e.code === "KeyR")) {
           e.preventDefault();
           return;
@@ -3063,7 +3268,7 @@ export default function BitsSniperGame() {
     renderer.domElement.addEventListener("mouseup",   onMouseUpTrack);
     renderer.domElement.addEventListener("contextmenu", (ev)=>ev.preventDefault());
     document.addEventListener("wheel", onWheel, { passive:false });
-    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mousemove", onMouseMove, { passive: true });
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup",   onKeyUp);
 
@@ -3071,13 +3276,15 @@ export default function BitsSniperGame() {
     function applySplash(proj:Projectile, pos:THREE.Vector3){
       for(const bot of bots){
         if(bot.dead) continue;
+        if ((bot.invincibleTimer ?? 0) > 0) continue;
         const d=bot.mesh.position.distanceTo(pos);
         if(d<proj.splashR){
           bot.health -= proj.splashDmg*(1-d/proj.splashR);
           if(bot.health<=0){
             bot.health=0;
             bot.dead=true; bot.mesh.visible=false;
-            bot.respawnTimer=RESPAWN_SECS;
+            bot.respawnTimer = isCTF ? CTF_RESPAWN_SECS : RESPAWN_SECS;
+            if (isCTF) dropBotFlag(bot.id);
             if(!proj.fromBot){
               S.kills++;
               setKills(S.kills);
@@ -3116,6 +3323,7 @@ export default function BitsSniperGame() {
         if(bot.respawnTimer<=0){
           bot.dead=false; bot.health=BOT_MAX_HEALTH; bot.mesh.visible=true;
           bot.ammo=WEAPONS[bot.wpIdx].maxAmmo;
+          bot.invincibleTimer = SPAWN_INVINCIBLE;
           bot.mesh.position.copy(pickBotSpawn(bot.id));
           bot.mesh.position.y = getBotGroundY(bot.mesh.position.x, bot.mesh.position.z, bot.mesh.position.y);
           bot.onGround = true;
@@ -3134,28 +3342,66 @@ export default function BitsSniperGame() {
         }
         return;
       }
+      if ((bot.invincibleTimer ?? 0) > 0) {
+        bot.invincibleTimer = Math.max(0, (bot.invincibleTimer ?? 0) - dt);
+      }
       const wp = WEAPONS[bot.wpIdx];
-      const bp = bot.mesh.position, pp = yawObj.position;
-      _tv.copy(pp).sub(bp);
+      const bp = bot.mesh.position;
+      const friendly = isFriendlyBot(bot.id);
+
+      // Both teams: target nearest enemy (player or enemy bot). Fair 5v5 engagement.
+      let targetPos: THREE.Vector3;
+      if (friendly) {
+        let closestEnemy: BotState | null = null;
+        let closestD = Infinity;
+        for (let ei = CTF_TEAM_SIZE - 1; ei < bots.length; ei++) {
+          if (bots[ei].dead) continue;
+          const d = bp.distanceTo(bots[ei].mesh.position);
+          if (d < closestD) { closestD = d; closestEnemy = bots[ei]; }
+        }
+        targetPos = closestEnemy ? closestEnemy.mesh.position : yawObj.position;
+      } else {
+        let closestTarget: { pos: THREE.Vector3 } | null = null;
+        let closestD = Infinity;
+        if (!S.dead) {
+          const d = bp.distanceTo(yawObj.position);
+          if (d < closestD) { closestD = d; closestTarget = { pos: yawObj.position.clone() }; }
+        }
+        const friendlyCount = CTF_TEAM_SIZE - 1;
+        for (let fi = 0; fi < friendlyCount; fi++) {
+          if (bots[fi].dead) continue;
+          const d = bp.distanceTo(bots[fi].mesh.position);
+          if (d < closestD) { closestD = d; closestTarget = { pos: bots[fi].mesh.position.clone() }; }
+        }
+        targetPos = closestTarget ? closestTarget.pos : yawObj.position;
+      }
+      _tv.copy(targetPos).sub(bp);
       const dist = _tv.length();
 
-      // Face player (smooth yaw + model forward offset)
       bot.targetYaw = Math.atan2(_tv.x, _tv.z);
       let yawDiff = bot.targetYaw - bot.yaw;
       while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
       while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-      bot.yaw += yawDiff * Math.min(1, dt * BOT_YAW_LERP);
+      bot.yaw += yawDiff * Math.min(1, dt * BOT_YAW_LERP * (0.85 + Math.sin(bot.id * 1.7) * 0.15));
       bot.mesh.rotation.y = bot.yaw + BOT_MODEL_FACING_OFFSET;
 
-      // Strafe: intentional direction changes, longer segments
+      if (dist < wp.range * 1.5) {
+        if (bot.lastTargetSeenAt == null) bot.lastTargetSeenAt = nowSec;
+      } else {
+        bot.lastTargetSeenAt = undefined;
+      }
+
       bot.strafeTimer -= dt;
       if (bot.strafeTimer <= 0) {
-        bot.strafeDir = -bot.strafeDir;
-        bot.strafeTimer = rng(0.8, 2.4);
+        bot.strafeDir = Math.random() < 0.15 ? 0 : -bot.strafeDir;
+        bot.strafeTimer = rng(0.6, 2.4) + Math.sin(nowSec * 1.7 + bot.id * 3.1) * 0.5;
       }
-      const ideal = 14 + bot.id * 1.1;
-      const fwd = dist > ideal ? 1 : (dist < ideal * 0.55 ? -0.55 : 0);
-      const maxSpeed = dist > ideal * 1.2 ? BOT_SPEED_RUN : (dist < ideal * 0.6 ? BOT_SPEED_RUN * 0.6 : BOT_SPEED_WALK);
+      const ideal = 10 + (bot.id % 5) * 2.5 + Math.sin(bot.id * 2.7) * 3;
+      const isLowHp = bot.health < 35;
+      const fwd = dist > ideal ? 1 : (dist < ideal * 0.5 ? (isLowHp ? -0.85 : -0.45) : (isLowHp ? -0.3 : 0));
+      const baseMaxSpeed = dist > ideal * 1.3 ? BOT_SPEED_RUN
+        : (isLowHp ? BOT_SPEED_RUN * 0.85 : (dist < ideal * 0.5 ? BOT_SPEED_RUN * 0.55 : BOT_SPEED_WALK));
+      const maxSpeed = baseMaxSpeed;
 
       let sepX = 0, sepZ = 0;
       for (const other of bots) {
@@ -3172,8 +3418,30 @@ export default function BitsSniperGame() {
       const sepLen = Math.hypot(sepX, sepZ);
       if (sepLen > 0.0001) { sepX /= sepLen; sepZ /= sepLen; }
 
-      const wishX = Math.sin(bot.yaw) * fwd + Math.cos(bot.yaw) * bot.strafeDir * 0.7 + sepX * 0.6;
-      const wishZ = Math.cos(bot.yaw) * fwd - Math.sin(bot.yaw) * bot.strafeDir * 0.7 + sepZ * 0.6;
+      // CTF objective: bots carrying flag → run to own base, others → go toward enemy flag
+      let objX = 0, objZ = 0;
+      if (isCTF && ctfFlags.length === 2) {
+        const team = ctfBotTeam[bot.id];
+        const carryingFlag = ctfFlags.some(f => f.carriedBy === bot.id);
+        if (carryingFlag) {
+          const homeBase = team === "blue" ? ctfFlags[0].basePos : ctfFlags[1].basePos;
+          const toDx = homeBase.x - bp.x;
+          const toDz = homeBase.z - bp.z;
+          const toLen = Math.hypot(toDx, toDz);
+          if (toLen > 1) { objX = (toDx / toLen) * 0.8; objZ = (toDz / toLen) * 0.8; }
+        } else if (Math.random() < 0.5) {
+          const enemyFlagIdx = team === "blue" ? 1 : 0;
+          const ef = ctfFlags[enemyFlagIdx];
+          const tp = ef.dropped ? ef.mesh.position : ef.basePos;
+          const toDx = tp.x - bp.x;
+          const toDz = tp.z - bp.z;
+          const toLen = Math.hypot(toDx, toDz);
+          if (toLen > 1) { objX = (toDx / toLen) * 0.35; objZ = (toDz / toLen) * 0.35; }
+        }
+      }
+
+      const wishX = Math.sin(bot.yaw) * fwd + Math.cos(bot.yaw) * bot.strafeDir * 0.7 + sepX * 0.6 + objX;
+      const wishZ = Math.cos(bot.yaw) * fwd - Math.sin(bot.yaw) * bot.strafeDir * 0.7 + sepZ * 0.6 + objZ;
       const wishLen = Math.hypot(wishX, wishZ);
       const wishNormX = wishLen > 1e-4 ? wishX / wishLen : 0;
       const wishNormZ = wishLen > 1e-4 ? wishZ / wishLen : 0;
@@ -3289,20 +3557,30 @@ export default function BitsSniperGame() {
 
       // reload
       if(bot.reloadTimer>0){ bot.reloadTimer-=dt; if(bot.reloadTimer<=0){ bot.ammo=wp.maxAmmo; bot.reloadTimer=0; } }
-      // fire
+
+      // fire (human-like: reaction delay on first sight, burst patterns, accuracy variance)
       bot.fireTimer-=dt;
-      if(bot.fireTimer<=0 && dist<wp.range*1.5 && bot.ammo>0){
-        bot.fireTimer = 1/(wp.fireRate*(0.48+Math.random()*0.54));
+      const reactionDelay = 0.18 + (bot.id % 5) * 0.06;
+      const timeSinceSeen = bot.lastTargetSeenAt != null ? (nowSec - bot.lastTargetSeenAt) : 999;
+      const hasReacted = timeSinceSeen >= reactionDelay;
+      const canFire = bot.fireTimer <= 0 && dist < wp.range * 1.5 && bot.ammo > 0 && hasReacted && (bot.invincibleTimer ?? 0) <= 0;
+
+      if(canFire){
+        const burstVariance = 0.55 + Math.random() * 0.45;
+        bot.fireTimer = 1 / (wp.fireRate * burstVariance);
+        if (Math.random() < 0.12) bot.fireTimer += rng(0.3, 0.7);
 
         const muzzleOffsetY = (bot.mesh.userData.muzzleOffsetY as number | undefined) ?? (BOT_HEIGHT * 0.36);
         _botOrigin.copy(bp);
         _botOrigin.y += muzzleOffsetY;
 
-        _botAim.copy(pp);
-        _botAim.y += 0.3;
+        _botAim.copy(targetPos);
+        _botAim.y += rng(0.15, 0.45);
         _botAim.sub(_botOrigin).normalize();
 
-        const inac = BOT_INACCURACY;
+        const distFactor = Math.min(1, dist / (wp.range * 0.7));
+        const accuracyMult = 0.85 + distFactor * 0.4 + Math.sin(nowSec * 2.3 + bot.id) * 0.08;
+        const inac = BOT_INACCURACY * accuracyMult;
         for(let p=0;p<wp.pellets;p++){
           _botJitter.set(
             (Math.random()-0.5)*(wp.spread+inac)*2,
@@ -3317,7 +3595,7 @@ export default function BitsSniperGame() {
           }
         }
         bot.ammo=Math.max(0,bot.ammo-1);
-        if(bot.ammo===0) bot.reloadTimer=wp.reloadTime;
+        if(bot.ammo===0) bot.reloadTimer=wp.reloadTime * (0.9 + Math.random() * 0.2);
         const botShotSound = (bot.mesh as THREE.Group & { userData: { botShotSound?: THREE.PositionalAudio } }).userData.botShotSound;
         if (botShotSound) {
           botShotSound.setVolume(0.38 * masterVolRef.current);
@@ -3518,12 +3796,27 @@ export default function BitsSniperGame() {
 
     //  Main loop 
     let rafId=0, lastT=performance.now(), hudT=0, minimapDebugAccum=0;
+    let lastHudFlushMs = 0;
+    let lastVisualHudMs = 0;
     let adsBlend = 0;
     let didFlatSpawnSnap = false;
 
     const animate=(now:number)=>{
       const dt=Math.min((now-lastT)/1000, 0.06); lastT=now; hudT+=dt;
       const nowSec=now/1000;
+
+      // החלת צבירת תנועת עכבר במסגרת rAF – מונעת קפיצות מבט ו"תקיעות" עכבר.
+      if(document.pointerLockElement===renderer.domElement && !S.dead && runStateRef.current !== "paused"){
+        const baseAimMult = S.aiming ? ADS_LOOK_SENS_MULT * adsSensRef.current : 1;
+        const sniperSlow = (S.aiming && WEAPONS[S.wpIdx].viewModel === "sniper") ? SNIPER_ADS_SENS_MULT : 1;
+        const sens = lookSensRef.current * baseAimMult * sniperSlow;
+        const applyDx = clamp(lookAccumDx, -MOUSE_LOOK_MAX_DELTA_PER_FRAME, MOUSE_LOOK_MAX_DELTA_PER_FRAME);
+        const applyDy = clamp(lookAccumDy, -MOUSE_LOOK_MAX_DELTA_PER_FRAME, MOUSE_LOOK_MAX_DELTA_PER_FRAME);
+        lookAccumDx -= applyDx; lookAccumDy -= applyDy;
+        yawObj.rotation.y   -= applyDx * sens;
+        pitchObj.rotation.x -= applyDy * sens;
+        pitchObj.rotation.x  = clamp(pitchObj.rotation.x, -1.35, 1.35);
+      }
 
       if (sessionStartedRef.current && !matchReadyDispatchedRef.current) {
         gameBus.emit({ type: "MatchAssetsReady" });
@@ -3555,15 +3848,123 @@ export default function BitsSniperGame() {
       }
 
       S.roundTimer = Math.max(0, S.roundTimer - dt);
-      if(hudT>0.08){
-        setRoundTime(S.roundTimer);
+
+      // CTF: flag logic (pickup, carry, capture, drop reset)
+      if (isCTF && !ctfMatchOver && !S.dead && ctfFlags.length === 2) {
+        const playerPos = yawObj.position;
+        const blueFlag = ctfFlags[0];
+        const redFlag = ctfFlags[1];
+
+        // Player picks up red (enemy) flag
+        if (redFlag.carriedBy === null && !redFlag.dropped && playerPos.distanceTo(redFlag.basePos) < CTF_FLAG_PICKUP_RADIUS) {
+          redFlag.carriedBy = "player";
+          pushKillFeed("You picked up the Red flag!");
+        } else if (redFlag.carriedBy === null && redFlag.dropped && playerPos.distanceTo(redFlag.mesh.position) < CTF_FLAG_PICKUP_RADIUS) {
+          redFlag.carriedBy = "player";
+          pushKillFeed("You picked up the Red flag!");
+        }
+
+        // Player carries red flag → score if at blue base and blue flag is home
+        if (redFlag.carriedBy === "player") {
+          redFlag.mesh.position.copy(playerPos);
+          redFlag.mesh.position.y = playerPos.y - PLAYER_HEIGHT + 0.02;
+          if (blueFlag.carriedBy === null && !blueFlag.dropped && playerPos.distanceTo(blueFlag.basePos) < CTF_FLAG_RETURN_RADIUS) {
+            ctfBScore++;
+            setCtfBlueScore(ctfBScore);
+            pushKillFeed(`Blue team scores! (${ctfBScore}/${CTF_CAPTURES_TO_WIN})`);
+            redFlag.carriedBy = null;
+            redFlag.dropped = false;
+            redFlag.mesh.position.copy(redFlag.basePos);
+            if (ctfBScore >= CTF_CAPTURES_TO_WIN) {
+              ctfMatchOver = true;
+              setCtfWinner("blue");
+              pushKillFeed("Blue team wins!");
+            }
+          }
+        }
+
+        // Bots carrying flags
+        for (const flag of ctfFlags) {
+          if (typeof flag.carriedBy === "number") {
+            const carrier = bots[flag.carriedBy];
+            if (carrier && !carrier.dead) {
+              flag.mesh.position.copy(carrier.mesh.position);
+              flag.mesh.position.y = 0.02;
+              const otherFlag = flag.team === "blue" ? redFlag : blueFlag;
+              const teamBase = flag.team === "blue" ? redFlag.basePos : blueFlag.basePos;
+              if (otherFlag.carriedBy === null && !otherFlag.dropped && carrier.mesh.position.distanceTo(teamBase) < CTF_FLAG_RETURN_RADIUS) {
+                if (flag.team === "blue") { ctfRScore++; setCtfRedScore(ctfRScore); pushKillFeed(`Red team scores! (${ctfRScore}/${CTF_CAPTURES_TO_WIN})`); }
+                else { ctfBScore++; setCtfBlueScore(ctfBScore); pushKillFeed(`Blue team scores! (${ctfBScore}/${CTF_CAPTURES_TO_WIN})`); }
+                flag.carriedBy = null;
+                flag.dropped = false;
+                flag.mesh.position.copy(flag.basePos);
+                if (ctfRScore >= CTF_CAPTURES_TO_WIN) { ctfMatchOver = true; setCtfWinner("red"); pushKillFeed("Red team wins!"); }
+                if (ctfBScore >= CTF_CAPTURES_TO_WIN) { ctfMatchOver = true; setCtfWinner("blue"); pushKillFeed("Blue team wins!"); }
+              }
+            } else {
+              flag.carriedBy = null;
+              flag.dropped = true;
+              flag.droppedTimer = CTF_FLAG_RESET_SECS;
+            }
+          }
+          if (flag.dropped) {
+            flag.droppedTimer -= dt;
+            if (flag.droppedTimer <= 0) {
+              flag.dropped = false;
+              flag.mesh.position.copy(flag.basePos);
+              pushKillFeed(`${flag.team === "blue" ? "Blue" : "Red"} flag returned to base.`);
+            }
+          }
+        }
+
+        // Enemy bots try to pick up blue (player's) flag
+        for (let i = CTF_TEAM_SIZE - 1; i < bots.length; i++) {
+          if (bots[i].dead) continue;
+          if (blueFlag.carriedBy === null) {
+            const flagPos = blueFlag.dropped ? blueFlag.mesh.position : blueFlag.basePos;
+            if (bots[i].mesh.position.distanceTo(flagPos) < CTF_FLAG_PICKUP_RADIUS) {
+              blueFlag.carriedBy = i;
+              blueFlag.dropped = false;
+              pushKillFeed(`${bots[i].label} picked up the Blue flag!`);
+            }
+          }
+        }
+        // Friendly bots try to pick up red flag
+        for (let i = 0; i < CTF_TEAM_SIZE - 1; i++) {
+          if (bots[i].dead) continue;
+          if (redFlag.carriedBy === null) {
+            const flagPos = redFlag.dropped ? redFlag.mesh.position : redFlag.basePos;
+            if (bots[i].mesh.position.distanceTo(flagPos) < CTF_FLAG_PICKUP_RADIUS) {
+              redFlag.carriedBy = i;
+              redFlag.dropped = false;
+              pushKillFeed(`${bots[i].label} picked up the Red flag!`);
+            }
+          }
+        }
+
+        // Player returns own flag (touch dropped blue flag to reset it)
+        if (blueFlag.dropped && playerPos.distanceTo(blueFlag.mesh.position) < CTF_FLAG_PICKUP_RADIUS) {
+          blueFlag.dropped = false;
+          blueFlag.droppedTimer = 0;
+          blueFlag.mesh.position.copy(blueFlag.basePos);
+          pushKillFeed("You returned the Blue flag!");
+        }
       }
 
       // Respawn countdown
       if(S.dead){
         S.respawnTimer-=dt;
-        if(hudT>0.12) setRespawnT(Math.max(0,S.respawnTimer));
-        if(S.respawnTimer<=0) respawnPlayer();
+        if (now - lastHudFlushMs >= HUD_UPDATE_INTERVAL_SECS * 1000) {
+          lastHudFlushMs = now;
+          setRespawnT(Math.max(0, S.respawnTimer));
+        }
+        if(S.respawnTimer<=0) {
+          if (ctfMatchOver) {
+            // match over, no respawn
+          } else {
+            respawnPlayer();
+          }
+        }
         renderer.autoClear=true;
         composer.render();
         rafId=requestAnimationFrame(animate); return;
@@ -3596,7 +3997,6 @@ export default function BitsSniperGame() {
       // Spawn invincibility countdown
       if(S.invincible>0){
         S.invincible=Math.max(0,S.invincible-dt);
-        if(hudT>0.05) setShield(S.invincible);
       }
       updateKeyPoints(nowSec, dt);
 
@@ -3923,6 +4323,7 @@ export default function BitsSniperGame() {
         if(!hit && !pr.fromBot){
           for(const bot of bots){
             if(bot.dead) continue;
+            if ((bot.invincibleTimer ?? 0) > 0) continue;
             const capHit = segmentHitsCapsule(prStart, prEnd, bot.mesh.position, BOT_HEIGHT, BOT_RADIUS + 0.05, hsTmpHit);
             if(!capHit.hit) continue;
 
@@ -3936,7 +4337,9 @@ export default function BitsSniperGame() {
             setHitMarker(1);
             if(bot.health<=0){
               bot.health=0; bot.dead=true; bot.mesh.visible=false;
-              bot.respawnTimer=RESPAWN_SECS; S.kills++; setKills(S.kills);
+              bot.respawnTimer = isCTF ? CTF_RESPAWN_SECS : RESPAWN_SECS;
+              if (isCTF) dropBotFlag(bot.id);
+              S.kills++; setKills(S.kills);
               pushKillFeed(`You eliminated ${bot.label}${headshot ? " (Headshot)" : ""}`, headshot);
               const projKill: KillImpact = {
                 direction: projDir.clone().normalize(),
@@ -3977,15 +4380,9 @@ export default function BitsSniperGame() {
       }
 
       // Hit flash fade
-      if(S.hitFlash>0){ S.hitFlash=Math.max(0,S.hitFlash-dt*3.5); if(hudT>0.04) setHitFlash(S.hitFlash); }
-      if(S.hitMark>0){
-        S.hitMark = Math.max(0, S.hitMark-dt*5);
-        if(hudT>0.04) setHitMarker(S.hitMark);
-      }
-      if(S.hitInds.length>0){
-        S.hitInds=S.hitInds.map(h=>({...h,opacity:h.opacity-dt*HIT_IND_FADE_RATE})).filter(h=>h.opacity>0);
-        setHitInds([...S.hitInds]);
-      }
+      if(S.hitFlash>0) S.hitFlash=Math.max(0,S.hitFlash-dt*3.5);
+      if(S.hitMark>0) S.hitMark = Math.max(0, S.hitMark-dt*5);
+      if(S.hitInds.length>0) S.hitInds=S.hitInds.map(h=>({...h,opacity:h.opacity-dt*HIT_IND_FADE_RATE})).filter(h=>h.opacity>0);
 
       const lowHpRatio = clamp((LOW_HP_WARN_THRESHOLD - S.hp) / LOW_HP_WARN_THRESHOLD, 0, 1);
       let lowHpTarget = 0;
@@ -3993,7 +4390,6 @@ export default function BitsSniperGame() {
         const pulse = 0.5 + 0.5 * Math.sin(now * 0.0075);
         lowHpTarget = lowHpRatio * (0.3 + pulse * 0.7);
       }
-      if(hudT>0.04) setLowHpFx(lowHpTarget);
 
       recoilBloom = Math.max(0, recoilBloom - dt * (S.aiming ? 2.7 : 2.2));
       const horizontalSpeed = Math.hypot(velX, velZ);
@@ -4009,7 +4405,16 @@ export default function BitsSniperGame() {
         1.55,
       );
       crossBloom += (targetCrossBloom - crossBloom) * Math.min(1, dt * 14);
-      if(hudT>0.04) setCrosshairBloom(crossBloom);
+
+      // עדכון ויזואלי HUD (פגיעה, כוונת, HP) – מוגבל לאותו מרווח כדי להפחית re-renders.
+      if (now - lastVisualHudMs >= HUD_UPDATE_INTERVAL_SECS * 1000) {
+        lastVisualHudMs = now;
+        setHitFlash(S.hitFlash);
+        setHitMarker(S.hitMark);
+        setHitInds([...S.hitInds]);
+        setLowHpFx(lowHpTarget);
+        setCrosshairBloom(crossBloom);
+      }
 
       //  Viewmodel animation 
       const moving = horizontalSpeed > 0.5;
@@ -4051,10 +4456,13 @@ export default function BitsSniperGame() {
       } else {
         vmReloadT = Math.max(0, vmReloadT - dt * vmReloadProfile.settleSpeed);
       }
-      const reloadArc = Math.sin(vmReloadT * Math.PI);
+      // פריסה אחידה: משולש 0→1→0 במהירות קבועה (במקום sin שמאיט בהתחלה/סוף).
+      // כשלא באנימציה פעילה – arc=0 כדי למנוע "ריבאינד" מהיר בסיום.
+      const reloadPhase = vmReloadActive ? vmReloadT : 0;
+      const reloadArc = reloadPhase <= 0 ? 0 : 2 * Math.min(reloadPhase, 1 - reloadPhase);
       const isSniperVm = WEAPONS[S.wpIdx].viewModel === "sniper";
-      const wobbleEnvelope = Math.max(0, 1 - Math.abs(vmReloadT - 0.5) * 2);
-      const reloadWobble = Math.sin(vmReloadT * Math.PI * vmReloadProfile.wobbleFreq) * wobbleEnvelope;
+      const wobbleEnvelope = reloadPhase <= 0 ? 0 : Math.max(0, 1 - Math.abs(reloadPhase - 0.5) * 2);
+      const reloadWobble = (vmReloadActive ? Math.sin(reloadPhase * Math.PI * vmReloadProfile.wobbleFreq) * wobbleEnvelope : 0);
       const emptyBoost = vmReloadFromEmpty ? 1.14 : 1;
       // בזמן רילואד של סנייפר – המודל "נשאב" טיפה פנימה בעומק (רחוק מהשחקן),
       // וברגע שהאנימציה מסתיימת הוא חוזר למיקום הבסיסי (reloadArc חוזר ל־0).
@@ -4152,9 +4560,12 @@ export default function BitsSniperGame() {
         setIsAiming(true);
       }
 
-      // עדכון נתוני HUD ומפות – בתדירות גבוהה יותר כדי לסנכרן חצים (שחקן+בוטים)
-      if (hudT > 0.04) {
-        hudT = 0;
+      // עדכון נתוני HUD ומפות – מוגבל ל־HUD_UPDATE_INTERVAL_SECS כדי להפחית re-renders ולתת חוויה חלקה.
+      const hudIntervalMs = HUD_UPDATE_INTERVAL_SECS * 1000;
+      if (now - lastHudFlushMs >= hudIntervalMs) {
+        lastHudFlushMs = now;
+        setRoundTime(S.roundTimer);
+        if (S.invincible > 0) setShield(S.invincible);
         setPlayerHp(Math.max(0, S.hp));
         setAmmo(S.ammo);
         yawObj.getWorldPosition(_playerWorldPos);
@@ -4167,17 +4578,39 @@ export default function BitsSniperGame() {
         });
         setPlayerYaw(yawObj.rotation.y);
         setPlayerForward({ x: _playerForward.x, z: _playerForward.z });
-        setBotPositionsForTactical(
-          bots.map((b) => {
+        if (isCTF) {
+          const friendlyCount = CTF_TEAM_SIZE - 1;
+          const enemyPositions: { x: number; z: number; forwardX: number; forwardZ: number }[] = [];
+          const teammatePositions: { x: number; z: number; forwardX?: number; forwardZ?: number }[] = [];
+          bots.forEach((b) => {
             b.mesh.getWorldPosition(_botWorldPos);
-            // כמו לשחקן: כיוון הבוט נלקח מה-quaternion העולמי של המודל
             b.mesh.getWorldQuaternion(_playerWorldQuat);
             _playerForward.set(0, 0, -1).applyQuaternion(_playerWorldQuat);
             const fwdX = _playerForward.x;
             const fwdZ = _playerForward.z;
-            return { x: _botWorldPos.x, z: _botWorldPos.z, forwardX: fwdX, forwardZ: fwdZ };
-          }),
-        );
+            const entry = { x: _botWorldPos.x, z: _botWorldPos.z, forwardX: fwdX, forwardZ: fwdZ };
+            if (b.dead) return;
+            if (b.id < friendlyCount) {
+              teammatePositions.push(entry);
+            } else {
+              enemyPositions.push(entry);
+            }
+          });
+          setBotPositionsForTactical(enemyPositions);
+          setBotTeammatePositionsForTactical(teammatePositions);
+        } else {
+          setBotPositionsForTactical(
+            bots.map((b) => {
+              b.mesh.getWorldPosition(_botWorldPos);
+              b.mesh.getWorldQuaternion(_playerWorldQuat);
+              _playerForward.set(0, 0, -1).applyQuaternion(_playerWorldQuat);
+              const fwdX = _playerForward.x;
+              const fwdZ = _playerForward.z;
+              return { x: _botWorldPos.x, z: _botWorldPos.z, forwardX: fwdX, forwardZ: fwdZ };
+            }),
+          );
+          setBotTeammatePositionsForTactical([]);
+        }
         if (DEBUG_MINIMAP_POSITION) {
           minimapDebugAccum += 0.1;
           if (minimapDebugAccum >= 2) {
@@ -4217,7 +4650,7 @@ export default function BitsSniperGame() {
       renderer.domElement.removeEventListener("mousedown",onMouseDownTrack);
       renderer.domElement.removeEventListener("mouseup",onMouseUpTrack);
       document.removeEventListener("wheel", onWheel as any);
-      document.removeEventListener("mousemove",onMouseMove);
+      document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("keydown",onKeyDown);
       document.removeEventListener("keyup",onKeyUp);
       composer.dispose();
@@ -4250,7 +4683,7 @@ export default function BitsSniperGame() {
       projGeo.dispose(); renderer.dispose();
       if(renderer.domElement.parentElement===mount) mount.removeChild(renderer.domElement);
     };
-  },[sessionKey, fpsAssets, flatSpawnIdx, botSpawnIdx, botWeaponPool, sessionStarted, showIntro]);
+  },[sessionKey, fpsAssets, flatSpawnIdx, botSpawnIdx, botWeaponPool, sessionStarted, showIntro, gameMode]);
 
   const wp=WEAPONS[wpIdx];
   // Crosshair gap tuning per weapon (CS-style). Scale drives the gap and arm length.
@@ -4415,6 +4848,28 @@ export default function BitsSniperGame() {
                 {introPage === "basic" && (
                   <>
                     <div className="bits-sniper-intro-setting">
+                      <span>מצב משחק</span>
+                      <div className="bits-sniper-intro-setting-row">
+                        <button
+                          type="button"
+                          className={`bits-sniper-intro-mode-btn${gameMode === "classic" ? " is-active" : ""}`}
+                          onClick={()=> { setGameMode("classic"); if (selectedMapId === "ctf") setSelectedMapId("flat"); }}
+                        >
+                          קלאסי
+                        </button>
+                        <button
+                          type="button"
+                          className={`bits-sniper-intro-mode-btn${gameMode === "ctf" ? " is-active" : ""}`}
+                          onClick={()=> { setGameMode("ctf"); setSelectedMapId("ctf"); }}
+                        >
+                          CTF (5v5)
+                        </button>
+                      </div>
+                      {gameMode === "ctf" && (
+                        <p className="bits-sniper-intro-hint">תפוס את הדגל! 5v5 – קבוצה כחולה נגד אדומה. ראשון ל-{CTF_CAPTURES_TO_WIN} נקודות מנצח.</p>
+                      )}
+                    </div>
+                    <div className="bits-sniper-intro-setting">
                       <span>Mouse sensitivity</span>
                       <input
                         type="range"
@@ -4426,14 +4881,16 @@ export default function BitsSniperGame() {
                       />
                       <strong>{lookSens.toFixed(4)}</strong>
                     </div>
-                    <div className="bits-sniper-intro-setting">
-                      <span>Select map</span>
-                      <div className="bits-sniper-map-choices">
-                        {MAPS.map((m)=>(
-                          <button key={m.id} type="button" className={selectedMapId===m.id ? "is-active" : ""} onClick={()=> applySelectedMap(m.id)}>{m.label}</button>
-                        ))}
+                    {gameMode !== "ctf" && (
+                      <div className="bits-sniper-intro-setting">
+                        <span>Select map</span>
+                        <div className="bits-sniper-map-choices">
+                          {MAPS.filter(m => m.id !== "ctf").map((m)=>(
+                            <button key={m.id} type="button" className={selectedMapId===m.id ? "is-active" : ""} onClick={()=> applySelectedMap(m.id)}>{m.label}</button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div className="bits-sniper-intro-setting">
                       <span>ADS sensitivity (while aiming)</span>
                       <input type="range" min={ADS_SENS_MIN} max={ADS_SENS_MAX} step={ADS_SENS_STEP} value={adsSens} onChange={(e)=> applyAdsSensitivity(Number(e.target.value))} />
@@ -4486,7 +4943,7 @@ export default function BitsSniperGame() {
                   {introPage === "basic" && <button type="button" className="bits-sniper-intro-step" onClick={()=> setIntroPage("enemy")}>Enemy settings →</button>}
                   {introPage === "enemy" && <button type="button" className="bits-sniper-intro-step" onClick={()=> setIntroPage("basic")}>← Basic settings</button>}
                   <button type="button" className="bits-sniper-intro-fullscreen" onClick={(e)=>{ e.stopPropagation(); toggleFullscreen(); }}>Fullscreen</button>
-                  <button type="button" className="bits-sniper-intro-start" onClick={()=>{ customSpawnsForSessionRef.current = { player: customPlayerSpawn, enemies: customEnemySpawns.map((p) => p.worldPosition) }; const settings: GameSettings = { ...loadSettingsFromStorage(), botSpawnIdx, botWeaponPool }; saveSettingsToStorage(settings); gameBus.emit({ type: "SettingsApplied", settings }); gameBus.emit({ type: "StartMatch" }); setShowIntro(false); setSessionStarted(true); requestLock(); }}>Start Match</button>
+                  <button type="button" className="bits-sniper-intro-start" onClick={()=>{ if (gameMode === "ctf") { setSelectedMapId("ctf"); setCtfBlueScore(0); setCtfRedScore(0); setCtfWinner(null); } customSpawnsForSessionRef.current = { player: gameMode === "ctf" ? null : customPlayerSpawn, enemies: gameMode === "ctf" ? [] : customEnemySpawns.map((p) => p.worldPosition) }; const settings: GameSettings = { ...loadSettingsFromStorage(), botSpawnIdx, botWeaponPool }; saveSettingsToStorage(settings); gameBus.emit({ type: "SettingsApplied", settings }); gameBus.emit({ type: "StartMatch" }); setShowIntro(false); setSessionStarted(true); requestLock(); }}>Start Match</button>
                 </div>
               </div>
             </div>
@@ -4640,11 +5097,35 @@ export default function BitsSniperGame() {
             </div>
           )}
 
-          {/* Death overlay */}
-          {dead&&(
+          {/* Death / CTF Winner overlay */}
+          {dead&&!ctfWinner&&(
             <div className="bits-sniper-death-overlay">
               <div className="bits-sniper-death-title">Eliminated</div>
               <div className="bits-sniper-death-timer">Respawn in {Math.ceil(respawnT)}s...</div>
+            </div>
+          )}
+          {ctfWinner&&(
+            <div className="bits-sniper-death-overlay bits-sniper-death-overlay--interactive">
+              <div className="bits-sniper-death-title" style={{ fontSize: "2.8rem", color: ctfWinner === "blue" ? "#4af" : "#f44" }}>
+                {ctfWinner === "blue" ? "Blue Team Wins!" : "Red Team Wins!"}
+              </div>
+              <div className="bits-sniper-death-timer" style={{ fontSize: "1.2rem", marginTop: "0.6rem" }}>
+                Blue {ctfBlueScore} — {ctfRedScore} Red · {kills} Kills
+              </div>
+              <button
+                type="button"
+                className="bits-sniper-intro-start"
+                style={{ marginTop: "1.2rem" }}
+                onClick={() => {
+                  setCtfWinner(null);
+                  setDead(false);
+                  setShowIntro(true);
+                  setSessionStarted(false);
+                  setSessionKey(k => k + 1);
+                }}
+              >
+                Play Again
+              </button>
             </div>
           )}
 
@@ -4655,6 +5136,7 @@ export default function BitsSniperGame() {
               mapImageOverride={tacticalMapImage ?? undefined}
               player={{ x: playerCoords.x, z: playerCoords.z, forwardX: playerForward.x, forwardZ: playerForward.z }}
               enemies={botPositionsForTactical}
+              teammates={botTeammatePositionsForTactical}
               showSpawnPoints
               onClose={()=> setTacticalMapOpen(false)}
             />
@@ -4853,8 +5335,17 @@ export default function BitsSniperGame() {
           {isLocked&&!dead&&(
             <div className="bits-sniper-corner-minimap">
               <div className="bits-sniper-topright">
-                <span className="bits-sniper-topright-timer">TIME {roundClock}</span>
-                <span className="bits-sniper-topright-bots">BOTS {BOT_COUNT}</span>
+                {gameMode === "ctf" ? (
+                  <>
+                    <span className="bits-sniper-topright-timer" style={{ color: "#4af" }}>🔵 {ctfBlueScore}</span>
+                    <span className="bits-sniper-topright-bots" style={{ color: "#f44" }}>🔴 {ctfRedScore}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="bits-sniper-topright-timer">TIME {roundClock}</span>
+                    <span className="bits-sniper-topright-bots">BOTS {BOT_COUNT}</span>
+                  </>
+                )}
                 <span className="bits-sniper-topright-kd">{kills} / {deaths}</span>
               </div>
               {sessionStarted && (
@@ -4868,10 +5359,10 @@ export default function BitsSniperGame() {
                       forwardX: playerForward.x,
                       forwardZ: playerForward.z,
                     }}
-                    teammates={[]}
                     objectives={[]}
-                    showEnemies
+                    showEnemies={true}
                     enemies={botPositionsForTactical}
+                    teammates={botTeammatePositionsForTactical}
                     size={MINIMAP_SIZE}
                     zoom={MINIMAP_ZOOM}
                     debugPosition={DEBUG_MINIMAP_POSITION}

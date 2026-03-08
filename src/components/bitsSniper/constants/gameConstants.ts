@@ -7,7 +7,8 @@ export const DEBUG_MINIMAP_POSITION = false;
 /** מצב דיבאג: מציג את ה־Box3 של הקולידרים (קירות/רצפה). */
 export const DEBUG_COLLIDERS = false;
 
-export const MINIMAP_ZOOM = 1;
+/** מיני-מפה: זום גבוה יותר = רואים פחות שטח (יותר מקורב). */
+export const MINIMAP_ZOOM = 1.75;
 export const MINIMAP_SIZE = 200;
 
 export const PLAYER_HEIGHT = 1.65;
@@ -26,6 +27,13 @@ export const SLIDE_SPEED_MULT = 2.05;
 export const LANDING_KICK_MULT = 0.018;
 export const LOOK_SENS_BASE = 0.0022;
 
+/** מקסימום פיקסלים לתנועת עכבר באירוע בודד – מונע "קפיצות" כשהדפדפן שולח movementX/Y קיצוניים (למשל אחרי איבוד פוקוס). */
+export const MOUSE_LOOK_MAX_DELTA_PER_EVENT = 24;
+/** מקסימום פיקסלים לתנועת מבט בפריים אחד – החלה ב-rAF למניעת טלפורט. */
+export const MOUSE_LOOK_MAX_DELTA_PER_FRAME = 36;
+/** מרווח עדכון HUD (שניות) – צמצום setState ל־~12 עדכונים/שניה לחוויה חלקה יותר. */
+export const HUD_UPDATE_INTERVAL_SECS = 0.08;
+
 export const VCURSOR_SENS = 1.0;
 
 export const BOT_COUNT = 1;
@@ -33,7 +41,8 @@ export const BOT_RADIUS = 0.50;
 export const BOT_HEIGHT = 0.95;
 export const BOT_EGG_R = 0.62;
 export const RESPAWN_SECS = 3.5;
-export const SPAWN_INVINCIBLE = 1.5;
+/** Seconds of invincibility for player and bots after spawn. */
+export const SPAWN_INVINCIBLE = 2.5;
 export const MAX_HEALTH = 100;
 export const BOT_MAX_HEALTH = 80;
 
@@ -117,6 +126,60 @@ export const BOT_SPAWN_ZONES: SpawnZone[] = [
   [-18, -10, 12, 20],
   [6, -10, 12, 20],
   [-12, 26, 24, 18],
+];
+
+/** Warehouse map spawn zones – spread across corners and corridors. */
+export const WAREHOUSE_PLAYER_SPAWN_ZONES: SpawnZone[] = [
+  [-56, 44, 14, 14],
+  [-52, 30, 12, 10],
+  [-40, 50, 10, 10],
+];
+
+export const WAREHOUSE_BOT_SPAWN_ZONES: SpawnZone[] = [
+  [44, -56, 14, 14],
+  [30, -52, 12, 10],
+  [-20, -30, 16, 16],
+  [20,  30, 16, 16],
+  [-30,  0, 14, 14],
+  [ 30,  0, 14, 14],
+  [  0, -20, 16, 12],
+  [  0,  20, 16, 12],
+];
+
+/** CTF: bots per team (including the player on their team). */
+export const CTF_TEAM_SIZE = 5;
+/** CTF: captures needed to win. */
+export const CTF_CAPTURES_TO_WIN = 3;
+/** CTF: flag pickup radius. */
+export const CTF_FLAG_PICKUP_RADIUS = 2.2;
+/** CTF: flag return radius (score when your flag is home). */
+export const CTF_FLAG_RETURN_RADIUS = 2.5;
+/** CTF: time (seconds) after flag drop before it resets to base. */
+export const CTF_FLAG_RESET_SECS = 15;
+/** CTF: respawn delay (seconds). */
+export const CTF_RESPAWN_SECS = 4;
+
+/** CTF dedicated map: half-size (symmetric ±H). */
+export const CTF_MAP_HALF = 42;
+/** CTF: blue base X (flag + spawns on this side). */
+export const CTF_BLUE_BASE_X = -34;
+/** CTF: red base X. */
+export const CTF_RED_BASE_X = 34;
+/** Blue team spawn points [x, z] – player + 4 friendly bots. Spread inside blue base area. */
+export const CTF_BLUE_SPAWNS: [number, number][] = [
+  [CTF_BLUE_BASE_X, 0],
+  [CTF_BLUE_BASE_X + 2, -5],
+  [CTF_BLUE_BASE_X + 2,  5],
+  [CTF_BLUE_BASE_X - 2, -3],
+  [CTF_BLUE_BASE_X - 2,  3],
+];
+/** Red team spawn points [x, z] – 5 enemy bots. Spread inside red base area. */
+export const CTF_RED_SPAWNS: [number, number][] = [
+  [CTF_RED_BASE_X, 0],
+  [CTF_RED_BASE_X - 2, -5],
+  [CTF_RED_BASE_X - 2,  5],
+  [CTF_RED_BASE_X + 2, -3],
+  [CTF_RED_BASE_X + 2,  3],
 ];
 
 export const BOT_NAMES = [

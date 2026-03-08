@@ -12,6 +12,8 @@ type Props = {
   player: { x: number; z: number; forwardX?: number; forwardZ?: number };
   /** Enemy positions + forward dir on XZ */
   enemies: { x: number; z: number; forwardX?: number; forwardZ?: number }[];
+  /** Teammate positions (e.g. CTF friendly bots) – shown like player (same team) */
+  teammates?: { x: number; z: number; forwardX?: number; forwardZ?: number }[];
   showSpawnPoints?: boolean;
   onClose: () => void;
 };
@@ -24,6 +26,7 @@ export function TacticalMapOverlay({
   mapImageOverride,
   player,
   enemies,
+  teammates = [],
   showSpawnPoints = false,
   onClose,
 }: Props) {
@@ -85,6 +88,25 @@ export function TacticalMapOverlay({
           }}
           title="You"
         />
+        {/* Teammates – כמו השחקן (קבוצה שלנו) */}
+        {teammates.map((t, i) => {
+          const p = toPct(t.x, t.z);
+          const tx = t.forwardX ?? 0;
+          const tz = t.forwardZ ?? 1;
+          const teammateDeg = (Math.atan2(tx, tz) * 180) / Math.PI;
+          return (
+            <div
+              key={`tm-${i}`}
+              className="bits-sniper-tactical-marker bits-sniper-tactical-marker--teammate"
+              style={{
+                left: p.left,
+                top: p.top,
+                transform: `translate(-50%, -50%) rotate(${teammateDeg}deg)`,
+              }}
+              title="Teammate"
+            />
+          );
+        })}
         {/* Enemies – חצים עם כיוון אמיתי, כמו השחקן */}
         {enemies.map((e, i) => {
           const p = toPct(e.x, e.z);

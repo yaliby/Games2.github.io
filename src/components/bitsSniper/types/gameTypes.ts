@@ -63,7 +63,10 @@ export interface VmPose {
   muzzleZ: number;
 }
 
-export type MapId = "flat" | "arena" | "dust2" | "levelGlb";
+export type MapId = "flat" | "warehouse" | "arena" | "dust2" | "levelGlb" | "colosseum" | "ctf";
+
+/** "classic" = normal deathmatch; "ctf" = capture the flag 5v5. */
+export type GameMode = "classic" | "ctf";
 
 export interface ViewModelAsset {
   template: THREE.Group;
@@ -126,6 +129,10 @@ export interface BotState {
   mixer?: THREE.AnimationMixer;
   animActions?: Partial<Record<BotAnimName, THREE.AnimationAction>>;
   activeAnim?: BotAnimName;
+  /** Seconds of spawn invincibility remaining (no damage). */
+  invincibleTimer?: number;
+  /** When the bot last had target in range (for reaction delay before shooting). */
+  lastTargetSeenAt?: number;
 }
 
 export interface Projectile {

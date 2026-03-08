@@ -56,9 +56,8 @@ export async function loadFpsAssetPack(): Promise<FpsAssetPack> {
   const tasks: Promise<void>[] = [
     (async () => {})(),
     (async () => {
-      // "flat" map: don't set levelTemplate – buildMap creates it directly
-      // without rotation/scaling (which caused invisible walls).
-      if (currentMapId === "flat") {
+      // "flat", "warehouse", "colosseum", "ctf": buildMap creates the level directly.
+      if (currentMapId === "flat" || currentMapId === "warehouse" || currentMapId === "colosseum" || currentMapId === "ctf") {
         return;
       }
       if (currentMapId === "arena") {

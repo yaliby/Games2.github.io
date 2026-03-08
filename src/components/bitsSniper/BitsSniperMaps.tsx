@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
+import { createWarehouseGroup, WAREHOUSE_HALF } from "./maps/WarehouseMap";
 
 export const ARENA_HALF = 72;
 export const FORCE_PROCEDURAL_DUST2 = false;
@@ -154,6 +155,432 @@ export function createFlatPlayground(): THREE.Group {
   return g;
 }
 
+/** Colosseum: circular gladiator arena with sand floor, stone walls, pillars, cover objects. */
+export const COLOSSEUM_RADIUS = 36;
+
+/** CTF dedicated map: half-extent (symmetric ±H on X and Z). */
+export const CTF_MAP_HALF = 42;
+export const CTF_BLUE_BASE_X = -34;
+export const CTF_RED_BASE_X = 34;
+export const COLOSSEUM_WALL_H = 8;
+export const COLOSSEUM_WALL_THICK = 2.6;
+
+function makeSandTexture(size: number, repeat: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#c4a96a";
+  ctx.fillRect(0, 0, size, size);
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 28;
+    d[i]     = clamp(d[i]     + n + (Math.random() - 0.5) * 12, 0, 255);
+    d[i + 1] = clamp(d[i + 1] + n + (Math.random() - 0.5) * 8, 0, 255);
+    d[i + 2] = clamp(d[i + 2] + n * 0.6, 0, 255);
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeStoneTexture(size: number, baseCol: string, repeat: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = baseCol;
+  ctx.fillRect(0, 0, size, size);
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 22;
+    d[i]     = clamp(d[i]     + n, 0, 255);
+    d[i + 1] = clamp(d[i + 1] + n, 0, 255);
+    d[i + 2] = clamp(d[i + 2] + n, 0, 255);
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const brickH = size / 6;
+  const brickW = size / 3;
+  ctx.strokeStyle = "rgba(0,0,0,0.12)";
+  ctx.lineWidth = 2;
+  for (let row = 0; row < 6; row++) {
+    const y = row * brickH;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
+    const offset = (row % 2) * (brickW * 0.5);
+    for (let col = 0; col < 4; col++) {
+      const x = offset + col * brickW;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + brickH); ctx.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, 1);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeWoodTexture(size: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#6b4226";
+  ctx.fillRect(0, 0, size, size);
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const row = Math.floor((i / 4) / size);
+    const stripe = Math.sin(row * 0.3) * 8;
+    const n = (Math.random() - 0.5) * 16 + stripe;
+    d[i]     = clamp(d[i]     + n, 0, 255);
+    d[i + 1] = clamp(d[i + 1] + n * 0.7, 0, 255);
+    d[i + 2] = clamp(d[i + 2] + n * 0.4, 0, 255);
+  }
+  ctx.putImageData(imgData, 0, 0);
+  ctx.strokeStyle = "rgba(0,0,0,0.1)";
+  ctx.lineWidth = 1;
+  for (let y = 0; y < size; y += size / 8) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeMetalTexture(size: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#5a5a5e";
+  ctx.fillRect(0, 0, size, size);
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 14;
+    d[i]     = clamp(d[i]     + n, 0, 255);
+    d[i + 1] = clamp(d[i + 1] + n, 0, 255);
+    d[i + 2] = clamp(d[i + 2] + n, 0, 255);
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function createColosseumArena(): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "colosseum_arena";
+
+  const R = COLOSSEUM_RADIUS;
+  const floorThick = 0.8;
+  const floorY = -floorThick * 0.5;
+  const WH = COLOSSEUM_WALL_H;
+  const WT = COLOSSEUM_WALL_THICK;
+
+  const sandTex = makeSandTexture(256, 18);
+  const floorMat = new THREE.MeshStandardMaterial({
+    map: sandTex,
+    color: "#ffffff",
+    roughness: 0.95,
+    metalness: 0.01,
+  });
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(R - WT, R - WT, floorThick, 64), floorMat);
+  floor.position.set(0, floorY, 0);
+  floor.receiveShadow = true;
+  floor.name = "floor";
+  g.add(floor);
+
+  const stoneTex = makeStoneTexture(256, "#8a7a5e", 8);
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: stoneTex,
+    color: "#ffffff",
+    roughness: 0.88,
+    metalness: 0.04,
+  });
+
+  const wallSegs = 48;
+  const segAng = (Math.PI * 2) / wallSegs;
+  for (let i = 0; i < wallSegs; i++) {
+    const a = i * segAng;
+    const cx = Math.cos(a) * (R - WT * 0.5);
+    const cz = Math.sin(a) * (R - WT * 0.5);
+    const d = (R * 2 * Math.PI) / wallSegs + 0.3;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(WT, WH, d), wallMat.clone());
+    m.position.set(cx, WH * 0.5, cz);
+    m.rotation.y = -a;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.name = `colosseum_wall_${i}`;
+    g.add(m);
+  }
+
+  const upperStoneTex = makeStoneTexture(256, "#7a6e52", 10);
+  const upperMat = new THREE.MeshStandardMaterial({
+    map: upperStoneTex,
+    color: "#ffffff",
+    roughness: 0.82,
+    metalness: 0.06,
+  });
+  const ledgeH = 1.2;
+  for (let i = 0; i < wallSegs; i++) {
+    const a = i * segAng;
+    const cx = Math.cos(a) * (R - WT * 0.25);
+    const cz = Math.sin(a) * (R - WT * 0.25);
+    const d = (R * 2 * Math.PI) / wallSegs + 0.3;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(WT * 1.3, ledgeH, d), upperMat.clone());
+    m.position.set(cx, WH + ledgeH * 0.5, cz);
+    m.rotation.y = -a;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.name = `colosseum_ledge_${i}`;
+    g.add(m);
+  }
+
+  const pillarMat = new THREE.MeshStandardMaterial({
+    map: makeStoneTexture(128, "#968a6e", 2),
+    color: "#ffffff",
+    roughness: 0.78,
+    metalness: 0.08,
+  });
+  const pillarCount = 12;
+  const pillarH = WH + ledgeH + 0.5;
+  const pillarR = 0.55;
+  for (let i = 0; i < pillarCount; i++) {
+    const a = (i / pillarCount) * Math.PI * 2;
+    const px = Math.cos(a) * (R - WT - 0.1);
+    const pz = Math.sin(a) * (R - WT - 0.1);
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(pillarR, pillarR * 1.15, pillarH, 10),
+      pillarMat.clone(),
+    );
+    pillar.position.set(px, pillarH * 0.5, pz);
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+    pillar.name = `colosseum_pillar_${i}`;
+    g.add(pillar);
+    const capR = pillarR * 1.4;
+    const capH = 0.35;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(capR, capR * 0.9, capH, 10), pillarMat.clone());
+    cap.position.set(px, pillarH + capH * 0.5, pz);
+    cap.castShadow = true;
+    cap.name = `colosseum_pillar_cap_${i}`;
+    g.add(cap);
+  }
+
+  const woodTex = makeWoodTexture(128);
+  const crateMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85, metalness: 0.04 });
+  const metalTex = makeMetalTexture(64);
+  const barrelMat = new THREE.MeshStandardMaterial({ map: metalTex, roughness: 0.6, metalness: 0.35 });
+
+  type CoverDef = { type: "crate" | "barrel" | "crate_stack"; x: number; z: number; rot?: number };
+  const coverObjects: CoverDef[] = [
+    { type: "crate", x: 8, z: 0 },
+    { type: "crate", x: -8, z: 0 },
+    { type: "barrel", x: 0, z: 10 },
+    { type: "barrel", x: 0, z: -10 },
+    { type: "crate_stack", x: 14, z: 14, rot: 0.4 },
+    { type: "crate_stack", x: -14, z: -14, rot: -0.6 },
+    { type: "barrel", x: 18, z: -6, rot: 0.2 },
+    { type: "barrel", x: -18, z: 6, rot: -0.3 },
+    { type: "crate", x: -6, z: 18, rot: 0.5 },
+    { type: "crate", x: 6, z: -18, rot: -0.5 },
+    { type: "barrel", x: -20, z: -16 },
+    { type: "barrel", x: 20, z: 16 },
+    { type: "crate_stack", x: -10, z: -22, rot: 0.3 },
+    { type: "crate_stack", x: 10, z: 22, rot: -0.3 },
+    { type: "crate", x: 22, z: -10, rot: 0.6 },
+    { type: "crate", x: -22, z: 10, rot: -0.7 },
+  ];
+
+  for (const obj of coverObjects) {
+    const rx = obj.x + (Math.sin(obj.x * 1.7 + obj.z * 0.9) * 1.2);
+    const rz = obj.z + (Math.cos(obj.z * 1.3 + obj.x * 0.7) * 1.2);
+    const distFromCenter = Math.sqrt(rx * rx + rz * rz);
+    if (distFromCenter > R - WT - 2) continue;
+
+    if (obj.type === "crate") {
+      const s = 1.3 + Math.abs(Math.sin(obj.x + obj.z)) * 0.4;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), crateMat.clone());
+      m.position.set(rx, s * 0.5, rz);
+      m.rotation.y = obj.rot ?? 0;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.name = "cover_crate";
+      g.add(m);
+    } else if (obj.type === "barrel") {
+      const bH = 1.4;
+      const bR = 0.45;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(bR, bR * 0.95, bH, 12), barrelMat.clone());
+      m.position.set(rx, bH * 0.5, rz);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.name = "cover_barrel";
+      g.add(m);
+    } else if (obj.type === "crate_stack") {
+      const s1 = 1.5;
+      const m1 = new THREE.Mesh(new THREE.BoxGeometry(s1, s1, s1), crateMat.clone());
+      m1.position.set(rx, s1 * 0.5, rz);
+      m1.rotation.y = obj.rot ?? 0;
+      m1.castShadow = true;
+      m1.receiveShadow = true;
+      m1.name = "cover_crate_bottom";
+      g.add(m1);
+      const s2 = 1.1;
+      const m2 = new THREE.Mesh(new THREE.BoxGeometry(s2, s2, s2), crateMat.clone());
+      m2.position.set(rx + 0.1, s1 + s2 * 0.5, rz - 0.1);
+      m2.rotation.y = (obj.rot ?? 0) + 0.3;
+      m2.castShadow = true;
+      m2.receiveShadow = true;
+      m2.name = "cover_crate_top";
+      g.add(m2);
+    }
+  }
+
+  const innerRingR = 5;
+  const innerRingMat = new THREE.MeshStandardMaterial({
+    map: makeStoneTexture(128, "#806e4e", 4),
+    roughness: 0.9,
+    metalness: 0.04,
+  });
+  const innerRing = new THREE.Mesh(
+    new THREE.TorusGeometry(innerRingR, 0.25, 8, 32),
+    innerRingMat,
+  );
+  innerRing.rotation.x = Math.PI * 0.5;
+  innerRing.position.set(0, 0.02, 0);
+  innerRing.receiveShadow = true;
+  innerRing.name = "center_ring";
+  g.add(innerRing);
+
+  return g;
+}
+
+/** CTF dedicated map: symmetric 3-lane arena, blue base left (-X), red base right (+X). */
+export function createCtfArena(): THREE.Group {
+  const g = new THREE.Group();
+  g.name = "ctf_arena";
+
+  const H = CTF_MAP_HALF;
+  const floorThick = 0.6;
+  const floorY = -floorThick * 0.5;
+  const wallH = 6;
+  const wallThick = 2;
+  const laneW = 10;
+
+  function addSolid(
+    name: string, x: number, y: number, z: number,
+    sx: number, sy: number, sz: number,
+    mat: THREE.Material,
+  ) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+    m.position.set(x, y + sy * 0.5, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.name = name;
+    g.add(m);
+    return m;
+  }
+
+  // ─── Floor ─────────────────────────────────────────
+  const floorTex = makeCheckerTexture(256, "#bfb490", "#a49570", 10);
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, color: "#fff", roughness: 0.92, metalness: 0.02 });
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(H * 2 + wallThick * 2, floorThick, H * 2 + wallThick * 2),
+    floorMat,
+  );
+  floor.position.set(0, floorY, 0);
+  floor.receiveShadow = true;
+  floor.name = "ctf_floor";
+  g.add(floor);
+
+  // ─── Perimeter walls ──────────────────────────────
+  const wallTex = makeConcreteTexture(256, "#9a8e76", 4);
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, color: "#fff", roughness: 0.88, metalness: 0.04 });
+  addSolid("ctf_wall_left",  -H - wallThick * 0.5, 0, 0, wallThick, wallH, H * 2 + wallThick * 2, wallMat.clone());
+  addSolid("ctf_wall_right",  H + wallThick * 0.5, 0, 0, wallThick, wallH, H * 2 + wallThick * 2, wallMat.clone());
+  addSolid("ctf_wall_back",   0, 0, -H - wallThick * 0.5, H * 2 + wallThick * 4, wallH, wallThick, wallMat.clone());
+  addSolid("ctf_wall_front",  0, 0,  H + wallThick * 0.5, H * 2 + wallThick * 4, wallH, wallThick, wallMat.clone());
+
+  // ─── 3-Lane divider walls (N/S walls with openings) ─
+  const dividerMat = new THREE.MeshStandardMaterial({ map: makeConcreteTexture(128, "#7a7262", 2), color: "#fff", roughness: 0.85, metalness: 0.06 });
+  const divWallH = 4;
+  const gapZ = laneW * 0.5 + 1;
+  const divLen = H * 2 * 0.55;
+  // North divider (two segments with gap for middle lane)
+  addSolid("ctf_div_n_l", -divLen * 0.25, 0, -gapZ, divLen * 0.5 - 3, divWallH, 1.2, dividerMat.clone());
+  addSolid("ctf_div_n_r",  divLen * 0.25, 0, -gapZ, divLen * 0.5 - 3, divWallH, 1.2, dividerMat.clone());
+  // South divider
+  addSolid("ctf_div_s_l", -divLen * 0.25, 0,  gapZ, divLen * 0.5 - 3, divWallH, 1.2, dividerMat.clone());
+  addSolid("ctf_div_s_r",  divLen * 0.25, 0,  gapZ, divLen * 0.5 - 3, divWallH, 1.2, dividerMat.clone());
+
+  // ─── Middle lane obstacles ─────────────────────────
+  const coverMat = new THREE.MeshStandardMaterial({ color: "#6b5c49", roughness: 0.78, metalness: 0.06 });
+  addSolid("ctf_mid_cover1",  0, 0, 0, 3, 1.6, 3, coverMat.clone());
+  addSolid("ctf_mid_cover2", -8, 0, 0, 2.5, 1.4, 2.5, coverMat.clone());
+  addSolid("ctf_mid_cover3",  8, 0, 0, 2.5, 1.4, 2.5, coverMat.clone());
+
+  // ─── North lane obstacles ─────────────────────────
+  addSolid("ctf_n_cover1", -14, 0, -gapZ - 5, 2.2, 1.2, 2.2, coverMat.clone());
+  addSolid("ctf_n_cover2",  14, 0, -gapZ - 5, 2.2, 1.2, 2.2, coverMat.clone());
+  addSolid("ctf_n_cover3",   0, 0, -gapZ - 8, 3, 1.5, 1.5, coverMat.clone());
+
+  // ─── South lane obstacles ─────────────────────────
+  addSolid("ctf_s_cover1", -14, 0,  gapZ + 5, 2.2, 1.2, 2.2, coverMat.clone());
+  addSolid("ctf_s_cover2",  14, 0,  gapZ + 5, 2.2, 1.2, 2.2, coverMat.clone());
+  addSolid("ctf_s_cover3",   0, 0,  gapZ + 8, 3, 1.5, 1.5, coverMat.clone());
+
+  // ─── Blue base structure (left side) ──────────────
+  const blueBaseMat = new THREE.MeshStandardMaterial({ color: "#3a5a8a", roughness: 0.7, metalness: 0.12 });
+  addSolid("ctf_blue_wall_back", CTF_BLUE_BASE_X - 6, 0, 0, 1.5, 3.5, 18, blueBaseMat.clone());
+  addSolid("ctf_blue_wall_n", CTF_BLUE_BASE_X - 3, 0, -8, 8, 3.5, 1.5, blueBaseMat.clone());
+  addSolid("ctf_blue_wall_s", CTF_BLUE_BASE_X - 3, 0,  8, 8, 3.5, 1.5, blueBaseMat.clone());
+  addSolid("ctf_blue_cover1", CTF_BLUE_BASE_X + 4, 0, -4, 2, 1.2, 2, coverMat.clone());
+  addSolid("ctf_blue_cover2", CTF_BLUE_BASE_X + 4, 0,  4, 2, 1.2, 2, coverMat.clone());
+
+  // ─── Red base structure (right side, mirrored) ─────
+  const redBaseMat = new THREE.MeshStandardMaterial({ color: "#8a3a3a", roughness: 0.7, metalness: 0.12 });
+  addSolid("ctf_red_wall_back", CTF_RED_BASE_X + 6, 0, 0, 1.5, 3.5, 18, redBaseMat.clone());
+  addSolid("ctf_red_wall_n", CTF_RED_BASE_X + 3, 0, -8, 8, 3.5, 1.5, redBaseMat.clone());
+  addSolid("ctf_red_wall_s", CTF_RED_BASE_X + 3, 0,  8, 8, 3.5, 1.5, redBaseMat.clone());
+  addSolid("ctf_red_cover1", CTF_RED_BASE_X - 4, 0, -4, 2, 1.2, 2, coverMat.clone());
+  addSolid("ctf_red_cover2", CTF_RED_BASE_X - 4, 0,  4, 2, 1.2, 2, coverMat.clone());
+
+  // ─── Base zone accent (colored ground markings) ────
+  const blueAccent = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 0.08, 16),
+    new THREE.MeshStandardMaterial({ color: "#2288ff", transparent: true, opacity: 0.22, roughness: 0.9 }),
+  );
+  blueAccent.position.set(CTF_BLUE_BASE_X, 0.04, 0);
+  blueAccent.receiveShadow = true;
+  blueAccent.name = "ctf_blue_zone";
+  g.add(blueAccent);
+
+  const redAccent = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 0.08, 16),
+    new THREE.MeshStandardMaterial({ color: "#ff3333", transparent: true, opacity: 0.22, roughness: 0.9 }),
+  );
+  redAccent.position.set(CTF_RED_BASE_X, 0.04, 0);
+  redAccent.receiveShadow = true;
+  redAccent.name = "ctf_red_zone";
+  g.add(redAccent);
+
+  // ─── Additional flanking cover near bases ──────────
+  addSolid("ctf_flank_bl", -22, 0, -16, 2, 1.4, 4, coverMat.clone());
+  addSolid("ctf_flank_bl2", -22, 0,  16, 2, 1.4, 4, coverMat.clone());
+  addSolid("ctf_flank_rl",  22, 0, -16, 2, 1.4, 4, coverMat.clone());
+  addSolid("ctf_flank_rl2", 22, 0,  16, 2, 1.4, 4, coverMat.clone());
+
+  return g;
+}
+
 export function createProceduralDust2Blockout(): THREE.Group {
   const g = new THREE.Group();
   g.name = "native_skirmish_arena";
@@ -286,7 +713,7 @@ export function createProceduralDust2Blockout(): THREE.Group {
   return g;
 }
 
-export function buildMap(scene: THREE.Scene, levelTemplate?: THREE.Group | null): MapBuildResult {
+export function buildMap(scene: THREE.Scene, levelTemplate?: THREE.Group | null, mapId?: string): MapBuildResult {
   const collidables: THREE.Box3[] = [];
   const keyPoints: MapKeyPoint[] = [];
   const A = ARENA_HALF;
@@ -460,6 +887,122 @@ export function buildMap(scene: THREE.Scene, levelTemplate?: THREE.Group | null)
         ) + 1
       : A;
     return { collidables, keyPoints, levelRoot, boundaryHalf };
+  }
+
+  // ─── Warehouse map ─────────────────────────────────────────────────────────
+  if (mapId === "warehouse") {
+    const whGroup = createWarehouseGroup();
+    scene.add(whGroup);
+    whGroup.updateMatrixWorld(true);
+
+    whGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const b = new THREE.Box3().setFromObject(mesh);
+      const sz = b.getSize(new THREE.Vector3());
+      if (sz.x < 0.01 || sz.y < 0.01 || sz.z < 0.01) return;
+      if (mesh.name.startsWith("banner")) return;
+      // רמפה ויזואלית בלבד – הקולידר הוא ramp_*_step_* (תיבות לאורך השיפוע)
+      if (mesh.name.includes("ramp_") && mesh.name.endsWith("_visual")) return;
+      collidables.push(b.clone());
+    });
+
+    addKeyPoint("KP-HEAL",   "heal",   -40, 0.02,  40, "#59dc9f", 2.4, 12);
+    addKeyPoint("KP-AMMO",   "ammo",     0, 2.22,   0, "#66b8ff", 2.4, 10);
+    addKeyPoint("KP-SHIELD", "shield",  40, 0.02, -40, "#d28cff", 2.4, 16);
+
+    { // Warehouse lighting – warm industrial feel
+      const lCenter = new THREE.PointLight("#ffe0a0", 0.8, 100); lCenter.position.set(0, 8, 0);    scene.add(lCenter);
+      const lNW     = new THREE.PointLight("#ffb25f", 0.6, 80);  lNW.position.set(-44, 7, -44);    scene.add(lNW);
+      const lNE     = new THREE.PointLight("#6fc4ff", 0.6, 80);  lNE.position.set( 44, 7, -44);    scene.add(lNE);
+      const lSW     = new THREE.PointLight("#ff9060", 0.5, 70);  lSW.position.set(-44, 6, 44);     scene.add(lSW);
+      const lSE     = new THREE.PointLight("#60c0ff", 0.5, 70);  lSE.position.set( 44, 6, 44);     scene.add(lSE);
+      const lWCorr  = new THREE.PointLight("#ffd080", 0.45, 60); lWCorr.position.set(-54, 4.5, 0); scene.add(lWCorr);
+      const lECorr  = new THREE.PointLight("#ffd080", 0.45, 60); lECorr.position.set( 54, 4.5, 0); scene.add(lECorr);
+    }
+
+    return { collidables, keyPoints, levelRoot: whGroup, boundaryHalf: WAREHOUSE_HALF };
+  }
+
+  // ─── CTF dedicated map (two-sided arena, blue left / red right) ──────────────
+  if (mapId === "ctf") {
+    const ctfGroup = createCtfArena();
+    scene.add(ctfGroup);
+    ctfGroup.updateMatrixWorld(true);
+
+    ctfGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const n = (mesh.name || "").toLowerCase();
+      if (n.includes("zone") || n.includes("accent")) return;
+      const b = new THREE.Box3().setFromObject(mesh);
+      const sz = b.getSize(new THREE.Vector3());
+      if (sz.x < 0.01 || sz.y < 0.01 || sz.z < 0.01) return;
+      collidables.push(b.clone());
+    });
+
+    addKeyPoint("KP-HEAL", "heal", 0, 0.02, -20, "#59dc9f", 2.2, 14);
+    addKeyPoint("KP-AMMO", "ammo", 0, 0.02, 20, "#66b8ff", 2.2, 12);
+    addKeyPoint("KP-SHIELD", "shield", 0, 0.02, 0, "#d28cff", 2.2, 18);
+
+    const lBlue = new THREE.PointLight("#88bbff", 0.8, 70);
+    lBlue.position.set(CTF_BLUE_BASE_X, 7, 0);
+    scene.add(lBlue);
+    const lRed = new THREE.PointLight("#ff8888", 0.8, 70);
+    lRed.position.set(CTF_RED_BASE_X, 7, 0);
+    scene.add(lRed);
+    const lMid = new THREE.PointLight("#e8e0c8", 0.6, 90);
+    lMid.position.set(0, 9, 0);
+    scene.add(lMid);
+    const lN = new THREE.PointLight("#c8c0a8", 0.4, 50);
+    lN.position.set(0, 6, -25);
+    scene.add(lN);
+    const lS = new THREE.PointLight("#c8c0a8", 0.4, 50);
+    lS.position.set(0, 6, 25);
+    scene.add(lS);
+
+    return { collidables, keyPoints, levelRoot: ctfGroup, boundaryHalf: CTF_MAP_HALF };
+  }
+
+  // ─── Colosseum ──────────────────────────────────────────────────────────────
+  if (mapId === "colosseum") {
+    const colosseumGroup = createColosseumArena();
+    scene.add(colosseumGroup);
+    colosseumGroup.updateMatrixWorld(true);
+
+    colosseumGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const n = (mesh.name || "").toLowerCase();
+      if (n === "center_ring") return;
+      const b = new THREE.Box3().setFromObject(mesh);
+      const sz = b.getSize(new THREE.Vector3());
+      if (sz.x < 0.01 || sz.y < 0.01 || sz.z < 0.01) return;
+      collidables.push(b.clone());
+    });
+
+    addKeyPoint("KP-HEAL", "heal", -14, 0.02, 8, "#59dc9f", 2.4, 12);
+    addKeyPoint("KP-AMMO", "ammo", 0, 0.02, -12, "#66b8ff", 2.4, 10);
+    addKeyPoint("KP-SHIELD", "shield", 14, 0.02, 8, "#d28cff", 2.4, 16);
+
+    const lCenter = new THREE.PointLight("#ffe0a0", 1.0, 100);
+    lCenter.position.set(0, 12, 0);
+    scene.add(lCenter);
+    const lNW = new THREE.PointLight("#ffb25f", 0.65, 70);
+    lNW.position.set(-22, 8, -22);
+    scene.add(lNW);
+    const lNE = new THREE.PointLight("#6fc4ff", 0.65, 70);
+    lNE.position.set(22, 8, -22);
+    scene.add(lNE);
+    const lSW = new THREE.PointLight("#ff9060", 0.55, 60);
+    lSW.position.set(-22, 7, 22);
+    scene.add(lSW);
+    const lSE = new THREE.PointLight("#60c0ff", 0.55, 60);
+    lSE.position.set(22, 7, 22);
+    scene.add(lSE);
+
+    const boundaryHalf = COLOSSEUM_RADIUS + 2;
+    return { collidables, keyPoints, levelRoot: colosseumGroup, boundaryHalf };
   }
 
   // ─── USE_FLAT_PLAYGROUND path ───────────────────────────────────────────────
